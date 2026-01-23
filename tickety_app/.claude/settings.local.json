@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(dir:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter run)",
+      "Bash(flutter run:*)",
+      "Bash(timeout:*)",
+      "Bash(ping:*)",
+      "Bash(Select-String -Pattern \"error|Error|Exception|exception|failed|Failed\")",
+      "Bash(Select-Object -First 30)"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter --version:*)",
+      "Bash(choco install:*)",
+      "Bash(git clone:*)",
+      "Bash(powershell:*)",
+      "Bash(C:Usersazoriflutterbinflutter doctor -v)",
+      "Bash(cmd /c \"C:\\\\Users\\\\azori\\\\flutter\\\\bin\\\\flutter.bat doctor -v\")",
+      "Bash(tree:*)",
+      "Bash(find:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter run:*)",
+      "Bash(timeout:*)",
+      "Bash(gh auth:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: Tickety event discovery app\n\nFeatures:\n- Event discovery with featured carousel and upcoming events list\n- Category and location filtering with chips UI\n- Event creation with tags \\(predefined + custom\\)\n- Admin dashboard with statistics and analytics\n- Usher mode with ticket scanning \\(hold-to-scan + continuous mode\\)\n- Profile, search, wallet, and tickets screens\n\nArchitecture:\n- Clean architecture with feature-based organization\n- Material Design 3 with system-aware theming\n- Cross-platform: Android, iOS, Web, Windows, Linux, macOS\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
