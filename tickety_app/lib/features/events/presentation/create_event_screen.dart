@@ -1,5 +1,11 @@
-import 'package:flutter/material.dart';
+import 'dart:math';
 
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../../../core/services/services.dart';
+import '../../auth/auth.dart';
+import '../data/data.dart';
 import '../models/event_tag.dart';
 import '../widgets/tag_selector.dart';
 
@@ -12,17 +18,174 @@ class CreateEventScreen extends StatefulWidget {
 }
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
-  bool _isPublic = true;
+  final _subtitleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _venueController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _priceController = TextEditingController(text: '0');
+
+  final _repository = SupabaseEventRepository();
+
+  bool _isPublic = false;
+  bool _isLoading = false;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
   int _ticketCount = 10;
   Set<EventTag> _selectedTags = {};
 
+  // Track which step we're on (0 = basics, 1 = details, 2 = pricing)
+  int _currentStep = 0;
+
   @override
   void dispose() {
     _nameController.dispose();
+    _subtitleController.dispose();
+    _descriptionController.dispose();
+    _venueController.dispose();
+    _cityController.dispose();
+    _priceController.dispose();
     super.dispose();
+  }
+
+  Future<void> _createEvent() async {
+    // Check authentication first
+    if (!SupabaseService.instance.isAuthenticated) {
+      final shouldLogin = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Sign In Required'),
+          content: const Text(
+            'You need to sign in to create events. Would you like to sign in now?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sign In'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldLogin == true && mounted) {
+        final result = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+        // If they didn't successfully log in, abort
+        if (result != true && !SupabaseService.instance.isAuthenticated) {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter an event name'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      // Combine date and time
+      final eventDateTime = DateTime(
+        _selectedDate.year,
+        _selectedDate.month,
+        _selectedDate.day,
+        _selectedTime.hour,
+        _selectedTime.minute,
+      );
+
+      // Parse price (convert dollars to cents)
+      final priceText = _priceController.text.replaceAll(RegExp(r'[^\d.]'), '');
+      final priceDollars = double.tryParse(priceText) ?? 0;
+      final priceCents = (priceDollars * 100).round();
+
+      // Get category from first selected tag
+      final category = _selectedTags.isNotEmpty
+          ? _selectedTags.first.label
+          : null;
+
+      await _repository.createEventFromParams(
+        title: _nameController.text.trim(),
+        subtitle: _subtitleController.text.trim().isNotEmpty
+            ? _subtitleController.text.trim()
+            : 'An exciting event',
+        description: _descriptionController.text.trim().isNotEmpty
+            ? _descriptionController.text.trim()
+            : null,
+        date: eventDateTime,
+        venue: _venueController.text.trim().isNotEmpty
+            ? _venueController.text.trim()
+            : null,
+        city: _cityController.text.trim().isNotEmpty
+            ? _cityController.text.trim()
+            : null,
+        priceInCents: priceCents > 0 ? priceCents : null,
+        category: category,
+        noiseSeed: Random().nextInt(10000),
+      );
+
+      HapticFeedback.mediumImpact();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Event created successfully!'),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        Navigator.of(context).pop(true); // Return true to indicate success
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create event: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _nextStep() {
+    if (_currentStep < 2) {
+      setState(() => _currentStep++);
+    } else {
+      _createEvent();
+    }
+  }
+
+  void _previousStep() {
+    if (_currentStep > 0) {
+      setState(() => _currentStep--);
+    }
   }
 
   Future<void> _pickDate() async {
@@ -73,8 +236,14 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create Event'),
+        title: Text(_getStepTitle()),
         centerTitle: true,
+        leading: _currentStep > 0
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: _previousStep,
+              )
+            : null,
         actions: [
           _VisibilityToggle(
             isPublic: _isPublic,
@@ -84,105 +253,279 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              // Step indicator
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                child: Row(
                   children: [
-                    const SizedBox(height: 32),
-                    // Event name input - prominent and centered
-                    Text(
-                      'What\'s your event called?',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: _nameController,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Event Name',
-                        hintStyle: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: colorScheme.onSurface.withValues(alpha: 0.3),
+                    for (int i = 0; i < 3; i++) ...[
+                      Expanded(
+                        child: Container(
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: i <= _currentStep
+                                ? colorScheme.primary
+                                : colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
                       ),
-                      textCapitalization: TextCapitalization.words,
-                      autofocus: true,
-                    ),
-                    const SizedBox(height: 32),
-                    // Date & Time picker
-                    _DateTimePicker(
-                      date: _selectedDate,
-                      time: _selectedTime,
-                      formattedDate: _formatDate(_selectedDate),
-                      formattedTime: _formatTime(_selectedTime),
-                      onDateTap: _pickDate,
-                      onTimeTap: _pickTime,
-                    ),
-                    const SizedBox(height: 32),
-                    // Ticket count selector
-                    _TicketSelector(
-                      count: _ticketCount,
-                      onChanged: (value) => setState(() => _ticketCount = value),
-                    ),
-                    const SizedBox(height: 32),
-                    // Tag selector
-                    TagSelector(
-                      selectedTags: _selectedTags,
-                      onTagsChanged: (tags) => setState(() => _selectedTags = tags),
-                      maxTags: 5,
-                    ),
-                    const SizedBox(height: 32),
+                      if (i < 2) const SizedBox(width: 8),
+                    ],
                   ],
                 ),
               ),
-            ),
-            // Create button - fixed at bottom
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-              child: FilledButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        _selectedTags.isEmpty
-                            ? 'Coming soon'
-                            : 'Tags: ${_selectedTags.map((t) => t.label).join(", ")}',
-                      ),
-                      duration: const Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(56),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                ),
-                child: const Text(
-                  'Continue',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _buildCurrentStep(theme, colorScheme),
                   ),
                 ),
               ),
-            ),
-          ],
+              // Navigation buttons
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                child: FilledButton(
+                  onPressed: _isLoading ? null : _nextStep,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(56),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          _currentStep < 2 ? 'Continue' : 'Create Event',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  String _getStepTitle() {
+    switch (_currentStep) {
+      case 0:
+        return 'Event Basics';
+      case 1:
+        return 'Location & Details';
+      case 2:
+        return 'Pricing & Category';
+      default:
+        return 'Create Event';
+    }
+  }
+
+  Widget _buildCurrentStep(ThemeData theme, ColorScheme colorScheme) {
+    switch (_currentStep) {
+      case 0:
+        return _buildBasicsStep(theme, colorScheme);
+      case 1:
+        return _buildDetailsStep(theme, colorScheme);
+      case 2:
+        return _buildPricingStep(theme, colorScheme);
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  Widget _buildBasicsStep(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      key: const ValueKey('basics'),
+      children: [
+        const SizedBox(height: 32),
+        Text(
+          'What\'s your event called?',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _nameController,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+          decoration: InputDecoration(
+            hintText: 'Event Name',
+            hintStyle: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface.withValues(alpha: 0.3),
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+          ),
+          textCapitalization: TextCapitalization.words,
+          autofocus: true,
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _subtitleController,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.titleMedium,
+          decoration: InputDecoration(
+            hintText: 'A short tagline (optional)',
+            hintStyle: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurface.withValues(alpha: 0.3),
+            ),
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+          ),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        const SizedBox(height: 32),
+        _DateTimePicker(
+          date: _selectedDate,
+          time: _selectedTime,
+          formattedDate: _formatDate(_selectedDate),
+          formattedTime: _formatTime(_selectedTime),
+          onDateTap: _pickDate,
+          onTimeTap: _pickTime,
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildDetailsStep(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      key: const ValueKey('details'),
+      children: [
+        const SizedBox(height: 32),
+        Text(
+          'Where is it happening?',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        TextFormField(
+          controller: _venueController,
+          decoration: const InputDecoration(
+            labelText: 'Venue Name',
+            hintText: 'e.g., Madison Square Garden',
+            prefixIcon: Icon(Icons.place_outlined),
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _cityController,
+          decoration: const InputDecoration(
+            labelText: 'City',
+            hintText: 'e.g., New York',
+            prefixIcon: Icon(Icons.location_city_outlined),
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 32),
+        Text(
+          'Tell us more about it',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        TextFormField(
+          controller: _descriptionController,
+          maxLines: 4,
+          decoration: const InputDecoration(
+            labelText: 'Description (optional)',
+            hintText: 'What can attendees expect?',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildPricingStep(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      key: const ValueKey('pricing'),
+      children: [
+        const SizedBox(height: 32),
+        Text(
+          'Set your ticket price',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        TextFormField(
+          controller: _priceController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+          decoration: InputDecoration(
+            prefixText: '\$ ',
+            prefixStyle: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.primary,
+            ),
+            hintText: '0.00',
+            border: const OutlineInputBorder(),
+            helperText: 'Leave as 0 for free events',
+          ),
+          inputFormatters: [
+            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+          ],
+        ),
+        const SizedBox(height: 32),
+        _TicketSelector(
+          count: _ticketCount,
+          onChanged: (value) => setState(() => _ticketCount = value),
+        ),
+        const SizedBox(height: 32),
+        Text(
+          'Choose a category',
+          style: theme.textTheme.titleMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 16),
+        TagSelector(
+          selectedTags: _selectedTags,
+          onTagsChanged: (tags) => setState(() => _selectedTags = tags),
+          maxTags: 3,
+        ),
+        const SizedBox(height: 32),
+      ],
     );
   }
 }

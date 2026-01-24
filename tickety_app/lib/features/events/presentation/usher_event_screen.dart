@@ -6,6 +6,7 @@ import '../../tickets/models/ticket_model.dart';
 import '../models/event_model.dart';
 import '../widgets/scanner_button.dart';
 import '../widgets/ticket_info_card.dart';
+import 'vendor_event_screen.dart';
 
 /// Screen for ushers to scan and validate tickets at an event.
 ///
@@ -15,9 +16,11 @@ class UsherEventScreen extends StatefulWidget {
   const UsherEventScreen({
     super.key,
     required this.event,
+    this.canSwitchToSelling = false,
   });
 
   final EventModel event;
+  final bool canSwitchToSelling;
 
   @override
   State<UsherEventScreen> createState() => _UsherEventScreenState();
@@ -117,6 +120,52 @@ class _UsherEventScreenState extends State<UsherEventScreen> {
               ),
             ),
             actions: [
+              // Role switch button (if user has both roles)
+              if (widget.canSwitchToSelling)
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  child: Material(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        Navigator.of(context).pushReplacement(
+                          MaterialPageRoute(
+                            builder: (_) => VendorEventScreen(
+                              event: widget.event,
+                              canSwitchToUsher: true,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.point_of_sale,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Sell',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               // Usher badge
               Container(
                 margin: const EdgeInsets.only(right: 16),

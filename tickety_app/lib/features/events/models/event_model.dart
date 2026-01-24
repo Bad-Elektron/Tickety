@@ -174,6 +174,9 @@ class EventModel {
 ///
 /// In production, these would come from an API or local database.
 abstract class PlaceholderEvents {
+  /// Featured events for the carousel (first 5 upcoming events).
+  static List<EventModel> get featured => upcoming.take(5).toList();
+
   static final List<EventModel> upcoming = [
     EventModel(
       id: 'evt_001',

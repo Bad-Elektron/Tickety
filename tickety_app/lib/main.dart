@@ -1,12 +1,24 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/config/config.dart';
 import 'core/debug/debug.dart';
+import 'core/services/services.dart';
+import 'core/state/state.dart';
 import 'features/events/presentation/events_home_screen.dart';
 
-void main() {
-  runApp(const TicketyApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize environment configuration
+  await EnvConfig.initialize();
+
+  // Initialize Supabase client
+  await SupabaseService.initialize();
+
+  // Wrap with ProviderScope for Riverpod state management
+  runApp(const ProviderScope(child: TicketyApp()));
 }
 
 /// Custom scroll behavior that enables mouse drag scrolling.
@@ -24,8 +36,31 @@ class AppScrollBehavior extends MaterialScrollBehavior {
 }
 
 /// The root widget for the Tickety application.
-class TicketyApp extends StatelessWidget {
+class TicketyApp extends StatefulWidget {
   const TicketyApp({super.key});
+
+  @override
+  State<TicketyApp> createState() => _TicketyAppState();
+}
+
+class _TicketyAppState extends State<TicketyApp> {
+  final _appState = AppState();
+
+  @override
+  void initState() {
+    super.initState();
+    _appState.addListener(_onStateChanged);
+  }
+
+  @override
+  void dispose() {
+    _appState.removeListener(_onStateChanged);
+    super.dispose();
+  }
+
+  void _onStateChanged() {
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +74,7 @@ class TicketyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       builder: (context, child) {
         return DebugOverlay(
-          enabled: kDebugMode,
+          enabled: _appState.debugMode,
           child: child ?? const SizedBox.shrink(),
         );
       },
@@ -47,7 +82,7 @@ class TicketyApp extends StatelessWidget {
     );
   }
 
-  ThemeData _buildLightTheme() {
+  static ThemeData _buildLightTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -64,7 +99,7 @@ class TicketyApp extends StatelessWidget {
     );
   }
 
-  ThemeData _buildDarkTheme() {
+  static ThemeData _buildDarkTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,

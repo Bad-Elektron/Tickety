@@ -6,3 +6,4 @@ library;
 
 export 'models/ticket_model.dart';
 export 'presentation/my_tickets_screen.dart';
+export 'presentation/ticket_screen.dart';

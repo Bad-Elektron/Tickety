@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../staff/data/staff_repository.dart';
+import '../../staff/models/staff_role.dart';
 import '../models/event_model.dart';
 import 'event_data_screen.dart';
 
@@ -232,7 +236,7 @@ class AdminEventScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const _ManageUshersSheet(),
+      builder: (context) => _ManageUshersSheet(event: event),
     );
   }
 }
@@ -729,132 +733,476 @@ class _MintButton extends StatelessWidget {
   }
 }
 
-/// Bottom sheet for managing ushers.
-class _ManageUshersSheet extends StatelessWidget {
-  const _ManageUshersSheet();
+/// Bottom sheet for managing ushers - uses Riverpod for state management.
+class _ManageUshersSheet extends ConsumerStatefulWidget {
+  final EventModel event;
+
+  const _ManageUshersSheet({required this.event});
+
+  @override
+  ConsumerState<_ManageUshersSheet> createState() => _ManageUshersSheetState();
+}
+
+class _ManageUshersSheetState extends ConsumerState<_ManageUshersSheet> {
+  final _emailController = TextEditingController();
+  StaffRole _selectedRole = StaffRole.usher;
+  bool _isAdding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Load staff using the provider
+    Future.microtask(() {
+      ref.read(staffProvider.notifier).loadStaff(widget.event.id);
+    });
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    // Clear search results when closing
+    ref.read(userSearchProvider.notifier).clear();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    final staffState = ref.read(staffProvider);
+    final existingUserIds = staffState.staff.map((s) => s.userId).toSet();
+
+    ref.read(userSearchProvider.notifier).search(
+          query,
+          excludeUserIds: existingUserIds,
+        );
+  }
+
+  Future<void> _addStaff(UserSearchResult user) async {
+    setState(() => _isAdding = true);
+
+    final success = await ref.read(staffProvider.notifier).addStaff(
+          userId: user.id,
+          role: _selectedRole,
+          email: user.email,
+        );
+
+    if (mounted) {
+      setState(() => _isAdding = false);
+
+      if (success) {
+        _emailController.clear();
+        ref.read(userSearchProvider.notifier).clear();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.displayLabel} added as ${_selectedRole.label}'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        final error = ref.read(staffProvider).error;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add staff: ${error ?? "Unknown error"}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeStaff(EventStaff staff) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Staff'),
+        content: Text(
+          'Remove ${staff.userName ?? staff.userEmail ?? 'this user'} from the event staff?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final success = await ref.read(staffProvider.notifier).removeStaff(staff.id);
+
+    if (mounted) {
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Staff member removed'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        final error = ref.read(staffProvider).error;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to remove staff: ${error ?? "Unknown error"}'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final ushers = [
-      {'name': 'Alex Johnson', 'email': 'alex@email.com'},
-      {'name': 'Sam Wilson', 'email': 'sam@email.com'},
-    ];
+    // Watch staff state - auto rebuilds when it changes
+    final staffState = ref.watch(staffProvider);
+    final searchState = ref.watch(userSearchProvider);
 
     return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 24,
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              _TicketTearIcon(size: 32, color: colorScheme.tertiary),
-              const SizedBox(width: 12),
-              Text(
-                'Manage Ushers',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Ushers can scan tickets and admit guests',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Current ushers
-          ...ushers.map((usher) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: colorScheme.tertiaryContainer,
-                    child: Text(
-                      usher['name']![0],
-                      style: TextStyle(color: colorScheme.onTertiaryContainer),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          usher['name']!,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w500,
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    _TicketTearIcon(size: 32, color: colorScheme.tertiary),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Manage Staff',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    // Staff count badge
+                    if (staffState.totalCount > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${staffState.totalCount}',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: colorScheme.onPrimaryContainer,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        Text(
-                          usher['email']!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add ushers and sellers for ${widget.event.title}',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                // Search field
+                TextField(
+                  controller: _emailController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by email...',
+                    prefixIcon: searchState.isSearching
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : const Icon(Icons.search),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _emailController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _emailController.clear();
+                              ref.read(userSearchProvider.notifier).clear();
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: _onSearchChanged,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                // Role selector
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      'Role:',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    ...StaffRole.values.map((role) {
+                      final isSelected = role == _selectedRole;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(role.label),
+                          selected: isSelected,
+                          onSelected: (_) => setState(() => _selectedRole = role),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          // Search results
+          if (searchState.results.isNotEmpty)
+            Container(
+              constraints: const BoxConstraints(maxHeight: 150),
+              margin: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.all(8),
+                itemCount: searchState.results.length,
+                itemBuilder: (context, index) {
+                  final user = searchState.results[index];
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: colorScheme.primaryContainer,
+                      child: Text(
+                        (user.displayName ?? user.email)[0].toUpperCase(),
+                        style: TextStyle(color: colorScheme.onPrimaryContainer),
+                      ),
+                    ),
+                    title: Text(user.displayName ?? user.email),
+                    subtitle: user.displayName != null ? Text(user.email) : null,
+                    trailing: _isAdding
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            color: colorScheme.primary,
+                            onPressed: () => _addStaff(user),
+                          ),
+                    dense: true,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  );
+                },
+              ),
+            ),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: colorScheme.outlineVariant),
+          // Staff list
+          Flexible(
+            child: staffState.isLoading
+                ? const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
+                    ),
+                  )
+                : staffState.error != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline, color: colorScheme.error, size: 48),
+                              const SizedBox(height: 16),
+                              Text('Failed to load staff', style: theme.textTheme.titleMedium),
+                              const SizedBox(height: 8),
+                              OutlinedButton(
+                                onPressed: () => ref.read(staffProvider.notifier).refresh(),
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : staffState.staff.isEmpty
+                        ? Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.group_outlined,
+                                  size: 48,
+                                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No staff assigned yet',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Search for users by email to add them',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            padding: EdgeInsets.fromLTRB(
+                              24,
+                              16,
+                              24,
+                              MediaQuery.of(context).padding.bottom + 24,
+                            ),
+                            itemCount: staffState.staff.length,
+                            itemBuilder: (context, index) {
+                              final staff = staffState.staff[index];
+                              return _StaffCard(
+                                staff: staff,
+                                onRemove: () => _removeStaff(staff),
+                              );
+                            },
+                          ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StaffCard extends StatelessWidget {
+  final EventStaff staff;
+  final VoidCallback onRemove;
+
+  const _StaffCard({
+    required this.staff,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final roleColor = switch (staff.role) {
+      StaffRole.usher => colorScheme.tertiary,
+      StaffRole.seller => Colors.green,
+      StaffRole.manager => colorScheme.primary,
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: roleColor.withValues(alpha: 0.2),
+              child: Text(
+                (staff.userName ?? staff.userEmail ?? 'U')[0].toUpperCase(),
+                style: TextStyle(color: roleColor, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    staff.userName ?? staff.userEmail ?? 'Unknown User',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: roleColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          staff.role.label,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: roleColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      if (staff.userEmail != null && staff.userName != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            staff.userEmail!,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
-                    onPressed: () {},
+                    ],
                   ),
                 ],
               ),
             ),
-          )),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Coming soon'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            icon: const Icon(Icons.person_add_outlined),
-            label: const Text('Add Usher'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+            IconButton(
+              icon: Icon(Icons.remove_circle_outline, color: colorScheme.error),
+              onPressed: onRemove,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/providers.dart';
+import '../../noise_lab/noise_lab.dart';
 import '../../profile/profile.dart';
 import '../../search/search.dart';
 import '../../tickets/tickets.dart';
@@ -10,92 +13,134 @@ import '../widgets/widgets.dart';
 import 'event_details_screen.dart';
 import 'my_events_screen.dart';
 
+// Local UI state for filters (doesn't need to be global)
+final _selectedCategoriesProvider = StateProvider<Set<EventCategory>>((ref) => {});
+final _selectedCityProvider = StateProvider<String?>((ref) => null);
+
 /// The main home screen displaying featured events.
-class EventsHomeScreen extends StatefulWidget {
+///
+/// Now uses Riverpod - no more manual listeners or setState for data loading!
+class EventsHomeScreen extends ConsumerWidget {
   const EventsHomeScreen({super.key});
 
   @override
-  State<EventsHomeScreen> createState() => _EventsHomeScreenState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch the events state - automatically rebuilds when it changes
+    final eventsState = ref.watch(eventsProvider);
+    final selectedCategories = ref.watch(_selectedCategoriesProvider);
+    final selectedCity = ref.watch(_selectedCityProvider);
 
-class _EventsHomeScreenState extends State<EventsHomeScreen> {
-  final List<EventModel> _allEvents = PlaceholderEvents.upcoming;
-  Set<EventCategory> _selectedCategories = {};
-  String? _selectedCity;
+    // Compute filtered events
+    final filteredEvents = _filterEvents(
+      eventsState.events,
+      selectedCategories,
+      selectedCity,
+    );
 
-  /// Cached list of unique cities from all events.
-  late final List<String> _availableCities = _allEvents
-      .map((e) => e.city)
-      .whereType<String>()
-      .toSet()
-      .toList()
-    ..sort();
-
-  /// Events filtered by selected categories and city.
-  List<EventModel> get _filteredEvents {
-    return _allEvents.where((event) {
-      // Category filter
-      if (_selectedCategories.isNotEmpty) {
-        final eventCategory = event.eventCategory;
-        if (eventCategory == null || !_selectedCategories.contains(eventCategory)) {
-          return false;
-        }
-      }
-
-      // City filter
-      if (_selectedCity != null && event.city != _selectedCity) {
-        return false;
-      }
-
-      return true;
-    }).toList();
-  }
-
-  void _onCategoriesChanged(Set<EventCategory> categories) {
-    setState(() => _selectedCategories = categories);
-  }
-
-  void _onCityChanged(String? city) {
-    setState(() => _selectedCity = city);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final filteredEvents = _filteredEvents;
+    // Compute available cities
+    final availableCities = eventsState.events
+        .map((e) => e.city)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort();
 
     return Scaffold(
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            _Header(),
-            SliverToBoxAdapter(
-              child: _CarouselSection(events: _allEvents),
-            ),
-            _SectionHeader(title: 'Upcoming Events'),
-            SliverToBoxAdapter(
-              child: EventFilterChips(
-                selectedCategories: _selectedCategories,
-                selectedCity: _selectedCity,
-                availableCities: _availableCities,
-                onCategoriesChanged: _onCategoriesChanged,
-                onCityChanged: _onCityChanged,
-              ),
-            ),
-            if (filteredEvents.isEmpty)
-              _EmptyFilterState(
-                onClearFilters: () {
-                  setState(() {
-                    _selectedCategories = {};
-                    _selectedCity = null;
-                  });
-                },
-              )
-            else
-              _EventList(events: filteredEvents),
-          ],
+        child: RefreshIndicator(
+          // Refresh is simple - just call the notifier method
+          onRefresh: () => ref.read(eventsProvider.notifier).refresh(),
+          child: CustomScrollView(
+            slivers: [
+              _Header(),
+              if (eventsState.isLoading)
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              else ...[
+                if (eventsState.isUsingPlaceholders)
+                  SliverToBoxAdapter(
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Showing sample events. Configure Supabase to load real data.',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                SliverToBoxAdapter(
+                  child: _CarouselSection(events: eventsState.featuredEvents),
+                ),
+                _SectionHeader(title: 'Upcoming Events'),
+                SliverToBoxAdapter(
+                  child: EventFilterChips(
+                    selectedCategories: selectedCategories,
+                    selectedCity: selectedCity,
+                    availableCities: availableCities,
+                    onCategoriesChanged: (categories) {
+                      ref.read(_selectedCategoriesProvider.notifier).state = categories;
+                    },
+                    onCityChanged: (city) {
+                      ref.read(_selectedCityProvider.notifier).state = city;
+                    },
+                  ),
+                ),
+                if (filteredEvents.isEmpty)
+                  _EmptyFilterState(
+                    onClearFilters: () {
+                      ref.read(_selectedCategoriesProvider.notifier).state = {};
+                      ref.read(_selectedCityProvider.notifier).state = null;
+                    },
+                  )
+                else
+                  _EventList(events: filteredEvents),
+              ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Filter events by category and city.
+  List<EventModel> _filterEvents(
+    List<EventModel> events,
+    Set<EventCategory> categories,
+    String? city,
+  ) {
+    return events.where((event) {
+      // Category filter
+      if (categories.isNotEmpty) {
+        final eventCategory = event.eventCategory;
+        if (eventCategory == null || !categories.contains(eventCategory)) {
+          return false;
+        }
+      }
+      // City filter
+      if (city != null && event.city != city) {
+        return false;
+      }
+      return true;
+    }).toList();
   }
 }
 
@@ -166,6 +211,8 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
+            const SizedBox(width: 12),
+            const NoiseOrbButton(size: 40),
           ],
         ),
       ),
