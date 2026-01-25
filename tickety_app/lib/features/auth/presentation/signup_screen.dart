@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../core/utils/utils.dart';
+import '../../../shared/widgets/widgets.dart';
 import 'login_screen.dart';
 
 /// Signup screen with email/password registration.
@@ -36,31 +37,28 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   Future<void> _handleSignup() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Sanitize display name to prevent XSS
+    final sanitizedName = Validators.sanitize(_nameController.text);
+
     final success = await ref.read(authProvider.notifier).signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text,
-          displayName: _nameController.text.trim().isNotEmpty
-              ? _nameController.text.trim()
-              : null,
+          displayName: sanitizedName.isNotEmpty ? sanitizedName : null,
         );
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account created successfully!'),
+        SnackBar(
+          content: const Text('Account created successfully!'),
           behavior: SnackBarBehavior.floating,
+          backgroundColor: Theme.of(context).colorScheme.primary,
         ),
       );
       Navigator.of(context).pop(true);
     } else if (mounted) {
       final error = ref.read(authProvider).error;
       if (error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        ErrorSnackBar.show(context, error);
       }
     }
   }

@@ -1,12 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/ticket_provider.dart';
 import '../models/event_model.dart';
 import '../models/event_statistics.dart';
 
 /// Dashboard screen showing event statistics and analytics.
-class EventDataScreen extends StatelessWidget {
+class EventDataScreen extends ConsumerStatefulWidget {
   final EventModel event;
 
   const EventDataScreen({
@@ -15,10 +17,33 @@ class EventDataScreen extends StatelessWidget {
   });
 
   @override
+  ConsumerState<EventDataScreen> createState() => _EventDataScreenState();
+}
+
+class _EventDataScreenState extends ConsumerState<EventDataScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load ticket stats when screen opens
+    Future.microtask(() {
+      ref.read(ticketProvider.notifier).loadTickets(widget.event.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // In production, this would come from a database/API
-    final stats = PlaceholderStatistics.forEvent(event.id);
-    final config = event.getNoiseConfig();
+    final ticketState = ref.watch(ticketProvider);
+    final config = widget.event.getNoiseConfig();
+
+    // Build EventStatistics from real ticket data when available
+    final stats = _buildStatsFromTicketData(ticketState);
+
+    if (ticketState.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Event Data')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       body: CustomScrollView(
@@ -46,10 +71,12 @@ class EventDataScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: () {
+                  ref.read(ticketProvider.notifier).loadTickets(widget.event.id);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Statistics refreshed'),
+                      content: Text('Refreshing statistics...'),
                       behavior: SnackBarBehavior.floating,
+                      duration: Duration(seconds: 1),
                     ),
                   );
                 },
@@ -102,6 +129,90 @@ class EventDataScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  EventStatistics _buildStatsFromTicketData(TicketState ticketState) {
+    final tickets = ticketState.tickets;
+    final dbStats = ticketState.stats;
+
+    // Calculate hourly check-ins from actual ticket data
+    final hourlyMap = <int, int>{};
+    for (final ticket in tickets) {
+      if (ticket.checkedInAt != null) {
+        final hour = ticket.checkedInAt!.hour;
+        hourlyMap[hour] = (hourlyMap[hour] ?? 0) + 1;
+      }
+    }
+
+    // Build sorted hourly data
+    final hourlyCheckIns = <HourlyCheckIn>[];
+    if (hourlyMap.isNotEmpty) {
+      final minHour = hourlyMap.keys.reduce(math.min);
+      final maxHour = hourlyMap.keys.reduce(math.max);
+      for (var h = minHour; h <= maxHour; h++) {
+        hourlyCheckIns.add(HourlyCheckIn(hour: h, count: hourlyMap[h] ?? 0));
+      }
+    }
+
+    // Find peak check-in time
+    DateTime? peakTime;
+    if (hourlyMap.isNotEmpty) {
+      final peakHour = hourlyMap.entries
+          .reduce((a, b) => a.value > b.value ? a : b)
+          .key;
+      peakTime = DateTime.now().copyWith(hour: peakHour, minute: 0);
+    }
+
+    // Calculate usher stats from checked_in_by
+    final usherMap = <String, int>{};
+    for (final ticket in tickets) {
+      if (ticket.checkedInBy != null) {
+        usherMap[ticket.checkedInBy!] =
+            (usherMap[ticket.checkedInBy!] ?? 0) + 1;
+      }
+    }
+
+    final usherStats = usherMap.entries.map((e) {
+      final shortId = e.key.length > 6 ? e.key.substring(0, 6) : e.key;
+      return UsherStats(
+        odentifier: e.key,
+        name: 'Staff $shortId...',
+        ticketsChecked: e.value,
+      );
+    }).toList();
+
+    return EventStatistics(
+      eventId: widget.event.id,
+      totalTicketsSold: dbStats?.totalSold ?? tickets.length,
+      totalTicketsChecked: dbStats?.checkedIn ??
+          tickets.where((t) => t.checkedInAt != null).length,
+      totalRevenueCents: dbStats?.totalRevenueCents ??
+          tickets.fold(0, (sum, t) => sum + t.pricePaidCents),
+      usherStats: usherStats.isEmpty
+          ? [
+              const UsherStats(
+                odentifier: 'none',
+                name: 'No check-ins yet',
+                ticketsChecked: 0,
+              )
+            ]
+          : usherStats,
+      hourlyCheckIns: hourlyCheckIns.isEmpty
+          ? [const HourlyCheckIn(hour: 12, count: 0)]
+          : hourlyCheckIns,
+      ticketTypeBreakdown: [
+        TicketTypeBreakdown(
+          type: 'General Admission',
+          sold: dbStats?.totalSold ?? tickets.length,
+          checked: dbStats?.checkedIn ??
+              tickets.where((t) => t.checkedInAt != null).length,
+          revenueCents: dbStats?.totalRevenueCents ??
+              tickets.fold(0, (sum, t) => sum + t.pricePaidCents),
+        ),
+      ],
+      peakCheckInTime: peakTime,
+      averageCheckInDurationSeconds: 0,
     );
   }
 }

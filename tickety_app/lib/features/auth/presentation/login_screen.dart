@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../core/utils/utils.dart';
+import '../../../shared/widgets/widgets.dart';
 import 'signup_screen.dart';
 
 /// Login screen with email/password authentication.
@@ -41,12 +42,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } else if (mounted) {
       final error = ref.read(authProvider).error;
       if (error != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(error),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        ErrorSnackBar.show(context, error);
       }
     }
   }
@@ -54,26 +50,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _handleForgotPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter your email address first'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      ErrorSnackBar.show(context, 'Please enter your email address first');
       return;
     }
 
     final success = await ref.read(authProvider.notifier).resetPassword(email);
     if (mounted) {
-      final error = ref.read(authProvider).error;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success ? 'Password reset email sent' : error ?? 'Failed to send reset email',
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Password reset email sent'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.primary,
           ),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        );
+      } else {
+        final error = ref.read(authProvider).error;
+        ErrorSnackBar.show(context, error ?? 'Failed to send reset email');
+      }
     }
   }
 

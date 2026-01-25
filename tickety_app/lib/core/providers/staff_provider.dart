@@ -2,6 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/staff/data/staff_repository.dart';
 import '../../features/staff/models/staff_role.dart';
+import '../errors/errors.dart';
+
+const _tag = 'StaffProvider';
 
 /// State for event staff management.
 class StaffState {
@@ -55,7 +58,7 @@ class StaffState {
 
 /// Notifier for managing event staff.
 class StaffNotifier extends StateNotifier<StaffState> {
-  final StaffRepository _repository;
+  final IStaffRepository _repository;
 
   StaffNotifier(this._repository) : super(const StaffState());
 
@@ -63,6 +66,8 @@ class StaffNotifier extends StateNotifier<StaffState> {
   Future<void> loadStaff(String eventId) async {
     // If already loading this event, skip
     if (state.isLoading && state.currentEventId == eventId) return;
+
+    AppLogger.debug('Loading staff for event: $eventId', tag: _tag);
 
     state = state.copyWith(
       isLoading: true,
@@ -72,14 +77,25 @@ class StaffNotifier extends StateNotifier<StaffState> {
 
     try {
       final staff = await _repository.getEventStaff(eventId);
+      AppLogger.info(
+        'Loaded ${staff.length} staff members for event $eventId',
+        tag: _tag,
+      );
       state = state.copyWith(
         staff: staff,
         isLoading: false,
       );
-    } catch (e) {
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load staff for event $eventId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: appError.userMessage,
       );
     }
   }
@@ -87,7 +103,10 @@ class StaffNotifier extends StateNotifier<StaffState> {
   /// Refresh staff for current event.
   Future<void> refresh() async {
     final eventId = state.currentEventId;
-    if (eventId == null) return;
+    if (eventId == null) {
+      AppLogger.warning('Refresh called with no current event', tag: _tag);
+      return;
+    }
     await loadStaff(eventId);
   }
 
@@ -98,7 +117,15 @@ class StaffNotifier extends StateNotifier<StaffState> {
     String? email,
   }) async {
     final eventId = state.currentEventId;
-    if (eventId == null) return false;
+    if (eventId == null) {
+      AppLogger.warning('Cannot add staff: no current event', tag: _tag);
+      return false;
+    }
+
+    AppLogger.info(
+      'Adding staff member (role: ${role.value}) to event $eventId',
+      tag: _tag,
+    );
 
     try {
       final newStaff = await _repository.addStaff(
@@ -108,22 +135,38 @@ class StaffNotifier extends StateNotifier<StaffState> {
         email: email,
       );
 
+      AppLogger.info(
+        'Staff member added: ${newStaff.userName ?? newStaff.userEmail ?? newStaff.userId}',
+        tag: _tag,
+      );
+
       // Add to local state immediately
       state = state.copyWith(
         staff: [newStaff, ...state.staff],
       );
 
       return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to add staff member to event $eventId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return false;
     }
   }
 
   /// Remove a staff member.
   Future<bool> removeStaff(String staffId) async {
+    AppLogger.info('Removing staff member: $staffId', tag: _tag);
+
     try {
       await _repository.removeStaff(staffId);
+
+      AppLogger.info('Staff member removed: $staffId', tag: _tag);
 
       // Remove from local state immediately
       state = state.copyWith(
@@ -131,8 +174,15 @@ class StaffNotifier extends StateNotifier<StaffState> {
       );
 
       return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to remove staff member $staffId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return false;
     }
   }
@@ -144,6 +194,7 @@ class StaffNotifier extends StateNotifier<StaffState> {
 
   /// Clear all state (when leaving event context).
   void clear() {
+    AppLogger.debug('Clearing staff state', tag: _tag);
     state = const StaffState();
   }
 }
@@ -176,7 +227,7 @@ class UserSearchState {
 
 /// Notifier for user search (when adding staff).
 class UserSearchNotifier extends StateNotifier<UserSearchState> {
-  final StaffRepository _repository;
+  final IStaffRepository _repository;
 
   UserSearchNotifier(this._repository) : super(const UserSearchState());
 
@@ -187,6 +238,7 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
       return;
     }
 
+    AppLogger.debug('Searching users with query: $query', tag: _tag);
     state = state.copyWith(isSearching: true, clearError: true);
 
     try {
@@ -197,14 +249,23 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
           ? results.where((r) => !excludeUserIds.contains(r.id)).toList()
           : results;
 
+      AppLogger.debug('Found ${filtered.length} users matching query', tag: _tag);
+
       state = state.copyWith(
         results: filtered,
         isSearching: false,
       );
-    } catch (e) {
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'User search failed for query: $query',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
       state = state.copyWith(
         isSearching: false,
-        error: e.toString(),
+        error: appError.userMessage,
       );
     }
   }
@@ -220,7 +281,7 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
 // ============================================================
 
 /// Repository provider - can be overridden for testing.
-final staffRepositoryProvider = Provider<StaffRepository>((ref) {
+final staffRepositoryProvider = Provider<IStaffRepository>((ref) {
   return StaffRepository();
 });
 

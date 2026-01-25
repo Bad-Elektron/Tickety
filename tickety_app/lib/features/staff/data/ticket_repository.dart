@@ -1,13 +1,19 @@
 import 'dart:math';
 
+import '../../../core/errors/errors.dart';
 import '../../../core/services/services.dart';
 import '../models/ticket.dart';
+import 'i_ticket_repository.dart';
 
-/// Repository for ticket operations.
-class TicketRepository {
+export 'i_ticket_repository.dart' show TicketStats, ITicketRepository;
+
+const _tag = 'TicketRepository';
+
+/// Supabase implementation of [ITicketRepository].
+class TicketRepository implements ITicketRepository {
   final _client = SupabaseService.instance.client;
 
-  /// Sell a ticket (create ticket record).
+  @override
   Future<Ticket> sellTicket({
     required String eventId,
     required String? ownerEmail,
@@ -19,6 +25,11 @@ class TicketRepository {
 
     // Generate unique ticket number
     final ticketNumber = _generateTicketNumber();
+
+    AppLogger.debug(
+      'Selling ticket: event=$eventId, price=$priceCents cents, number=$ticketNumber',
+      tag: _tag,
+    );
 
     final response = await _client
         .from('tickets')
@@ -36,24 +47,35 @@ class TicketRepository {
         .select()
         .single();
 
+    AppLogger.info('Ticket sold: $ticketNumber', tag: _tag);
     return Ticket.fromJson(response);
   }
 
-  /// Get tickets sold for an event.
+  @override
   Future<List<Ticket>> getEventTickets(String eventId) async {
+    AppLogger.debug('Fetching tickets for event: $eventId', tag: _tag);
+
     final response = await _client
         .from('tickets')
         .select()
         .eq('event_id', eventId)
         .order('sold_at', ascending: false);
 
-    return (response as List<dynamic>)
+    final tickets = (response as List<dynamic>)
         .map((json) => Ticket.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('Fetched ${tickets.length} tickets', tag: _tag);
+    return tickets;
   }
 
-  /// Get ticket by ID or ticket number.
+  @override
   Future<Ticket?> getTicket(String eventId, String ticketIdOrNumber) async {
+    AppLogger.debug(
+      'Looking up ticket: $ticketIdOrNumber for event $eventId',
+      tag: _tag,
+    );
+
     // Try by ID first
     var response = await _client
         .from('tickets')
@@ -63,20 +85,34 @@ class TicketRepository {
         .maybeSingle();
 
     // Try by ticket number if not found by ID
-    response ??= await _client
-        .from('tickets')
-        .select()
-        .eq('event_id', eventId)
-        .eq('ticket_number', ticketIdOrNumber)
-        .maybeSingle();
+    if (response == null) {
+      AppLogger.debug('Not found by ID, trying ticket number', tag: _tag);
+      response = await _client
+          .from('tickets')
+          .select()
+          .eq('event_id', eventId)
+          .eq('ticket_number', ticketIdOrNumber)
+          .maybeSingle();
+    }
 
-    if (response == null) return null;
-    return Ticket.fromJson(response);
+    if (response == null) {
+      AppLogger.debug('Ticket not found: $ticketIdOrNumber', tag: _tag);
+      return null;
+    }
+
+    final ticket = Ticket.fromJson(response);
+    AppLogger.debug(
+      'Found ticket: ${ticket.ticketNumber} (status: ${ticket.status.value})',
+      tag: _tag,
+    );
+    return ticket;
   }
 
-  /// Check in a ticket.
+  @override
   Future<Ticket> checkInTicket(String ticketId) async {
     final userId = SupabaseService.instance.currentUser?.id;
+
+    AppLogger.debug('Checking in ticket: $ticketId', tag: _tag);
 
     final response = await _client
         .from('tickets')
@@ -89,11 +125,15 @@ class TicketRepository {
         .select()
         .single();
 
-    return Ticket.fromJson(response);
+    final ticket = Ticket.fromJson(response);
+    AppLogger.info('Ticket checked in: ${ticket.ticketNumber}', tag: _tag);
+    return ticket;
   }
 
-  /// Undo check-in (revert ticket to valid).
+  @override
   Future<Ticket> undoCheckIn(String ticketId) async {
+    AppLogger.debug('Undoing check-in for ticket: $ticketId', tag: _tag);
+
     final response = await _client
         .from('tickets')
         .update({
@@ -105,11 +145,15 @@ class TicketRepository {
         .select()
         .single();
 
-    return Ticket.fromJson(response);
+    final ticket = Ticket.fromJson(response);
+    AppLogger.info('Check-in undone: ${ticket.ticketNumber}', tag: _tag);
+    return ticket;
   }
 
-  /// Cancel a ticket.
+  @override
   Future<Ticket> cancelTicket(String ticketId) async {
+    AppLogger.debug('Cancelling ticket: $ticketId', tag: _tag);
+
     final response = await _client
         .from('tickets')
         .update({'status': 'cancelled'})
@@ -117,11 +161,15 @@ class TicketRepository {
         .select()
         .single();
 
-    return Ticket.fromJson(response);
+    final ticket = Ticket.fromJson(response);
+    AppLogger.info('Ticket cancelled: ${ticket.ticketNumber}', tag: _tag);
+    return ticket;
   }
 
-  /// Get ticket stats for an event.
+  @override
   Future<TicketStats> getTicketStats(String eventId) async {
+    AppLogger.debug('Fetching ticket stats for event: $eventId', tag: _tag);
+
     final response = await _client
         .from('tickets')
         .select('status, price_paid_cents')
@@ -138,6 +186,11 @@ class TicketRepository {
       totalRevenueCents += ticket['price_paid_cents'] as int;
     }
 
+    AppLogger.debug(
+      'Stats: $totalSold sold, $checkedIn checked in, \$${totalRevenueCents / 100} revenue',
+      tag: _tag,
+    );
+
     return TicketStats(
       totalSold: totalSold,
       checkedIn: checkedIn,
@@ -145,24 +198,30 @@ class TicketRepository {
     );
   }
 
-  /// Get tickets for current user (purchased tickets).
+  @override
   Future<List<Ticket>> getMyTickets() async {
     final userId = SupabaseService.instance.currentUser?.id;
-    if (userId == null) return [];
+    if (userId == null) {
+      AppLogger.debug('No current user for my tickets', tag: _tag);
+      return [];
+    }
 
-    // For now, get tickets by email matching user's email
-    final userEmail = SupabaseService.instance.currentUser?.email;
-    if (userEmail == null) return [];
+    AppLogger.debug('Fetching tickets for user: $userId', tag: _tag);
 
+    // Query tickets where user is the buyer (sold_by = user purchasing for themselves)
+    // The sold_by field is set by the webhook when payment succeeds
     final response = await _client
         .from('tickets')
         .select('*, events(*)')
-        .eq('owner_email', userEmail)
+        .eq('sold_by', userId)
         .order('sold_at', ascending: false);
 
-    return (response as List<dynamic>)
+    final tickets = (response as List<dynamic>)
         .map((json) => Ticket.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('Found ${tickets.length} user tickets', tag: _tag);
+    return tickets;
   }
 
   String _generateTicketNumber() {
@@ -171,32 +230,4 @@ class TicketRepository {
     final randomPart = random.nextInt(9999).toString().padLeft(4, '0');
     return 'TKT-$timestamp-$randomPart';
   }
-}
-
-/// Statistics for tickets at an event.
-class TicketStats {
-  final int totalSold;
-  final int checkedIn;
-  final int totalRevenueCents;
-
-  const TicketStats({
-    required this.totalSold,
-    required this.checkedIn,
-    required this.totalRevenueCents,
-  });
-
-  /// Tickets not yet checked in.
-  int get remaining => totalSold - checkedIn;
-
-  /// Formatted revenue string.
-  String get formattedRevenue {
-    final dollars = totalRevenueCents / 100;
-    return '\$${dollars.toStringAsFixed(2)}';
-  }
-
-  /// Check-in rate as percentage (0.0 - 1.0).
-  double get checkInRate => totalSold > 0 ? checkedIn / totalSold : 0;
-
-  /// Check-in rate as percentage string.
-  String get checkInPercentage => '${(checkInRate * 100).toStringAsFixed(0)}%';
 }

@@ -1,37 +1,21 @@
+import '../../../core/errors/errors.dart';
 import '../../../core/services/services.dart';
 import '../models/staff_role.dart';
+import 'i_staff_repository.dart';
 
-/// Simple user data for staff assignment.
-class UserSearchResult {
-  final String id;
-  final String email;
-  final String? displayName;
+export 'i_staff_repository.dart' show UserSearchResult, IStaffRepository;
 
-  const UserSearchResult({
-    required this.id,
-    required this.email,
-    this.displayName,
-  });
+const _tag = 'StaffRepository';
 
-  factory UserSearchResult.fromJson(Map<String, dynamic> json) {
-    return UserSearchResult(
-      id: json['id'] as String,
-      email: json['email'] as String,
-      displayName: json['display_name'] as String?,
-    );
-  }
-
-  String get displayLabel => displayName ?? email;
-}
-
-/// Repository for staff operations.
-class StaffRepository {
+/// Supabase implementation of [IStaffRepository].
+class StaffRepository implements IStaffRepository {
   final _client = SupabaseService.instance.client;
 
-  /// Search for users by email (for adding staff).
-  /// Returns users matching the email pattern from the profiles table.
+  @override
   Future<List<UserSearchResult>> searchUsersByEmail(String emailQuery) async {
     if (emailQuery.trim().isEmpty) return [];
+
+    AppLogger.debug('Searching users by email: $emailQuery', tag: _tag);
 
     final response = await _client
         .from('profiles')
@@ -39,25 +23,35 @@ class StaffRepository {
         .ilike('email', '%${emailQuery.trim()}%')
         .limit(10);
 
-    return (response as List<dynamic>)
+    final results = (response as List<dynamic>)
         .map((json) => UserSearchResult.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('User search returned ${results.length} results', tag: _tag);
+    return results;
   }
 
-  /// Get a user by exact email address.
+  @override
   Future<UserSearchResult?> getUserByEmail(String email) async {
+    AppLogger.debug('Looking up user by email: $email', tag: _tag);
+
     final response = await _client
         .from('profiles')
         .select('id, email, display_name')
         .eq('email', email.trim().toLowerCase())
         .maybeSingle();
 
-    if (response == null) return null;
+    if (response == null) {
+      AppLogger.debug('User not found: $email', tag: _tag);
+      return null;
+    }
     return UserSearchResult.fromJson(response);
   }
 
-  /// Get all staff for an event.
+  @override
   Future<List<EventStaff>> getEventStaff(String eventId) async {
+    AppLogger.debug('Fetching staff for event: $eventId', tag: _tag);
+
     // First get the staff assignments
     final response = await _client
         .from('event_staff')
@@ -80,7 +74,11 @@ class StaffRepository {
             .select('display_name, email')
             .eq('id', userId)
             .maybeSingle();
-      } catch (_) {
+      } catch (e) {
+        AppLogger.warning(
+          'Failed to fetch profile for user $userId',
+          tag: _tag,
+        );
         // Profile lookup failed, continue without it
       }
 
@@ -93,16 +91,22 @@ class StaffRepository {
       results.add(EventStaff.fromJson(enrichedStaff));
     }
 
+    AppLogger.debug('Fetched ${results.length} staff members', tag: _tag);
     return results;
   }
 
-  /// Add staff to an event.
+  @override
   Future<EventStaff> addStaff({
     required String eventId,
     required String userId,
     required StaffRole role,
     String? email,
   }) async {
+    AppLogger.debug(
+      'Adding staff: userId=$userId, role=${role.value}, event=$eventId',
+      tag: _tag,
+    );
+
     final response = await _client
         .from('event_staff')
         .insert({
@@ -114,16 +118,24 @@ class StaffRepository {
         .select()
         .single();
 
+    AppLogger.info('Staff member added: ${response['id']}', tag: _tag);
     return EventStaff.fromJson(response);
   }
 
-  /// Remove staff from an event.
+  @override
   Future<void> removeStaff(String staffId) async {
+    AppLogger.debug('Removing staff: $staffId', tag: _tag);
     await _client.from('event_staff').delete().eq('id', staffId);
+    AppLogger.info('Staff member removed: $staffId', tag: _tag);
   }
 
-  /// Update staff role.
+  @override
   Future<EventStaff> updateStaffRole(String staffId, StaffRole newRole) async {
+    AppLogger.debug(
+      'Updating staff role: $staffId -> ${newRole.value}',
+      tag: _tag,
+    );
+
     final response = await _client
         .from('event_staff')
         .update({'role': newRole.value})
@@ -131,13 +143,22 @@ class StaffRepository {
         .select()
         .single();
 
+    AppLogger.info('Staff role updated: $staffId', tag: _tag);
     return EventStaff.fromJson(response);
   }
 
-  /// Check if current user is staff for an event.
+  @override
   Future<EventStaff?> getCurrentUserStaffRole(String eventId) async {
     final userId = SupabaseService.instance.currentUser?.id;
-    if (userId == null) return null;
+    if (userId == null) {
+      AppLogger.debug('No current user for staff role check', tag: _tag);
+      return null;
+    }
+
+    AppLogger.debug(
+      'Checking staff role for user $userId on event $eventId',
+      tag: _tag,
+    );
 
     final response = await _client
         .from('event_staff')
@@ -146,30 +167,44 @@ class StaffRepository {
         .eq('user_id', userId)
         .maybeSingle();
 
-    if (response == null) return null;
+    if (response == null) {
+      AppLogger.debug('User has no staff role on this event', tag: _tag);
+      return null;
+    }
     return EventStaff.fromJson(response);
   }
 
-  /// Get all events where current user is staff.
+  @override
   Future<List<Map<String, dynamic>>> getMyStaffEvents() async {
     final userId = SupabaseService.instance.currentUser?.id;
-    if (userId == null) return [];
+    if (userId == null) {
+      AppLogger.debug('No current user for staff events', tag: _tag);
+      return [];
+    }
+
+    AppLogger.debug('Fetching staff events for user: $userId', tag: _tag);
 
     final response = await _client
         .from('event_staff')
         .select('*, events(*)')
         .eq('user_id', userId);
 
-    return (response as List<dynamic>).cast<Map<String, dynamic>>();
+    final results = (response as List<dynamic>).cast<Map<String, dynamic>>();
+    AppLogger.debug('Found ${results.length} staff events', tag: _tag);
+    return results;
   }
 
-  /// Get staff count for an event.
+  @override
   Future<int> getStaffCount(String eventId) async {
+    AppLogger.debug('Getting staff count for event: $eventId', tag: _tag);
+
     final response = await _client
         .from('event_staff')
         .select('id')
         .eq('event_id', eventId);
 
-    return (response as List<dynamic>).length;
+    final count = (response as List<dynamic>).length;
+    AppLogger.debug('Staff count: $count', tag: _tag);
+    return count;
   }
 }

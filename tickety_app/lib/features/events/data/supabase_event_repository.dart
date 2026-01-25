@@ -1,7 +1,10 @@
+import '../../../core/errors/errors.dart';
 import '../../../core/services/services.dart';
 import '../models/event_model.dart';
 import 'event_mapper.dart';
 import 'event_repository.dart';
+
+const _tag = 'EventRepository';
 
 /// Supabase implementation of [EventRepository].
 ///
@@ -17,6 +20,11 @@ class SupabaseEventRepository implements EventRepository {
     String? city,
     int? limit,
   }) async {
+    AppLogger.debug(
+      'Fetching upcoming events (category: $category, city: $city, limit: $limit)',
+      tag: _tag,
+    );
+
     // Build query with filters first, then ordering and limit
     var query = _client
         .from(_tableName)
@@ -39,13 +47,18 @@ class SupabaseEventRepository implements EventRepository {
         ? await orderedQuery.limit(limit)
         : await orderedQuery;
 
-    return (response as List<dynamic>)
+    final events = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('Fetched ${events.length} upcoming events', tag: _tag);
+    return events;
   }
 
   @override
   Future<EventModel?> getEventById(String id) async {
+    AppLogger.debug('Fetching event by ID: $id', tag: _tag);
+
     final response = await _client
         .from(_tableName)
         .select()
@@ -53,12 +66,17 @@ class SupabaseEventRepository implements EventRepository {
         .isFilter('deleted_at', null)
         .maybeSingle();
 
-    if (response == null) return null;
+    if (response == null) {
+      AppLogger.debug('Event not found: $id', tag: _tag);
+      return null;
+    }
     return EventMapper.fromJson(response);
   }
 
   @override
   Future<List<EventModel>> getFeaturedEvents({int limit = 5}) async {
+    AppLogger.debug('Fetching featured events (limit: $limit)', tag: _tag);
+
     // For now, just get the nearest upcoming events as featured
     // In production, you might have a "featured" flag or algorithm
     final response = await _client
@@ -69,17 +87,23 @@ class SupabaseEventRepository implements EventRepository {
         .order('date', ascending: true)
         .limit(limit);
 
-    return (response as List<dynamic>)
+    final events = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('Fetched ${events.length} featured events', tag: _tag);
+    return events;
   }
 
   @override
   Future<EventModel> createEvent(EventModel event) async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
+      AppLogger.warning('Attempted to create event without authentication', tag: _tag);
       throw StateError('Must be authenticated to create events');
     }
+
+    AppLogger.debug('Creating event: ${event.title}', tag: _tag);
 
     final data = EventMapper.toJson(event);
     data['organizer_id'] = userId;
@@ -87,7 +111,9 @@ class SupabaseEventRepository implements EventRepository {
     final response =
         await _client.from(_tableName).insert(data).select().single();
 
-    return EventMapper.fromJson(response);
+    final created = EventMapper.fromJson(response);
+    AppLogger.info('Event created: ${created.id} - ${created.title}', tag: _tag);
+    return created;
   }
 
   /// Convenience method to create an event from individual parameters.
@@ -103,6 +129,7 @@ class SupabaseEventRepository implements EventRepository {
     int? priceInCents,
     String? currency,
     String? category,
+    List<String>? tags,
     int? noiseSeed,
   }) async {
     final event = EventModel(
@@ -118,6 +145,7 @@ class SupabaseEventRepository implements EventRepository {
       priceInCents: priceInCents,
       currency: currency ?? 'USD',
       category: category,
+      tags: tags ?? const [],
       noiseSeed: noiseSeed ?? DateTime.now().millisecondsSinceEpoch % 10000,
     );
     return createEvent(event);
@@ -125,6 +153,8 @@ class SupabaseEventRepository implements EventRepository {
 
   @override
   Future<EventModel> updateEvent(EventModel event) async {
+    AppLogger.debug('Updating event: ${event.id}', tag: _tag);
+
     final data = EventMapper.toJson(event);
     data['updated_at'] = DateTime.now().toUtc().toIso8601String();
 
@@ -135,22 +165,31 @@ class SupabaseEventRepository implements EventRepository {
         .select()
         .single();
 
-    return EventMapper.fromJson(response);
+    final updated = EventMapper.fromJson(response);
+    AppLogger.info('Event updated: ${updated.id} - ${updated.title}', tag: _tag);
+    return updated;
   }
 
   @override
   Future<void> deleteEvent(String id) async {
+    AppLogger.debug('Soft-deleting event: $id', tag: _tag);
+
     await _client.from(_tableName).update({
       'deleted_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', id);
+
+    AppLogger.info('Event deleted: $id', tag: _tag);
   }
 
   @override
   Future<List<EventModel>> getMyEvents() async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
+      AppLogger.warning('Attempted to get my events without authentication', tag: _tag);
       throw StateError('Must be authenticated to view your events');
     }
+
+    AppLogger.debug('Fetching events for user: $userId', tag: _tag);
 
     final response = await _client
         .from(_tableName)
@@ -159,8 +198,11 @@ class SupabaseEventRepository implements EventRepository {
         .isFilter('deleted_at', null)
         .order('date', ascending: true);
 
-    return (response as List<dynamic>)
+    final events = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
+
+    AppLogger.debug('Fetched ${events.length} user events', tag: _tag);
+    return events;
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/widgets/widgets.dart';
+import '../../payments/models/payment.dart';
+import '../../payments/presentation/checkout_screen.dart';
 import '../models/event_model.dart';
 
 /// Screen displaying detailed information about an event.
@@ -142,7 +144,7 @@ class EventDetailsScreen extends StatelessWidget {
       ),
       // Bottom bar with price and buy button
       bottomNavigationBar: _BottomBuyBar(
-        price: 10.00,
+        priceInCents: event.priceInCents,
         onBuyPressed: () {
           _showBuyTicketSheet(context);
         },
@@ -244,13 +246,18 @@ class _InfoCard extends StatelessWidget {
 
 /// Bottom bar with price display and buy button.
 class _BottomBuyBar extends StatelessWidget {
-  final double price;
+  final int? priceInCents;
   final VoidCallback onBuyPressed;
 
   const _BottomBuyBar({
-    required this.price,
+    required this.priceInCents,
     required this.onBuyPressed,
   });
+
+  String get _formattedPrice {
+    if (priceInCents == null || priceInCents == 0) return 'Free';
+    return '\$${(priceInCents! / 100).toStringAsFixed(2)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +294,7 @@ class _BottomBuyBar extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '\$${price.toStringAsFixed(2)}',
+                _formattedPrice,
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: colorScheme.primary,
@@ -340,10 +347,15 @@ class _BuyTicketSheet extends StatefulWidget {
 
 class _BuyTicketSheetState extends State<_BuyTicketSheet> {
   int _quantity = 1;
-  static const double _pricePerTicket = 10.00;
   static const int _maxTickets = 10;
 
-  double get _totalPrice => _quantity * _pricePerTicket;
+  int get _pricePerTicketCents => widget.event.priceInCents ?? 0;
+  int get _totalPriceCents => _quantity * _pricePerTicketCents;
+
+  String _formatPrice(int cents) {
+    if (cents == 0) return 'Free';
+    return '\$${(cents / 100).toStringAsFixed(2)}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -440,7 +452,7 @@ class _BuyTicketSheetState extends State<_BuyTicketSheet> {
                   ),
                 ),
                 Text(
-                  '\$${_totalPrice.toStringAsFixed(2)}',
+                  _formatPrice(_totalPriceCents),
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: colorScheme.primary,
@@ -451,24 +463,30 @@ class _BuyTicketSheetState extends State<_BuyTicketSheet> {
           ),
           const SizedBox(height: 20),
           FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Purchased $_quantity ticket${_quantity > 1 ? 's' : ''} for \$${_totalPrice.toStringAsFixed(2)}'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
+            onPressed: _totalPriceCents > 0
+                ? () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CheckoutScreen(
+                          event: widget.event,
+                          amountCents: _totalPriceCents,
+                          paymentType: PaymentType.primaryPurchase,
+                          quantity: _quantity,
+                        ),
+                      ),
+                    );
+                  }
+                : null,
             style: FilledButton.styleFrom(
               minimumSize: const Size.fromHeight(56),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text(
-              'Confirm Purchase',
-              style: TextStyle(
+            child: Text(
+              _totalPriceCents > 0 ? 'Continue to Payment' : 'Free - Get Ticket',
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),

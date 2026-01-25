@@ -6,6 +6,9 @@ import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
 import '../models/ticket.dart';
 
+/// Payment method for POS sales.
+enum POSPaymentMethod { card, cash }
+
 /// Point of Sale screen for staff to sell tickets on the spot.
 class SellTicketScreen extends ConsumerStatefulWidget {
   final EventModel event;
@@ -25,6 +28,8 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
   bool _isLoading = false;
   Ticket? _lastSoldTicket;
   int _ticketsSoldThisSession = 0;
+  POSPaymentMethod _paymentMethod = POSPaymentMethod.cash;
+  bool _isProcessingPayment = false;
 
   int get _ticketPrice => widget.event.priceInCents ?? 0;
 
@@ -38,6 +43,12 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
 
   Future<void> _sellTicket() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // For card payments, process payment first
+    if (_paymentMethod == POSPaymentMethod.card) {
+      final paymentSuccess = await _processCardPayment();
+      if (!paymentSuccess) return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -111,6 +122,75 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
       }
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  /// Process card payment using Stripe Payment Sheet.
+  Future<bool> _processCardPayment() async {
+    setState(() => _isProcessingPayment = true);
+
+    try {
+      // Initialize payment using the payment provider
+      final success = await ref.read(paymentProcessProvider.notifier).initializeVendorPOS(
+        eventId: widget.event.id,
+        amountCents: _ticketPrice,
+        metadata: {
+          'customer_name': _nameController.text.trim(),
+          'customer_email': _emailController.text.trim(),
+          'payment_method': 'card',
+          'sale_type': 'vendor_pos',
+        },
+      );
+
+      if (!success) {
+        final error = ref.read(paymentProcessProvider).error;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error ?? 'Failed to initialize payment'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return false;
+      }
+
+      // Present the Stripe Payment Sheet
+      final paymentSuccess = await ref.read(paymentProcessProvider.notifier).presentPaymentSheet();
+
+      if (!paymentSuccess) {
+        final error = ref.read(paymentProcessProvider).error;
+        if (error != null && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(error),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        // User cancelled or payment failed
+        return false;
+      }
+
+      // Payment successful
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Payment error: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return false;
+    } finally {
+      setState(() => _isProcessingPayment = false);
+      // Clear payment state for next transaction
+      ref.read(paymentProcessProvider.notifier).clear();
     }
   }
 
@@ -264,22 +344,62 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // Payment method selector
+                  Text(
+                    'Payment Method',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PaymentMethodCard(
+                          icon: Icons.credit_card,
+                          label: 'Card',
+                          sublabel: 'Apple/Google Pay',
+                          isSelected: _paymentMethod == POSPaymentMethod.card,
+                          onTap: () => setState(() => _paymentMethod = POSPaymentMethod.card),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _PaymentMethodCard(
+                          icon: Icons.payments_outlined,
+                          label: 'Cash',
+                          sublabel: 'Collect manually',
+                          isSelected: _paymentMethod == POSPaymentMethod.cash,
+                          onTap: () => setState(() => _paymentMethod = POSPaymentMethod.cash),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 32),
 
                   // Sell button
                   FilledButton.icon(
-                    onPressed: _isLoading ? null : _sellTicket,
-                    icon: _isLoading
+                    onPressed: (_isLoading || _isProcessingPayment) ? null : _sellTicket,
+                    icon: (_isLoading || _isProcessingPayment)
                         ? const SizedBox(
                             width: 20,
                             height: 20,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.point_of_sale),
+                        : Icon(_paymentMethod == POSPaymentMethod.card
+                            ? Icons.credit_card
+                            : Icons.point_of_sale),
                     label: Text(
-                      _isLoading
-                          ? 'Processing...'
-                          : 'Sell Ticket - ${widget.event.formattedPrice}',
+                      _isProcessingPayment
+                          ? 'Processing Payment...'
+                          : _isLoading
+                              ? 'Creating Ticket...'
+                              : _paymentMethod == POSPaymentMethod.card
+                                  ? 'Charge ${widget.event.formattedPrice}'
+                                  : 'Sell Ticket - ${widget.event.formattedPrice}',
                     ),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -350,6 +470,76 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
                 ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card widget for selecting payment method.
+class _PaymentMethodCard extends StatelessWidget {
+  const _PaymentMethodCard({
+    required this.icon,
+    required this.label,
+    required this.sublabel,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String sublabel;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? colorScheme.primaryContainer
+              : colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? colorScheme.primary
+                : colorScheme.outline.withValues(alpha: 0.3),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 28,
+              color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              sublabel,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isSelected
+                    ? colorScheme.primary.withValues(alpha: 0.8)
+                    : colorScheme.onSurfaceVariant,
+              ),
+            ),
           ],
         ),
       ),

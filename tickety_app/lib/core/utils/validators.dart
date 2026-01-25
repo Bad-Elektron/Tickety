@@ -23,7 +23,8 @@ abstract class Validators {
     return null;
   }
 
-  /// Validates a password meets minimum requirements.
+  /// Validates a password meets complexity requirements.
+  /// Requires: 8+ chars, uppercase, lowercase, and a number.
   static String? password(String? value) {
     if (value == null || value.isEmpty) {
       return 'Password is required';
@@ -33,6 +34,33 @@ abstract class Validators {
     }
     if (value.length > 128) {
       return 'Password is too long';
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(value)) {
+      return 'Must contain an uppercase letter';
+    }
+    if (!RegExp(r'[a-z]').hasMatch(value)) {
+      return 'Must contain a lowercase letter';
+    }
+    if (!RegExp(r'[0-9]').hasMatch(value)) {
+      return 'Must contain a number';
+    }
+    return null;
+  }
+
+  /// Validates a Cardano wallet address (Bech32 format).
+  /// Accepts mainnet (addr1...) and testnet (addr_test1...) addresses.
+  static String? walletAddress(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Wallet address is required';
+    }
+    // Cardano Shelley addresses use Bech32 encoding
+    // Mainnet: starts with "addr1", Testnet: starts with "addr_test1"
+    // Bech32 charset: lowercase a-z (except b, i, o) and 0-9
+    final cardanoRegex = RegExp(
+      r'^(addr1[ac-hj-np-z02-9]{53,}|addr_test1[ac-hj-np-z02-9]{50,})$',
+    );
+    if (!cardanoRegex.hasMatch(value)) {
+      return 'Invalid Cardano wallet address';
     }
     return null;
   }

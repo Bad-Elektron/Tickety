@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
+import '../../../shared/widgets/widgets.dart';
 import '../../staff/models/ticket.dart';
 import 'ticket_screen.dart';
 
@@ -68,39 +69,9 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
     ThemeData theme,
     ColorScheme colorScheme,
   ) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: colorScheme.error,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Failed to load tickets',
-              style: theme.textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              error,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: () => ref.read(myTicketsProvider.notifier).refresh(),
-              icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
-            ),
-          ],
-        ),
-      ),
+    return ErrorDisplay.generic(
+      message: error,
+      onRetry: () => ref.read(myTicketsProvider.notifier).refresh(),
     );
   }
 

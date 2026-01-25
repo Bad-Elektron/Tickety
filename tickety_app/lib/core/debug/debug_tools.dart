@@ -1,7 +1,10 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+
+import 'debug_menu.dart';
 
 /// Debug metrics data class.
 class DebugMetrics {
@@ -106,21 +109,26 @@ class _DebugOverlayState extends State<DebugOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) {
+    // Always show debug FAB in debug builds, regardless of debug mode toggle
+    if (!kDebugMode && !widget.enabled) {
       return widget.child;
     }
 
     return Stack(
       children: [
         widget.child,
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: RepaintBoundary(
-            child: DebugToolsBar(metricsNotifier: _metricsNotifier),
+        // Debug FAB - always visible in debug builds for quick access
+        if (kDebugMode) const DebugFab(),
+        // FPS overlay - only when debug mode toggle is enabled
+        if (widget.enabled)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: RepaintBoundary(
+              child: DebugToolsBar(metricsNotifier: _metricsNotifier),
+            ),
           ),
-        ),
       ],
     );
   }

@@ -12,6 +12,8 @@ export 'gradient_events_button.dart';
 export 'gradient_search_button.dart';
 export 'gradient_ticket_button.dart';
 export 'gradient_wallet_button.dart';
+export 'nfc_tap_view.dart';
+export 'qr_scanner_view.dart';
 export 'scanner_button.dart';
 export 'tag_selector.dart';
 export 'ticket_info_card.dart';

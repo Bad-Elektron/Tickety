@@ -1,0 +1,3 @@
+# Disable automatic JWT verification - we verify manually in function code
+# This allows both ES256 and HS256 JWTs to reach our function
+verify_jwt = false

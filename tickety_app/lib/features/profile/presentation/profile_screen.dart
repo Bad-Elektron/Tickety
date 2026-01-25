@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/debug/debug.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 // Hide AuthState from state.dart to avoid collision with Riverpod's AuthState
@@ -123,8 +125,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ),
               ],
             ),
-            const ProfileSectionHeader(title: 'Developer'),
-            _DeveloperSection(appState: _appState),
+            if (kDebugMode) ...[
+              const ProfileSectionHeader(title: 'Developer'),
+              _DeveloperSection(appState: _appState),
+            ],
             const SizedBox(height: 32),
             _LogoutButton(authState: authState),
             const SizedBox(height: 40),
@@ -304,95 +308,87 @@ class _DeveloperSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Only show in debug builds
+    if (!kDebugMode) {
+      return const SizedBox.shrink();
+    }
+
     final theme = Theme.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Card(
         elevation: 0,
-        color: theme.colorScheme.surfaceContainerLow,
+        color: Colors.orange.withValues(alpha: 0.1),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: Colors.orange.withValues(alpha: 0.3),
+          ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Debug Mode Toggle
-              Row(
-                children: [
-                  Icon(
-                    Icons.bug_report_outlined,
-                    color: theme.colorScheme.onSurfaceVariant,
-                    size: 22,
+        child: InkWell(
+          onTap: () => DebugMenu.show(context),
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.orange,
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Debug Mode',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
-                          ),
+                  child: const Icon(
+                    Icons.bug_report,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Debug Menu',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
-                        Text(
-                          'Shows FPS overlay',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'FPS overlay, test screens, dev tools',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: appState.debugMode,
-                    onChanged: (value) => appState.debugMode = value,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Divider(
-                height: 1,
-                color: theme.colorScheme.outlineVariant,
-              ),
-              const SizedBox(height: 16),
-              // Account Tier Selector
-              Row(
-                children: [
-                  Icon(
-                    Icons.workspace_premium_outlined,
-                    color: theme.colorScheme.onSurfaceVariant,
-                    size: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Account Tier',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
+                      ),
+                      const SizedBox(height: 6),
+                      // Quick status indicators
+                      Row(
+                        children: [
+                          _StatusChip(
+                            label: 'FPS ${appState.debugMode ? "ON" : "OFF"}',
+                            isActive: appState.debugMode,
                           ),
-                        ),
-                        Text(
-                          'Simulated tier level',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                          const SizedBox(width: 8),
+                          _StatusChip(
+                            label: appState.tier.label,
+                            isActive: appState.tier != AccountTier.base,
+                            color: Color(appState.tier.color),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Three-way tier toggle
-              _TierToggle(appState: appState),
-            ],
+                ),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -400,85 +396,36 @@ class _DeveloperSection extends StatelessWidget {
   }
 }
 
-class _TierToggle extends StatelessWidget {
-  const _TierToggle({required this.appState});
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({
+    required this.label,
+    required this.isActive,
+    this.color,
+  });
 
-  final AppState appState;
+  final String label;
+  final bool isActive;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final chipColor = color ?? (isActive ? Colors.green : Colors.grey);
 
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        color: chipColor.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(4),
       ),
-      padding: const EdgeInsets.all(4),
-      child: Row(
-        children: AccountTier.values.map((tier) {
-          final isSelected = appState.tier == tier;
-          final tierColor = Color(tier.color);
-
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => appState.tier = tier,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeInOut,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? tierColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: isSelected
-                      ? [
-                          BoxShadow(
-                            color: tierColor.withValues(alpha: 0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      _getTierIcon(tier),
-                      size: 20,
-                      color: isSelected
-                          ? Colors.white
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      tier.label,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected
-                            ? Colors.white
-                            : theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }).toList(),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: chipColor,
+        ),
       ),
     );
-  }
-
-  IconData _getTierIcon(AccountTier tier) {
-    switch (tier) {
-      case AccountTier.base:
-        return Icons.person_outline;
-      case AccountTier.pro:
-        return Icons.star_outline;
-      case AccountTier.enterprise:
-        return Icons.diamond_outlined;
-    }
   }
 }
 

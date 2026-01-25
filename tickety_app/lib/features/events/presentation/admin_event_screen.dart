@@ -3,13 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../staff/data/ticket_repository.dart';
 import '../../staff/data/staff_repository.dart';
 import '../../staff/models/staff_role.dart';
 import '../models/event_model.dart';
 import 'event_data_screen.dart';
 
 /// Admin screen for managing an event created by the user.
-class AdminEventScreen extends StatelessWidget {
+class AdminEventScreen extends ConsumerStatefulWidget {
   final EventModel event;
 
   const AdminEventScreen({
@@ -18,7 +19,23 @@ class AdminEventScreen extends StatelessWidget {
   });
 
   @override
+  ConsumerState<AdminEventScreen> createState() => _AdminEventScreenState();
+}
+
+class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Load ticket stats when screen opens
+    Future.microtask(() {
+      ref.read(ticketProvider.notifier).loadStats(widget.event.id);
+      ref.read(staffProvider.notifier).loadStaff(widget.event.id);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final event = widget.event;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();
@@ -107,7 +124,10 @@ class AdminEventScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 24),
                   // Stats cards
-                  _StatsSection(),
+                  _StatsSection(
+                    ticketStats: ref.watch(ticketProvider).stats,
+                    staffCount: ref.watch(staffProvider).staff.length,
+                  ),
                   const SizedBox(height: 24),
                   // Admin actions
                   Text(
@@ -236,12 +256,20 @@ class AdminEventScreen extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _ManageUshersSheet(event: event),
+      builder: (context) => _ManageUshersSheet(event: widget.event),
     );
   }
 }
 
 class _StatsSection extends StatelessWidget {
+  final TicketStats? ticketStats;
+  final int staffCount;
+
+  const _StatsSection({
+    required this.ticketStats,
+    required this.staffCount,
+  });
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -251,8 +279,7 @@ class _StatsSection extends StatelessWidget {
         Expanded(
           child: _StatCard(
             label: 'Tickets Sold',
-            value: '53',
-            total: '100',
+            value: '${ticketStats?.totalSold ?? 0}',
             color: colorScheme.primary,
           ),
         ),
@@ -260,15 +287,15 @@ class _StatsSection extends StatelessWidget {
         Expanded(
           child: _StatCard(
             label: 'Revenue',
-            value: '\$530',
+            value: ticketStats?.formattedRevenue ?? '\$0.00',
             color: colorScheme.secondary,
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
-            label: 'Ushers',
-            value: '2',
+            label: 'Staff',
+            value: '$staffCount',
             color: colorScheme.tertiary,
           ),
         ),

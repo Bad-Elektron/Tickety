@@ -5,6 +5,18 @@ allprojects {
     }
 }
 
+// Suppress Kotlin deprecation warnings from dependencies
+subprojects {
+    afterEvaluate {
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                allWarningsAsErrors.set(false)
+                freeCompilerArgs.add("-Xsuppress-warning=DEPRECATION")
+            }
+        }
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")

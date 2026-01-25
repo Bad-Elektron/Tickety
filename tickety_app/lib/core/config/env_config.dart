@@ -28,6 +28,18 @@ abstract class EnvConfig {
     return key;
   }
 
+  /// The Stripe publishable key for client-side payment processing.
+  static String get stripePublishableKey {
+    final key = dotenv.env['STRIPE_PUBLISHABLE_KEY'];
+    if (key == null || key.isEmpty || key == 'pk_test_your_publishable_key_here') {
+      throw StateError(
+        'STRIPE_PUBLISHABLE_KEY is not configured. '
+        'Please update your .env file with your Stripe publishable key.',
+      );
+    }
+    return key;
+  }
+
   /// Loads environment variables from the .env file.
   ///
   /// Call this once at app startup before accessing any env values.

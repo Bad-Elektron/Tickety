@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/utils/utils.dart';
 import '../../events/models/event_model.dart';
 import '../../events/presentation/event_details_screen.dart';
 import '../data/event_search_repository.dart';
@@ -15,7 +16,7 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
-  final _repository = LocalEventSearchRepository();
+  final _repository = SupabaseEventSearchRepository();
 
   List<EventModel> _results = [];
   List<EventModel> _trending = [];
@@ -49,7 +50,10 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Future<void> _performSearch(String query) async {
-    if (query.isEmpty) {
+    // Sanitize query to remove control characters and normalize whitespace
+    final sanitizedQuery = Validators.sanitize(query);
+
+    if (sanitizedQuery.isEmpty) {
       setState(() {
         _results = [];
         _hasSearched = false;
@@ -59,8 +63,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
     setState(() => _isLoading = true);
 
-    final results = await _repository.search(query);
-    await _repository.saveSearch(query);
+    final results = await _repository.search(sanitizedQuery);
+    await _repository.saveSearch(sanitizedQuery);
 
     if (mounted) {
       setState(() {

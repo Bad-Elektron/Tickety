@@ -1,24 +1,57 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/config/config.dart';
 import 'core/debug/debug.dart';
+import 'core/errors/errors.dart';
 import 'core/services/services.dart';
 import 'core/state/state.dart';
 import 'features/events/presentation/events_home_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Initialize error handling first
+  ErrorHandler.init();
 
-  // Initialize environment configuration
-  await EnvConfig.initialize();
+  // Run app in guarded zone to catch async errors
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase client
-  await SupabaseService.initialize();
+    AppLogger.info('Starting Tickety app', tag: 'Main');
 
-  // Wrap with ProviderScope for Riverpod state management
-  runApp(const ProviderScope(child: TicketyApp()));
+    // Initialize environment configuration
+    await EnvConfig.initialize();
+    AppLogger.info('Environment config loaded', tag: 'Main');
+
+    // Initialize Supabase client
+    await SupabaseService.initialize();
+    AppLogger.info('Supabase initialized', tag: 'Main');
+
+    // Initialize Stripe for payments (non-blocking - app works without it)
+    try {
+      await StripeService.initialize();
+      AppLogger.info('Stripe initialized', tag: 'Main');
+    } catch (e, stack) {
+      AppLogger.error(
+        'Failed to initialize Stripe - payments will be unavailable',
+        error: e,
+        stackTrace: stack,
+        tag: 'Main',
+      );
+    }
+
+    // Wrap with ProviderScope for Riverpod state management
+    runApp(const ProviderScope(child: TicketyApp()));
+  }, (error, stack) {
+    AppLogger.error(
+      'Uncaught error in root zone',
+      error: error,
+      stackTrace: stack,
+      tag: 'Main',
+    );
+  });
 }
 
 /// Custom scroll behavior that enables mouse drag scrolling.
@@ -67,6 +100,8 @@ class _TicketyAppState extends State<TicketyApp> {
     return MaterialApp(
       title: 'Tickety',
       debugShowCheckedModeBanner: false,
+      // Navigator key for debug menu access from outside Navigator tree
+      navigatorKey: debugNavigatorKey,
       // Enable mouse drag scrolling
       scrollBehavior: AppScrollBehavior(),
       theme: _buildLightTheme(),

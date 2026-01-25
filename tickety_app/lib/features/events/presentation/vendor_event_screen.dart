@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/ticket_provider.dart';
 import '../models/event_model.dart';
 import 'usher_event_screen.dart';
 
 /// Screen for vendors to sell tickets at an event.
 ///
 /// Features a point-of-sale interface for on-the-spot ticket sales.
-class VendorEventScreen extends StatefulWidget {
+class VendorEventScreen extends ConsumerStatefulWidget {
   const VendorEventScreen({
     super.key,
     required this.event,
@@ -18,10 +20,10 @@ class VendorEventScreen extends StatefulWidget {
   final bool canSwitchToUsher;
 
   @override
-  State<VendorEventScreen> createState() => _VendorEventScreenState();
+  ConsumerState<VendorEventScreen> createState() => _VendorEventScreenState();
 }
 
-class _VendorEventScreenState extends State<VendorEventScreen> {
+class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -46,48 +48,103 @@ class _VendorEventScreenState extends State<VendorEventScreen> {
 
     setState(() => _isLoading = true);
 
-    // Simulate network delay
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-
-    // Generate a fake ticket number
-    final ticketNumber = 'TKT-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}-${(_ticketsSoldThisSession + 1).toString().padLeft(4, '0')}';
-
-    setState(() {
-      _lastSoldTicket = _SoldTicket(
-        ticketNumber: ticketNumber,
-        customerName: _nameController.text.trim().isNotEmpty
+    try {
+      // Call the real ticket repository to create a ticket in the database
+      final ticket = await ref.read(ticketProvider.notifier).sellTicket(
+        eventId: widget.event.id,
+        ownerName: _nameController.text.trim().isNotEmpty
             ? _nameController.text.trim()
             : null,
+        ownerEmail: _emailController.text.trim().isNotEmpty
+            ? _emailController.text.trim()
+            : null,
+        priceCents: _ticketPrice,
+        walletAddress: _walletController.text.trim().isNotEmpty
+            ? _walletController.text.trim()
+            : null,
       );
-      _ticketsSoldThisSession++;
-      _isLoading = false;
-    });
 
-    // Clear form for next sale
-    _nameController.clear();
-    _emailController.clear();
-    _walletController.clear();
+      if (ticket != null) {
+        setState(() {
+          _lastSoldTicket = _SoldTicket(
+            ticketNumber: ticket.ticketNumber,
+            customerName: ticket.ownerName,
+          );
+          _ticketsSoldThisSession++;
+          _isLoading = false;
+        });
 
-    HapticFeedback.mediumImpact();
+        // Clear form for next sale
+        _nameController.clear();
+        _emailController.clear();
+        _walletController.clear();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(Icons.check_circle, color: Colors.white),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text('Ticket $ticketNumber sold!'),
+        HapticFeedback.mediumImpact();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Ticket ${ticket.ticketNumber} sold!'),
+                  ),
+                ],
               ),
-            ],
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+        }
+      } else {
+        // Sale failed
+        setState(() => _isLoading = false);
+        if (mounted) {
+          final error = ref.read(ticketProvider).error;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(error ?? 'Failed to sell ticket'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Error: $e'),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
           ),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          margin: const EdgeInsets.all(16),
-        ),
-      );
+        );
+      }
     }
   }
 

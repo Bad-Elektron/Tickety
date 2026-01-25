@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/graphics/graphics.dart';
 import 'event_category.dart';
+import 'event_tag.dart';
 
 /// Represents an event that can be displayed in the application.
 ///
@@ -52,6 +53,9 @@ class EventModel {
   /// Category or type of the event (e.g., "Concert", "Conference").
   final String? category;
 
+  /// Tags applied to this event (tag IDs).
+  final List<String> tags;
+
   /// Price in the smallest currency unit (e.g., cents).
   /// Null means free or price not available.
   final int? priceInCents;
@@ -73,6 +77,7 @@ class EventModel {
     this.imageUrl,
     this.customNoiseConfig,
     this.category,
+    this.tags = const [],
     this.priceInCents,
     this.currency = 'USD',
   });
@@ -97,6 +102,18 @@ class EventModel {
   /// Returns the parsed [EventCategory] for this event.
   /// Returns null if the category string doesn't match any known category.
   EventCategory? get eventCategory => EventCategory.fromString(category);
+
+  /// Returns the [EventTag] objects for this event's tags.
+  List<EventTag> get eventTags {
+    return tags
+        .map((tagId) =>
+            PredefinedTags.all.where((t) => t.id == tagId).firstOrNull)
+        .whereType<EventTag>()
+        .toList();
+  }
+
+  /// Returns true if this event has the specified tag.
+  bool hasTag(String tagId) => tags.contains(tagId);
 
   /// Formatted price string.
   String get formattedPrice {
@@ -138,6 +155,7 @@ class EventModel {
     int? noiseSeed,
     NoiseConfig? customNoiseConfig,
     String? category,
+    List<String>? tags,
     int? priceInCents,
     String? currency,
   }) {
@@ -155,6 +173,7 @@ class EventModel {
       noiseSeed: noiseSeed ?? this.noiseSeed,
       customNoiseConfig: customNoiseConfig ?? this.customNoiseConfig,
       category: category ?? this.category,
+      tags: tags ?? this.tags,
       priceInCents: priceInCents ?? this.priceInCents,
       currency: currency ?? this.currency,
     );

@@ -47,6 +47,18 @@ dependencies:
   # State management
   flutter_riverpod: ^2.6.1
 
+  # QR code scanning
+  mobile_scanner: ^5.1.1
+
+  # NFC for tap-to-check-in (temporarily disabled for Android build compatibility)
+  # nfc_manager: ^4.1.1
+
+  # Stripe payments
+  flutter_stripe: ^11.3.0
+
+  # URL launcher for Stripe Connect onboarding
+  url_launcher: ^6.2.5
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -57,6 +69,9 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # Mocking for tests
+  mocktail: ^1.0.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

@@ -10,6 +10,12 @@ import '../models/event_model.dart';
 abstract class EventMapper {
   /// Creates an [EventModel] from a Supabase JSON response.
   static EventModel fromJson(Map<String, dynamic> json) {
+    // Parse tags - support both new tags array and legacy category field
+    final tagsJson = json['tags'];
+    final List<String> tags = tagsJson is List
+        ? tagsJson.cast<String>()
+        : (json['category'] != null ? [json['category'] as String] : []);
+
     return EventModel(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -24,6 +30,7 @@ abstract class EventMapper {
       noiseSeed: json['noise_seed'] as int? ?? 0,
       customNoiseConfig: _parseNoiseConfig(json['custom_noise_config']),
       category: json['category'] as String?,
+      tags: tags,
       priceInCents: json['price_in_cents'] as int?,
       currency: json['currency'] as String? ?? 'USD',
     );
@@ -43,7 +50,9 @@ abstract class EventMapper {
       'image_url': event.imageUrl,
       'noise_seed': event.noiseSeed,
       'custom_noise_config': _serializeNoiseConfig(event.customNoiseConfig),
-      'category': event.category,
+      // Store both tags array and category for backward compatibility
+      'tags': event.tags,
+      'category': event.tags.isNotEmpty ? event.tags.first : event.category,
       'price_in_cents': event.priceInCents,
       'currency': event.currency,
     };

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/services/services.dart';
+import '../../../core/utils/utils.dart';
 import '../../auth/auth.dart';
 import '../data/data.dart';
 import '../models/event_tag.dart';
@@ -87,7 +88,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     if (!mounted) return;
 
-    if (_nameController.text.trim().isEmpty) {
+    if (Validators.sanitize(_nameController.text).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter an event name'),
@@ -114,28 +115,29 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final priceDollars = double.tryParse(priceText) ?? 0;
       final priceCents = (priceDollars * 100).round();
 
-      // Get category from first selected tag
-      final category = _selectedTags.isNotEmpty
-          ? _selectedTags.first.label
-          : null;
+      // Get all selected tag IDs
+      final tagIds = _selectedTags.map((tag) => tag.id).toList();
+
+      // Sanitize all text inputs to prevent XSS/injection
+      final sanitizedTitle = Validators.sanitize(_nameController.text);
+      final sanitizedSubtitle = Validators.sanitize(_subtitleController.text);
+      final sanitizedDescription = Validators.sanitize(_descriptionController.text);
+      final sanitizedVenue = Validators.sanitize(_venueController.text);
+      final sanitizedCity = Validators.sanitize(_cityController.text);
 
       await _repository.createEventFromParams(
-        title: _nameController.text.trim(),
-        subtitle: _subtitleController.text.trim().isNotEmpty
-            ? _subtitleController.text.trim()
+        title: sanitizedTitle,
+        subtitle: sanitizedSubtitle.isNotEmpty
+            ? sanitizedSubtitle
             : 'An exciting event',
-        description: _descriptionController.text.trim().isNotEmpty
-            ? _descriptionController.text.trim()
+        description: sanitizedDescription.isNotEmpty
+            ? sanitizedDescription
             : null,
         date: eventDateTime,
-        venue: _venueController.text.trim().isNotEmpty
-            ? _venueController.text.trim()
-            : null,
-        city: _cityController.text.trim().isNotEmpty
-            ? _cityController.text.trim()
-            : null,
+        venue: sanitizedVenue.isNotEmpty ? sanitizedVenue : null,
+        city: sanitizedCity.isNotEmpty ? sanitizedCity : null,
         priceInCents: priceCents > 0 ? priceCents : null,
-        category: category,
+        tags: tagIds,
         noiseSeed: Random().nextInt(10000),
       );
 

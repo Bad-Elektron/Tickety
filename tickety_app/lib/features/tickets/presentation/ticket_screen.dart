@@ -4,31 +4,43 @@ import '../../../core/graphics/graphics.dart';
 import '../../staff/models/ticket.dart';
 
 /// Screen displaying details of a single ticket.
-class TicketScreen extends StatelessWidget {
+///
+/// Supports NFC broadcasting for tap-to-check-in on mobile devices.
+class TicketScreen extends StatefulWidget {
   const TicketScreen({super.key, required this.ticket});
 
   final Ticket ticket;
 
+  @override
+  State<TicketScreen> createState() => _TicketScreenState();
+}
+
+class _TicketScreenState extends State<TicketScreen> {
+  bool _nfcAvailable = false;
+  bool _nfcBroadcasting = false;
+
   // Helper getters to extract event data
   String get _eventTitle =>
-      ticket.eventData?['title'] as String? ?? 'Unknown Event';
+      widget.ticket.eventData?['title'] as String? ?? 'Unknown Event';
 
-  String? get _eventSubtitle => ticket.eventData?['subtitle'] as String?;
+  String? get _eventSubtitle =>
+      widget.ticket.eventData?['subtitle'] as String?;
 
-  String? get _venue => ticket.eventData?['venue'] as String?;
+  String? get _venue => widget.ticket.eventData?['venue'] as String?;
 
-  String? get _city => ticket.eventData?['city'] as String?;
+  String? get _city => widget.ticket.eventData?['city'] as String?;
 
-  String? get _country => ticket.eventData?['country'] as String?;
+  String? get _country => widget.ticket.eventData?['country'] as String?;
 
   DateTime? get _eventDate {
-    final dateStr = ticket.eventData?['date'] as String?;
+    final dateStr = widget.ticket.eventData?['date'] as String?;
     if (dateStr == null) return null;
     return DateTime.tryParse(dateStr);
   }
 
   int get _noiseSeed =>
-      ticket.eventData?['noise_seed'] as int? ?? ticket.ticketNumber.hashCode;
+      widget.ticket.eventData?['noise_seed'] as int? ??
+      widget.ticket.ticketNumber.hashCode;
 
   String? get _fullAddress {
     final parts = <String>[];
@@ -36,6 +48,34 @@ class TicketScreen extends StatelessWidget {
     if (_city != null) parts.add(_city!);
     if (_country != null) parts.add(_country!);
     return parts.isNotEmpty ? parts.join(', ') : null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // NFC temporarily disabled
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  void _toggleNfcBroadcast() {
+    // NFC temporarily disabled
+    _showMessage('NFC is temporarily unavailable. Please use QR code.');
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   void _openNavigation(BuildContext context) {
@@ -73,7 +113,13 @@ class TicketScreen extends StatelessWidget {
             expandedHeight: 200,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              background: _TicketHeader(noiseSeed: _noiseSeed),
+              background: _TicketHeader(
+                noiseSeed: _noiseSeed,
+                ticketNumber: widget.ticket.ticketNumber,
+                nfcAvailable: _nfcAvailable,
+                nfcBroadcasting: _nfcBroadcasting,
+                onNfcToggle: _toggleNfcBroadcast,
+              ),
             ),
           ),
           // Content
@@ -101,12 +147,21 @@ class TicketScreen extends StatelessWidget {
                   ],
                   const SizedBox(height: 24),
 
+                  // NFC Check-in card (if available and ticket is valid)
+                  if (_nfcAvailable && widget.ticket.isValid) ...[
+                    _NfcCheckInCard(
+                      isActive: _nfcBroadcasting,
+                      onToggle: _toggleNfcBroadcast,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   // Ticket number
                   _InfoCard(
                     icon: Icons.confirmation_number_outlined,
                     label: 'Ticket Number',
-                    value: ticket.ticketNumber,
-                    trailing: _StatusBadge(ticket: ticket),
+                    value: widget.ticket.ticketNumber,
+                    trailing: _StatusBadge(ticket: widget.ticket),
                   ),
                   const SizedBox(height: 12),
 
@@ -159,25 +214,25 @@ class TicketScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         _DetailRow(
                           label: 'Price Paid',
-                          value: ticket.formattedPrice,
+                          value: widget.ticket.formattedPrice,
                         ),
                         const SizedBox(height: 8),
                         _DetailRow(
                           label: 'Purchased',
-                          value: _formatDate(ticket.soldAt),
+                          value: _formatDate(widget.ticket.soldAt),
                         ),
-                        if (ticket.ownerName != null) ...[
+                        if (widget.ticket.ownerName != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
                             label: 'Holder',
-                            value: ticket.ownerName!,
+                            value: widget.ticket.ownerName!,
                           ),
                         ],
-                        if (ticket.ownerEmail != null) ...[
+                        if (widget.ticket.ownerEmail != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
                             label: 'Email',
-                            value: ticket.ownerEmail!,
+                            value: widget.ticket.ownerEmail!,
                           ),
                         ],
                       ],
@@ -185,7 +240,7 @@ class TicketScreen extends StatelessWidget {
                   ),
 
                   // Check-in info if used
-                  if (ticket.isUsed && ticket.checkedInAt != null) ...[
+                  if (widget.ticket.isUsed && widget.ticket.checkedInAt != null) ...[
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -223,7 +278,7 @@ class TicketScreen extends StatelessWidget {
                                   ),
                                 ),
                                 Text(
-                                  _formatDateTime(ticket.checkedInAt!),
+                                  _formatDateTime(widget.ticket.checkedInAt!),
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.green.shade700,
                                   ),
@@ -262,6 +317,204 @@ class TicketScreen extends StatelessWidget {
     final minute = date.minute.toString().padLeft(2, '0');
     final period = date.hour >= 12 ? 'PM' : 'AM';
     return '${_formatDate(date)} at $hour:$minute $period';
+  }
+}
+
+/// NFC tap-to-check-in card.
+class _NfcCheckInCard extends StatelessWidget {
+  const _NfcCheckInCard({
+    required this.isActive,
+    required this.onToggle,
+  });
+
+  final bool isActive;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: isActive
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colorScheme.primary,
+                  colorScheme.primary.withValues(alpha: 0.8),
+                ],
+              )
+            : null,
+        color: isActive ? null : colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: isActive
+            ? null
+            : Border.all(
+                color: colorScheme.outline.withValues(alpha: 0.3),
+              ),
+        boxShadow: isActive
+            ? [
+                BoxShadow(
+                  color: colorScheme.primary.withValues(alpha: 0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        children: [
+          // NFC icon with animation
+          _AnimatedNfcIcon(isActive: isActive),
+          const SizedBox(width: 16),
+          // Text
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isActive ? 'Ready to Tap' : 'Tap to Check In',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: isActive ? Colors.white : colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isActive
+                      ? 'Hold phone near usher device'
+                      : 'Enable NFC for instant check-in',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: isActive
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Toggle button
+          Switch(
+            value: isActive,
+            onChanged: (_) => onToggle(),
+            thumbColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.white;
+              }
+              return null;
+            }),
+            trackColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.white.withValues(alpha: 0.3);
+              }
+              return null;
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Animated NFC icon with pulse effect when active.
+class _AnimatedNfcIcon extends StatefulWidget {
+  const _AnimatedNfcIcon({required this.isActive});
+
+  final bool isActive;
+
+  @override
+  State<_AnimatedNfcIcon> createState() => _AnimatedNfcIconState();
+}
+
+class _AnimatedNfcIconState extends State<_AnimatedNfcIcon>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _animation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeOut),
+    );
+
+    if (widget.isActive) {
+      _controller.repeat();
+    }
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedNfcIcon oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) {
+      _controller.repeat();
+    } else if (!widget.isActive && oldWidget.isActive) {
+      _controller.stop();
+      _controller.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return SizedBox(
+      width: 48,
+      height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Pulse rings when active
+          if (widget.isActive)
+            AnimatedBuilder(
+              animation: _animation,
+              builder: (context, child) {
+                return Container(
+                  width: 48 + (16 * _animation.value),
+                  height: 48 + (16 * _animation.value),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 1.0 - _animation.value),
+                      width: 2,
+                    ),
+                  ),
+                );
+              },
+            ),
+          // Icon background
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: widget.isActive
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : colorScheme.primaryContainer.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.nfc_rounded,
+              size: 24,
+              color: widget.isActive ? Colors.white : colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -327,9 +580,19 @@ class _StatusBadge extends StatelessWidget {
 }
 
 class _TicketHeader extends StatelessWidget {
-  const _TicketHeader({required this.noiseSeed});
+  const _TicketHeader({
+    required this.noiseSeed,
+    required this.ticketNumber,
+    required this.nfcAvailable,
+    required this.nfcBroadcasting,
+    required this.onNfcToggle,
+  });
 
   final int noiseSeed;
+  final String ticketNumber;
+  final bool nfcAvailable;
+  final bool nfcBroadcasting;
+  final VoidCallback onNfcToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -349,27 +612,72 @@ class _TicketHeader extends StatelessWidget {
         ),
         // QR Code placeholder
         Center(
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    Icons.qr_code_2,
+                    size: 72,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ),
+              // NFC indicator when broadcasting
+              if (nfcBroadcasting) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'NFC Ready',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
-            ),
-            child: Center(
-              child: Icon(
-                Icons.qr_code_2,
-                size: 72,
-                color: Colors.grey.shade800,
-              ),
-            ),
+            ],
           ),
         ),
       ],

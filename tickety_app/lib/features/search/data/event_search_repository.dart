@@ -1,9 +1,11 @@
+import '../../../core/services/services.dart';
+import '../../events/data/event_mapper.dart';
 import '../../events/models/event_model.dart';
+import '../../events/models/event_tag.dart';
 
 /// Repository for searching events.
 ///
 /// This is structured to be easily extendable for database/API integration.
-/// Currently returns preloaded placeholder results.
 abstract class EventSearchRepository {
   /// Search events by query string.
   Future<List<EventModel>> search(String query);
@@ -18,8 +20,120 @@ abstract class EventSearchRepository {
   Future<void> saveSearch(String query);
 }
 
+/// Supabase implementation that searches real events from the database.
+class SupabaseEventSearchRepository implements EventSearchRepository {
+  static const _tableName = 'events';
+
+  final _client = SupabaseService.instance.client;
+  final List<String> _recentSearches = [];
+
+  /// Escapes special characters for PostgreSQL ILIKE patterns.
+  /// Prevents query injection via %, _, and \ characters.
+  String _escapeSearchQuery(String query) {
+    return query
+        .replaceAll(r'\', r'\\') // Escape backslash first
+        .replaceAll('%', r'\%') // Escape wildcard
+        .replaceAll('_', r'\_'); // Escape single-char wildcard
+  }
+
+  @override
+  Future<List<EventModel>> search(String query) async {
+    if (query.isEmpty) {
+      return [];
+    }
+
+    final lowerQuery = query.toLowerCase().trim();
+    // Escape special chars to prevent ILIKE injection
+    final escapedQuery = _escapeSearchQuery(lowerQuery);
+
+    // Search across multiple fields using OR conditions with ilike
+    // Supabase uses PostgreSQL's ilike for case-insensitive pattern matching
+    final response = await _client
+        .from(_tableName)
+        .select()
+        .isFilter('deleted_at', null)
+        .or('title.ilike.%$escapedQuery%,'
+            'subtitle.ilike.%$escapedQuery%,'
+            'category.ilike.%$escapedQuery%,'
+            'city.ilike.%$escapedQuery%,'
+            'venue.ilike.%$escapedQuery%,'
+            'description.ilike.%$escapedQuery%')
+        .order('date', ascending: true)
+        .limit(20);
+
+    final events = (response as List<dynamic>)
+        .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    // Also check for tag matches in-memory (since tags are stored as array)
+    // This handles the case where user searches for a tag label like "underground"
+    if (events.isEmpty) {
+      // Try searching by tags - get all upcoming events and filter by tags
+      final allResponse = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .order('date', ascending: true)
+          .limit(100);
+
+      final allEvents = (allResponse as List<dynamic>)
+          .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      // Filter by tag match
+      return allEvents.where((event) {
+        for (final tagId in event.tags) {
+          if (tagId.toLowerCase().contains(lowerQuery)) return true;
+          final tag = PredefinedTags.all.where((t) => t.id == tagId).firstOrNull;
+          if (tag != null && tag.label.toLowerCase().contains(lowerQuery)) {
+            return true;
+          }
+        }
+        return false;
+      }).toList();
+    }
+
+    return events;
+  }
+
+  @override
+  Future<List<EventModel>> getTrending() async {
+    // Get upcoming events, ordered by date (nearest first)
+    // In production, you might rank by ticket sales or views
+    final response = await _client
+        .from(_tableName)
+        .select()
+        .isFilter('deleted_at', null)
+        .gte('date', DateTime.now().toUtc().toIso8601String())
+        .order('date', ascending: true)
+        .limit(6);
+
+    return (response as List<dynamic>)
+        .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<String>> getRecentSearches() async {
+    // For now, keep recent searches in memory
+    // In production, you might store these in local storage or a user_searches table
+    return _recentSearches.take(5).toList();
+  }
+
+  @override
+  Future<void> saveSearch(String query) async {
+    if (query.isNotEmpty && !_recentSearches.contains(query)) {
+      _recentSearches.insert(0, query);
+      if (_recentSearches.length > 10) {
+        _recentSearches.removeLast();
+      }
+    }
+  }
+}
+
 /// In-memory implementation with placeholder data.
-/// Replace with DatabaseEventSearchRepository or ApiEventSearchRepository later.
+/// Kept for testing and fallback purposes.
 class LocalEventSearchRepository implements EventSearchRepository {
   final List<String> _recentSearches = [];
 
@@ -126,10 +240,28 @@ class LocalEventSearchRepository implements EventSearchRepository {
 
     final lowerQuery = query.toLowerCase();
     return _allEvents.where((event) {
-      return event.title.toLowerCase().contains(lowerQuery) ||
+      // Match title, subtitle, category, or location
+      if (event.title.toLowerCase().contains(lowerQuery) ||
           event.subtitle.toLowerCase().contains(lowerQuery) ||
           (event.category?.toLowerCase().contains(lowerQuery) ?? false) ||
-          (event.location?.toLowerCase().contains(lowerQuery) ?? false);
+          (event.location?.toLowerCase().contains(lowerQuery) ?? false)) {
+        return true;
+      }
+
+      // Match tags by ID or label
+      for (final tagId in event.tags) {
+        // Match tag ID directly
+        if (tagId.toLowerCase().contains(lowerQuery)) return true;
+
+        // Match tag label from PredefinedTags
+        final tag =
+            PredefinedTags.all.where((t) => t.id == tagId).firstOrNull;
+        if (tag != null && tag.label.toLowerCase().contains(lowerQuery)) {
+          return true;
+        }
+      }
+
+      return false;
     }).toList();
   }
 

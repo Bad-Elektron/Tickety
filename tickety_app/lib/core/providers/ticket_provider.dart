@@ -2,6 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/staff/data/ticket_repository.dart';
 import '../../features/staff/models/ticket.dart';
+import '../errors/errors.dart';
+
+const _tag = 'TicketProvider';
 
 /// State for event ticket management.
 class TicketState {
@@ -67,13 +70,15 @@ class TicketState {
 
 /// Notifier for managing event tickets.
 class TicketNotifier extends StateNotifier<TicketState> {
-  final TicketRepository _repository;
+  final ITicketRepository _repository;
 
   TicketNotifier(this._repository) : super(const TicketState());
 
   /// Load tickets for a specific event.
   Future<void> loadTickets(String eventId) async {
     if (state.isLoading && state.currentEventId == eventId) return;
+
+    AppLogger.debug('Loading tickets for event: $eventId', tag: _tag);
 
     state = state.copyWith(
       isLoading: true,
@@ -85,33 +90,61 @@ class TicketNotifier extends StateNotifier<TicketState> {
       final tickets = await _repository.getEventTickets(eventId);
       final stats = await _repository.getTicketStats(eventId);
 
+      AppLogger.info(
+        'Loaded ${tickets.length} tickets for event $eventId',
+        tag: _tag,
+      );
+
       state = state.copyWith(
         tickets: tickets,
         stats: stats,
         isLoading: false,
       );
-    } catch (e) {
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load tickets for event $eventId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: appError.userMessage,
       );
     }
   }
 
   /// Load only stats for an event (lighter operation).
   Future<void> loadStats(String eventId) async {
+    AppLogger.debug('Loading stats for event: $eventId', tag: _tag);
+
     try {
       final stats = await _repository.getTicketStats(eventId);
+      AppLogger.debug(
+        'Stats loaded: ${stats.totalSold} sold, ${stats.checkedIn} checked in',
+        tag: _tag,
+      );
       state = state.copyWith(stats: stats);
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load stats for event $eventId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
     }
   }
 
   /// Refresh tickets for current event.
   Future<void> refresh() async {
     final eventId = state.currentEventId;
-    if (eventId == null) return;
+    if (eventId == null) {
+      AppLogger.warning('Refresh called with no current event', tag: _tag);
+      return;
+    }
     await loadTickets(eventId);
   }
 
@@ -123,6 +156,11 @@ class TicketNotifier extends StateNotifier<TicketState> {
     required int priceCents,
     String? walletAddress,
   }) async {
+    AppLogger.info(
+      'Selling ticket for event $eventId (price: $priceCents cents)',
+      tag: _tag,
+    );
+
     try {
       final ticket = await _repository.sellTicket(
         eventId: eventId,
@@ -130,6 +168,11 @@ class TicketNotifier extends StateNotifier<TicketState> {
         ownerEmail: ownerEmail,
         priceCents: priceCents,
         walletAddress: walletAddress,
+      );
+
+      AppLogger.info(
+        'Ticket sold: ${ticket.ticketNumber}',
+        tag: _tag,
       );
 
       // Add to local state immediately
@@ -143,16 +186,30 @@ class TicketNotifier extends StateNotifier<TicketState> {
       }
 
       return ticket;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to sell ticket for event $eventId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return null;
     }
   }
 
   /// Check in a ticket.
   Future<bool> checkInTicket(String ticketId) async {
+    AppLogger.info('Checking in ticket: $ticketId', tag: _tag);
+
     try {
       final updated = await _repository.checkInTicket(ticketId);
+
+      AppLogger.info(
+        'Ticket checked in: ${updated.ticketNumber}',
+        tag: _tag,
+      );
 
       // Update in local state
       state = state.copyWith(
@@ -167,16 +224,30 @@ class TicketNotifier extends StateNotifier<TicketState> {
       }
 
       return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to check in ticket $ticketId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return false;
     }
   }
 
   /// Undo check-in for a ticket.
   Future<bool> undoCheckIn(String ticketId) async {
+    AppLogger.info('Undoing check-in for ticket: $ticketId', tag: _tag);
+
     try {
       final updated = await _repository.undoCheckIn(ticketId);
+
+      AppLogger.info(
+        'Check-in undone: ${updated.ticketNumber}',
+        tag: _tag,
+      );
 
       // Update in local state
       state = state.copyWith(
@@ -191,16 +262,30 @@ class TicketNotifier extends StateNotifier<TicketState> {
       }
 
       return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to undo check-in for ticket $ticketId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return false;
     }
   }
 
   /// Cancel a ticket.
   Future<bool> cancelTicket(String ticketId) async {
+    AppLogger.info('Cancelling ticket: $ticketId', tag: _tag);
+
     try {
       final updated = await _repository.cancelTicket(ticketId);
+
+      AppLogger.info(
+        'Ticket cancelled: ${updated.ticketNumber}',
+        tag: _tag,
+      );
 
       // Update in local state
       state = state.copyWith(
@@ -215,18 +300,46 @@ class TicketNotifier extends StateNotifier<TicketState> {
       }
 
       return true;
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to cancel ticket $ticketId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return false;
     }
   }
 
   /// Find a ticket by ID or ticket number.
   Future<Ticket?> findTicket(String eventId, String ticketIdOrNumber) async {
+    AppLogger.debug(
+      'Looking up ticket: $ticketIdOrNumber for event $eventId',
+      tag: _tag,
+    );
+
     try {
-      return await _repository.getTicket(eventId, ticketIdOrNumber);
-    } catch (e) {
-      state = state.copyWith(error: e.toString());
+      final ticket = await _repository.getTicket(eventId, ticketIdOrNumber);
+      if (ticket != null) {
+        AppLogger.debug(
+          'Found ticket: ${ticket.ticketNumber} (status: ${ticket.status.value})',
+          tag: _tag,
+        );
+      } else {
+        AppLogger.debug('Ticket not found: $ticketIdOrNumber', tag: _tag);
+      }
+      return ticket;
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to find ticket $ticketIdOrNumber',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(error: appError.userMessage);
       return null;
     }
   }
@@ -238,6 +351,7 @@ class TicketNotifier extends StateNotifier<TicketState> {
 
   /// Clear all state (when leaving event context).
   void clear() {
+    AppLogger.debug('Clearing ticket state', tag: _tag);
     state = const TicketState();
   }
 }
@@ -292,7 +406,7 @@ class MyTicketsState {
 
 /// Notifier for user's own tickets.
 class MyTicketsNotifier extends StateNotifier<MyTicketsState> {
-  final TicketRepository _repository;
+  final ITicketRepository _repository;
 
   MyTicketsNotifier(this._repository) : super(const MyTicketsState());
 
@@ -300,18 +414,28 @@ class MyTicketsNotifier extends StateNotifier<MyTicketsState> {
   Future<void> load() async {
     if (state.isLoading) return;
 
+    AppLogger.debug('Loading user tickets', tag: _tag);
+
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       final tickets = await _repository.getMyTickets();
+      AppLogger.info('Loaded ${tickets.length} user tickets', tag: _tag);
       state = state.copyWith(
         tickets: tickets,
         isLoading: false,
       );
-    } catch (e) {
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load user tickets',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
       state = state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: appError.userMessage,
       );
     }
   }
@@ -333,7 +457,7 @@ class MyTicketsNotifier extends StateNotifier<MyTicketsState> {
 // ============================================================
 
 /// Repository provider - can be overridden for testing.
-final ticketRepositoryProvider = Provider<TicketRepository>((ref) {
+final ticketRepositoryProvider = Provider<ITicketRepository>((ref) {
   return TicketRepository();
 });
 

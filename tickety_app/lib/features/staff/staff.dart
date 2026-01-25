@@ -1,6 +1,8 @@
 /// Staff management feature - ushers, sellers, and ticket management.
 library;
 
+export 'data/i_staff_repository.dart';
+export 'data/i_ticket_repository.dart';
 export 'data/staff_repository.dart';
 export 'data/ticket_repository.dart';
 export 'models/staff_role.dart';

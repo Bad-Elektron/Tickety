@@ -17,6 +17,8 @@ android {
 
     kotlinOptions {
         jvmTarget = JavaVersion.VERSION_17.toString()
+        // Suppress deprecation warnings from dependencies (nfc_manager uses deprecated Kotlin APIs)
+        freeCompilerArgs = listOf("-Xsuppress-warning=DEPRECATION")
     }
 
     defaultConfig {
