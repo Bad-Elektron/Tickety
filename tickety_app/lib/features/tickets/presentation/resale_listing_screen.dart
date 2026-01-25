@@ -5,22 +5,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/errors/errors.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../payments/presentation/seller_onboarding_screen.dart';
-import '../models/ticket_model.dart';
+import '../../staff/models/ticket.dart';
 
 /// Screen for listing a ticket for resale.
 ///
 /// Allows users to set a price. Requires Stripe Connect onboarding
 /// for receiving payouts when the ticket sells.
-class SellTicketScreen extends ConsumerStatefulWidget {
-  const SellTicketScreen({super.key, required this.ticket});
+class ResaleListingScreen extends ConsumerStatefulWidget {
+  const ResaleListingScreen({super.key, required this.ticket});
 
-  final TicketModel ticket;
+  final Ticket ticket;
 
   @override
-  ConsumerState<SellTicketScreen> createState() => _SellTicketScreenState();
+  ConsumerState<ResaleListingScreen> createState() => _ResaleListingScreenState();
 }
 
-class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
+class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
   final _formKey = GlobalKey<FormState>();
   final _priceController = TextEditingController();
   bool _isLoading = false;
@@ -32,8 +32,8 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
   void initState() {
     super.initState();
     // Pre-fill with original price as suggestion
-    if (widget.ticket.priceInCents != null) {
-      final dollars = widget.ticket.priceInCents! / 100;
+    if (widget.ticket.pricePaidCents > 0) {
+      final dollars = widget.ticket.pricePaidCents / 100;
       _priceController.text = dollars.toStringAsFixed(2);
     }
     _checkOnboardingStatus();
@@ -173,8 +173,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Original price info
-                    if (widget.ticket.priceInCents != null &&
-                        widget.ticket.priceInCents! > 0) ...[
+                    if (widget.ticket.pricePaidCents > 0) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -461,7 +460,7 @@ class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
 class _TicketPreviewHeader extends StatelessWidget {
   const _TicketPreviewHeader({required this.ticket});
 
-  final TicketModel ticket;
+  final Ticket ticket;
 
   @override
   Widget build(BuildContext context) {
@@ -562,7 +561,8 @@ class _TicketPreviewHeader extends StatelessWidget {
     };
   }
 
-  String _formatDate(DateTime date) {
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'TBA';
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',

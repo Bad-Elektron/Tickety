@@ -183,4 +183,36 @@ void main() {
       );
     });
   });
+
+  group('AppLogger.maskEmail', () {
+    test('masks standard email correctly', () {
+      expect(AppLogger.maskEmail('john.doe@example.com'), 'j***@example.com');
+      expect(AppLogger.maskEmail('alice@test.co'), 'a***@test.co');
+      expect(AppLogger.maskEmail('bob@company.org'), 'b***@company.org');
+    });
+
+    test('handles short usernames', () {
+      expect(AppLogger.maskEmail('a@test.com'), 'a***@test.com');
+      expect(AppLogger.maskEmail('ab@test.com'), 'a***@test.com');
+    });
+
+    test('handles null input', () {
+      expect(AppLogger.maskEmail(null), 'null');
+    });
+
+    test('handles empty string', () {
+      expect(AppLogger.maskEmail(''), '');
+    });
+
+    test('handles invalid email format', () {
+      expect(AppLogger.maskEmail('notanemail'), '***');
+      expect(AppLogger.maskEmail('@nodomain'), '***');
+    });
+
+    test('preserves domain information', () {
+      final masked = AppLogger.maskEmail('test@subdomain.example.com');
+      expect(masked, 't***@subdomain.example.com');
+      expect(masked.contains('subdomain.example.com'), isTrue);
+    });
+  });
 }

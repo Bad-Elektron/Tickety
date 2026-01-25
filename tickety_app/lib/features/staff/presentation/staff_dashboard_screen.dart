@@ -6,7 +6,7 @@ import '../../events/data/data.dart';
 import '../../events/models/event_model.dart';
 import '../data/ticket_repository.dart';
 import '../models/staff_role.dart';
-import 'sell_ticket_screen.dart';
+import 'vendor_pos_screen.dart';
 
 /// Dashboard for staff members to access their assigned events.
 class StaffDashboardScreen extends ConsumerStatefulWidget {
@@ -91,7 +91,7 @@ class _StaffDashboardScreenState extends ConsumerState<StaffDashboardScreen> {
   void _navigateToSellTickets(EventModel event) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SellTicketScreen(event: event),
+        builder: (_) => VendorPOSScreen(event: event),
       ),
     );
   }

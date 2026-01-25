@@ -38,7 +38,7 @@ void main() {
     });
 
     test('formattedPrice returns formatted price', () {
-      expect(ticket.formattedPrice, '\$50.0');
+      expect(ticket.formattedPrice, '\$50.00');
     });
 
     test('formattedPrice handles zero price', () {
@@ -46,7 +46,7 @@ void main() {
         ...validJson,
         'price_paid_cents': 0,
       });
-      expect(freeTicket.formattedPrice, '\$0.0');
+      expect(freeTicket.formattedPrice, 'Free');
     });
 
     test('isValid returns true for valid status', () {
@@ -128,6 +128,100 @@ void main() {
       expect(TicketStatus.used.value, 'used');
       expect(TicketStatus.cancelled.value, 'cancelled');
       expect(TicketStatus.refunded.value, 'refunded');
+    });
+  });
+
+  group('ListingStatus', () {
+    test('fromString parses valid status', () {
+      expect(ListingStatus.fromString('none'), ListingStatus.none);
+      expect(ListingStatus.fromString('listed'), ListingStatus.listed);
+      expect(ListingStatus.fromString('sold'), ListingStatus.sold);
+      expect(ListingStatus.fromString('cancelled'), ListingStatus.cancelled);
+    });
+
+    test('fromString defaults to none for unknown status', () {
+      expect(ListingStatus.fromString('unknown'), ListingStatus.none);
+      expect(ListingStatus.fromString(null), ListingStatus.none);
+    });
+
+    test('isListedForSale returns true only for listed status', () {
+      final validJson = {
+        'id': 'tkt_001',
+        'event_id': 'evt_001',
+        'ticket_number': 'TKT-123456-7890',
+        'price_paid_cents': 5000,
+        'currency': 'USD',
+        'sold_at': '2025-01-15T10:00:00Z',
+        'status': 'valid',
+        'created_at': '2025-01-15T10:00:00Z',
+      };
+
+      final notListed = Ticket.fromJson(validJson);
+      expect(notListed.isListedForSale, isFalse);
+
+      final listed = Ticket.fromJson({...validJson, 'listing_status': 'listed'});
+      expect(listed.isListedForSale, isTrue);
+
+      final sold = Ticket.fromJson({...validJson, 'listing_status': 'sold'});
+      expect(sold.isListedForSale, isFalse);
+    });
+  });
+
+  group('TicketValidationResult', () {
+    late Map<String, dynamic> validJson;
+
+    setUp(() {
+      validJson = {
+        'id': 'tkt_001',
+        'event_id': 'evt_001',
+        'ticket_number': 'TKT-123456-7890',
+        'price_paid_cents': 5000,
+        'currency': 'USD',
+        'sold_at': '2025-01-15T10:00:00Z',
+        'status': 'valid',
+        'created_at': '2025-01-15T10:00:00Z',
+      };
+    });
+
+    test('validate returns valid for valid ticket', () {
+      final ticket = Ticket.fromJson(validJson);
+      expect(ticket.validate(), TicketValidationResult.valid);
+    });
+
+    test('validate returns alreadyUsed for used ticket', () {
+      final ticket = Ticket.fromJson({...validJson, 'status': 'used'});
+      expect(ticket.validate(), TicketValidationResult.alreadyUsed);
+    });
+
+    test('validate returns cancelled for cancelled ticket', () {
+      final ticket = Ticket.fromJson({...validJson, 'status': 'cancelled'});
+      expect(ticket.validate(), TicketValidationResult.cancelled);
+    });
+
+    test('validate returns refunded for refunded ticket', () {
+      final ticket = Ticket.fromJson({...validJson, 'status': 'refunded'});
+      expect(ticket.validate(), TicketValidationResult.refunded);
+    });
+
+    test('validate returns eventPassed for past event', () {
+      final pastDate = DateTime.now().subtract(const Duration(days: 1));
+      final ticket = Ticket.fromJson(validJson);
+      expect(ticket.validate(eventDate: pastDate), TicketValidationResult.eventPassed);
+    });
+
+    test('validate returns valid within 6 hour grace period', () {
+      // Event was 3 hours ago - should still be valid
+      final recentDate = DateTime.now().subtract(const Duration(hours: 3));
+      final ticket = Ticket.fromJson(validJson);
+      expect(ticket.validate(eventDate: recentDate), TicketValidationResult.valid);
+    });
+
+    test('each result has label, icon, and color', () {
+      for (final result in TicketValidationResult.values) {
+        expect(result.label, isNotEmpty);
+        expect(result.icon, isNotNull);
+        expect(result.color, isNotNull);
+      }
     });
   });
 }

@@ -10,16 +10,16 @@ import '../models/ticket.dart';
 enum POSPaymentMethod { card, cash }
 
 /// Point of Sale screen for staff to sell tickets on the spot.
-class SellTicketScreen extends ConsumerStatefulWidget {
+class VendorPOSScreen extends ConsumerStatefulWidget {
   final EventModel event;
 
-  const SellTicketScreen({super.key, required this.event});
+  const VendorPOSScreen({super.key, required this.event});
 
   @override
-  ConsumerState<SellTicketScreen> createState() => _SellTicketScreenState();
+  ConsumerState<VendorPOSScreen> createState() => _VendorPOSScreenState();
 }
 
-class _SellTicketScreenState extends ConsumerState<SellTicketScreen> {
+class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();

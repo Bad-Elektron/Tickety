@@ -8,5 +8,5 @@ export 'data/ticket_repository.dart';
 export 'models/staff_role.dart';
 export 'models/ticket.dart';
 export 'presentation/manage_staff_screen.dart';
-export 'presentation/sell_ticket_screen.dart';
+export 'presentation/vendor_pos_screen.dart';
 export 'presentation/staff_dashboard_screen.dart';

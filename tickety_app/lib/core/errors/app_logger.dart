@@ -27,6 +27,26 @@ enum LogLevel {
 class AppLogger {
   AppLogger._();
 
+  /// Mask an email address for safe logging.
+  ///
+  /// Examples:
+  /// - "john.doe@example.com" -> "j***@example.com"
+  /// - "ab@test.co" -> "a***@test.co"
+  /// - null -> "null"
+  /// - "" -> ""
+  static String maskEmail(String? email) {
+    if (email == null) return 'null';
+    if (email.isEmpty) return '';
+
+    final atIndex = email.indexOf('@');
+    if (atIndex <= 0) return '***'; // Invalid email format
+
+    // Show first character, mask the rest before @
+    final firstChar = email[0];
+    final domain = email.substring(atIndex);
+    return '$firstChar***$domain';
+  }
+
   /// Minimum log level to output. Logs below this level are ignored.
   /// In release mode, defaults to warning. In debug, shows all.
   static LogLevel _minLevel = kDebugMode ? LogLevel.debug : LogLevel.warning;

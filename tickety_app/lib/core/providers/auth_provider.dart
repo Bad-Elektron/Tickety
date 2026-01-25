@@ -68,7 +68,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     // Set initial user if already logged in
     final currentUser = SupabaseService.instance.currentUser;
     if (currentUser != null) {
-      AppLogger.info('Found existing session for: ${currentUser.email}', tag: _tag);
+      AppLogger.info('Found existing session for: ${AppLogger.maskEmail(currentUser.email)}', tag: _tag);
       state = state.copyWith(user: currentUser);
     }
 
@@ -77,7 +77,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         .map((event) => AuthState(user: event.session?.user))
         .listen((authState) {
       if (authState.user != null) {
-        AppLogger.info('Auth state changed: signed in as ${authState.user?.email}', tag: _tag);
+        AppLogger.info('Auth state changed: signed in as ${AppLogger.maskEmail(authState.user?.email)}', tag: _tag);
       } else {
         AppLogger.info('Auth state changed: signed out', tag: _tag);
       }
@@ -105,7 +105,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (!_rateLimiter.canAttempt()) {
       final remaining = _rateLimiter.timeUntilReset();
       final minutes = remaining != null ? (remaining.inSeconds / 60).ceil() : 15;
-      AppLogger.warning('Sign up rate limited for: $email', tag: _tag);
+      AppLogger.warning('Sign up rate limited for: ${AppLogger.maskEmail(email)}', tag: _tag);
       state = state.copyWith(
         isRateLimited: true,
         lockoutRemaining: remaining,
@@ -114,7 +114,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return false;
     }
 
-    AppLogger.info('Attempting sign up for: $email', tag: _tag);
+    AppLogger.info('Attempting sign up for: ${AppLogger.maskEmail(email)}', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true, clearLockout: true);
     _rateLimiter.recordAttempt();
 
@@ -124,14 +124,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         password: password,
         data: displayName != null ? {'display_name': displayName} : null,
       );
-      AppLogger.info('Sign up successful for: $email', tag: _tag);
+      AppLogger.info('Sign up successful for: ${AppLogger.maskEmail(email)}', tag: _tag);
       _rateLimiter.reset(); // Clear rate limit on success
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e, s) {
       final appError = ErrorHandler.normalize(e, s);
       AppLogger.error(
-        'Sign up failed for: $email',
+        'Sign up failed for: ${AppLogger.maskEmail(email)}',
         error: appError.technicalDetails ?? e,
         stackTrace: s,
         tag: _tag,
@@ -150,7 +150,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (!_rateLimiter.canAttempt()) {
       final remaining = _rateLimiter.timeUntilReset();
       final minutes = remaining != null ? (remaining.inSeconds / 60).ceil() : 15;
-      AppLogger.warning('Sign in rate limited for: $email', tag: _tag);
+      AppLogger.warning('Sign in rate limited for: ${AppLogger.maskEmail(email)}', tag: _tag);
       state = state.copyWith(
         isRateLimited: true,
         lockoutRemaining: remaining,
@@ -159,7 +159,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return false;
     }
 
-    AppLogger.info('Attempting sign in for: $email', tag: _tag);
+    AppLogger.info('Attempting sign in for: ${AppLogger.maskEmail(email)}', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true, clearLockout: true);
     _rateLimiter.recordAttempt();
 
@@ -168,14 +168,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
         email: email,
         password: password,
       );
-      AppLogger.info('Sign in successful for: $email', tag: _tag);
+      AppLogger.info('Sign in successful for: ${AppLogger.maskEmail(email)}', tag: _tag);
       _rateLimiter.reset(); // Clear rate limit on success
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e, s) {
       final appError = ErrorHandler.normalize(e, s);
       AppLogger.error(
-        'Sign in failed for: $email',
+        'Sign in failed for: ${AppLogger.maskEmail(email)}',
         error: appError.technicalDetails ?? e,
         stackTrace: s,
         tag: _tag,
@@ -188,7 +188,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   /// Sign out the current user.
   Future<void> signOut() async {
     final email = state.email;
-    AppLogger.info('Signing out user: $email', tag: _tag);
+    AppLogger.info('Signing out user: ${AppLogger.maskEmail(email)}', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
@@ -209,18 +209,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Send password reset email.
   Future<bool> resetPassword(String email) async {
-    AppLogger.info('Requesting password reset for: $email', tag: _tag);
+    AppLogger.info('Requesting password reset for: ${AppLogger.maskEmail(email)}', tag: _tag);
     state = state.copyWith(isLoading: true, clearError: true);
 
     try {
       await SupabaseService.instance.client.auth.resetPasswordForEmail(email);
-      AppLogger.info('Password reset email sent to: $email', tag: _tag);
+      AppLogger.info('Password reset email sent to: ${AppLogger.maskEmail(email)}', tag: _tag);
       state = state.copyWith(isLoading: false);
       return true;
     } catch (e, s) {
       final appError = ErrorHandler.normalize(e, s);
       AppLogger.error(
-        'Password reset failed for: $email',
+        'Password reset failed for: ${AppLogger.maskEmail(email)}',
         error: appError.technicalDetails ?? e,
         stackTrace: s,
         tag: _tag,

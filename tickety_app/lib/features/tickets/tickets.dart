@@ -4,7 +4,8 @@
 /// the user's purchased tickets.
 library;
 
-export 'models/ticket_model.dart';
+// Re-export unified Ticket model for convenience
+export '../staff/models/ticket.dart';
 export 'presentation/my_tickets_screen.dart';
-export 'presentation/sell_ticket_screen.dart';
+export 'presentation/resale_listing_screen.dart';
 export 'presentation/ticket_screen.dart';

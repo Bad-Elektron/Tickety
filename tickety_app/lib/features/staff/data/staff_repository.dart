@@ -15,7 +15,7 @@ class StaffRepository implements IStaffRepository {
   Future<List<UserSearchResult>> searchUsersByEmail(String emailQuery) async {
     if (emailQuery.trim().isEmpty) return [];
 
-    AppLogger.debug('Searching users by email: $emailQuery', tag: _tag);
+    AppLogger.debug('Searching users by email: ${AppLogger.maskEmail(emailQuery)}', tag: _tag);
 
     final response = await _client
         .from('profiles')
@@ -33,7 +33,7 @@ class StaffRepository implements IStaffRepository {
 
   @override
   Future<UserSearchResult?> getUserByEmail(String email) async {
-    AppLogger.debug('Looking up user by email: $email', tag: _tag);
+    AppLogger.debug('Looking up user by email: ${AppLogger.maskEmail(email)}', tag: _tag);
 
     final response = await _client
         .from('profiles')
@@ -42,7 +42,7 @@ class StaffRepository implements IStaffRepository {
         .maybeSingle();
 
     if (response == null) {
-      AppLogger.debug('User not found: $email', tag: _tag);
+      AppLogger.debug('User not found: ${AppLogger.maskEmail(email)}', tag: _tag);
       return null;
     }
     return UserSearchResult.fromJson(response);
