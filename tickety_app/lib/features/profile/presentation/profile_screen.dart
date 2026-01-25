@@ -5,8 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/debug/debug.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
-// Hide AuthState from state.dart to avoid collision with Riverpod's AuthState
-import '../../../core/state/state.dart' hide AuthState;
+import '../../../core/state/state.dart';
 import '../../auth/auth.dart';
 import '../../staff/staff.dart';
 import '../widgets/widgets.dart';
