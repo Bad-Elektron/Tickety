@@ -52,44 +52,17 @@ class StaffRepository implements IStaffRepository {
   Future<List<EventStaff>> getEventStaff(String eventId) async {
     AppLogger.debug('Fetching staff for event: $eventId', tag: _tag);
 
-    // First get the staff assignments
+    // Use JOIN to fetch staff with profile data in a single query
+    // This avoids N+1 queries (was: 1 query + N profile lookups)
     final response = await _client
         .from('event_staff')
-        .select()
+        .select('*, profiles(display_name, email)')
         .eq('event_id', eventId)
         .order('created_at', ascending: false);
 
-    final staffList = (response as List<dynamic>).cast<Map<String, dynamic>>();
-
-    // Then fetch profile info for each user
-    final results = <EventStaff>[];
-    for (final staff in staffList) {
-      final userId = staff['user_id'] as String;
-
-      // Try to get profile info
-      Map<String, dynamic>? profile;
-      try {
-        profile = await _client
-            .from('profiles')
-            .select('display_name, email')
-            .eq('id', userId)
-            .maybeSingle();
-      } catch (e) {
-        AppLogger.warning(
-          'Failed to fetch profile for user $userId',
-          tag: _tag,
-        );
-        // Profile lookup failed, continue without it
-      }
-
-      // Merge profile data into staff record
-      final enrichedStaff = {
-        ...staff,
-        'profiles': profile,
-      };
-
-      results.add(EventStaff.fromJson(enrichedStaff));
-    }
+    final results = (response as List<dynamic>)
+        .map((json) => EventStaff.fromJson(json as Map<String, dynamic>))
+        .toList();
 
     AppLogger.debug('Fetched ${results.length} staff members', tag: _tag);
     return results;
