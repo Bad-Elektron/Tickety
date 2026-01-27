@@ -1,18 +1,21 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 
 /// Account tier levels.
 enum AccountTier {
-  base(label: 'Base', color: 0xFF6B7280),
-  pro(label: 'Pro', color: 0xFF8B5CF6),
-  enterprise(label: 'Enterprise', color: 0xFFEAB308);
+  base(label: 'Base', color: 0xFF6B7280, icon: Icons.eco),
+  pro(label: 'Pro', color: 0xFF8B5CF6, icon: Icons.star),
+  enterprise(label: 'Enterprise', color: 0xFFEAB308, icon: Icons.diamond);
 
   const AccountTier({
     required this.label,
     required this.color,
+    required this.icon,
   });
 
   final String label;
   final int color;
+  final IconData icon;
 }
 
 /// Global application state for debug settings and account tier.

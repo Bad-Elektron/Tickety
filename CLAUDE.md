@@ -80,3 +80,24 @@ tickety_app/lib/
 ### Library Exports
 
 Each module uses a library file (e.g., `events.dart`, `widgets.dart`) for clean exports. Import the library file rather than individual files.
+
+## TODO
+
+### Stripe Webhooks Setup (Production)
+
+Set up Stripe webhooks to handle subscription lifecycle events:
+
+1. Go to **Stripe Dashboard → Developers → Webhooks**
+2. Add endpoint: `https://hnouslchigcmbiovdbfz.supabase.co/functions/v1/stripe-webhook`
+3. Select events:
+   - `customer.subscription.created`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+4. Copy the webhook signing secret
+5. Add to Supabase: **Project Settings → Edge Functions → Secrets** as `STRIPE_WEBHOOK_SECRET`
+
+This enables:
+- Subscription renewals
+- Failed payment retries
+- Cancellations from Stripe dashboard
+- Plan changes from billing portal

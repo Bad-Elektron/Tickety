@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/config.dart';
 import 'core/debug/debug.dart';
 import 'core/errors/errors.dart';
+import 'core/providers/theme_provider.dart';
 import 'core/services/services.dart';
 import 'core/state/state.dart';
 import 'features/events/presentation/events_home_screen.dart';
@@ -42,6 +43,19 @@ Future<void> main() async {
       );
     }
 
+    // Initialize notification service (non-blocking - app works without it)
+    try {
+      await NotificationService.initialize();
+      AppLogger.info('Notification service initialized', tag: 'Main');
+    } catch (e, stack) {
+      AppLogger.error(
+        'Failed to initialize notification service - local notifications will be unavailable',
+        error: e,
+        stackTrace: stack,
+        tag: 'Main',
+      );
+    }
+
     // Wrap with ProviderScope for Riverpod state management
     runApp(const ProviderScope(child: TicketyApp()));
   }, (error, stack) {
@@ -69,14 +83,14 @@ class AppScrollBehavior extends MaterialScrollBehavior {
 }
 
 /// The root widget for the Tickety application.
-class TicketyApp extends StatefulWidget {
+class TicketyApp extends ConsumerStatefulWidget {
   const TicketyApp({super.key});
 
   @override
-  State<TicketyApp> createState() => _TicketyAppState();
+  ConsumerState<TicketyApp> createState() => _TicketyAppState();
 }
 
-class _TicketyAppState extends State<TicketyApp> {
+class _TicketyAppState extends ConsumerState<TicketyApp> {
   final _appState = AppState();
 
   @override
@@ -97,6 +111,9 @@ class _TicketyAppState extends State<TicketyApp> {
 
   @override
   Widget build(BuildContext context) {
+    // Watch theme mode from Riverpod provider
+    final themeMode = ref.watch(themeModeProvider);
+
     return MaterialApp(
       title: 'Tickety',
       debugShowCheckedModeBanner: false,
@@ -106,7 +123,7 @@ class _TicketyAppState extends State<TicketyApp> {
       scrollBehavior: AppScrollBehavior(),
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
-      themeMode: ThemeMode.system,
+      themeMode: themeMode,
       builder: (context, child) {
         return DebugOverlay(
           enabled: _appState.debugMode,

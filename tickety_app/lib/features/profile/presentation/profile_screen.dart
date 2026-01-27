@@ -7,7 +7,9 @@ import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../auth/auth.dart';
+import '../../settings/settings.dart';
 import '../../staff/staff.dart';
+import '../../subscriptions/subscriptions.dart';
 import '../widgets/widgets.dart';
 
 /// The profile screen displaying user information and settings.
@@ -76,6 +78,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.settings_outlined,
                   title: 'Settings',
                   subtitle: 'App preferences',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SettingsScreen(),
+                      ),
+                    );
+                  },
                 ),
                 ProfileMenuItem(
                   icon: Icons.notifications_outlined,
@@ -92,6 +101,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const ProfileSectionHeader(title: 'Payments'),
             ProfileMenuCard(
               children: [
+                ProfileMenuItem(
+                  icon: _appState.tier.icon,
+                  title: 'Manage Subscription',
+                  subtitle: '${_appState.tier.label} Plan',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SubscriptionScreen(),
+                      ),
+                    );
+                  },
+                ),
                 ProfileMenuItem(
                   icon: Icons.receipt_long_outlined,
                   title: 'Billing',
@@ -166,22 +187,11 @@ class _TierBadge extends StatelessWidget {
         ],
       ),
       child: Icon(
-        _getIcon(),
+        tier.icon,
         size: 14,
         color: Colors.white,
       ),
     );
-  }
-
-  IconData _getIcon() {
-    switch (tier) {
-      case AccountTier.base:
-        return Icons.person;
-      case AccountTier.pro:
-        return Icons.star;
-      case AccountTier.enterprise:
-        return Icons.diamond;
-    }
   }
 }
 

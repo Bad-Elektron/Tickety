@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../events/models/event_model.dart';
+import '../../tickets/presentation/my_tickets_screen.dart';
 
 /// Payment success screen shown after a successful purchase.
 class PaymentSuccessScreen extends StatefulWidget {
@@ -238,9 +239,15 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: () {
-                          // Navigate to my tickets
-                          Navigator.of(context).popUntil((route) => route.isFirst);
-                          // TODO: Navigate to my tickets screen
+                          // Store navigator before popping (context becomes invalid after pop)
+                          final navigator = Navigator.of(context);
+                          // Pop to home, then push My Tickets screen
+                          navigator.pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => const MyTicketsScreen(),
+                            ),
+                            (route) => route.isFirst,
+                          );
                         },
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),

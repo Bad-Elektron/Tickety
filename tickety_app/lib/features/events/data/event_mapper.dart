@@ -33,6 +33,7 @@ abstract class EventMapper {
       tags: tags,
       priceInCents: json['price_in_cents'] as int?,
       currency: json['currency'] as String? ?? 'USD',
+      hideLocation: json['hide_location'] as bool? ?? false,
     );
   }
 
@@ -55,6 +56,7 @@ abstract class EventMapper {
       'category': event.tags.isNotEmpty ? event.tags.first : event.category,
       'price_in_cents': event.priceInCents,
       'currency': event.currency,
+      'hide_location': event.hideLocation,
     };
   }
 

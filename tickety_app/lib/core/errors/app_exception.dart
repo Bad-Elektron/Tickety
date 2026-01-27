@@ -382,3 +382,37 @@ class PaymentException extends AppException {
         technicalDetails: 'Stripe Payment Sheet not supported on this platform',
       );
 }
+
+/// Subscription-related errors (upgrade failed, cancellation failed, etc.).
+class SubscriptionException extends AppException {
+  const SubscriptionException(
+    super.message, {
+    super.technicalDetails,
+    super.cause,
+  });
+
+  factory SubscriptionException.alreadySubscribed() => const SubscriptionException(
+        'You already have an active subscription.',
+        technicalDetails: 'User already has active subscription',
+      );
+
+  factory SubscriptionException.notSubscribed() => const SubscriptionException(
+        'You do not have an active subscription.',
+        technicalDetails: 'No active subscription found',
+      );
+
+  factory SubscriptionException.upgradeFailed([String? reason]) => SubscriptionException(
+        reason ?? 'Failed to upgrade your subscription. Please try again.',
+        technicalDetails: 'Subscription upgrade failed: $reason',
+      );
+
+  factory SubscriptionException.cancelFailed([String? reason]) => SubscriptionException(
+        reason ?? 'Failed to cancel your subscription. Please try again.',
+        technicalDetails: 'Subscription cancellation failed: $reason',
+      );
+
+  factory SubscriptionException.resumeFailed([String? reason]) => SubscriptionException(
+        reason ?? 'Failed to resume your subscription. Please try again.',
+        technicalDetails: 'Subscription resume failed: $reason',
+      );
+}

@@ -292,6 +292,19 @@ class _TicketScreenState extends State<TicketScreen> {
                   ],
 
                   const SizedBox(height: 32),
+
+                  // Discover more events button
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () {
+                        // Pop back to home screen
+                        Navigator.of(context).popUntil((route) => route.isFirst);
+                      },
+                      icon: const Icon(Icons.explore_outlined),
+                      label: const Text('Discover More Events'),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                 ],
               ),
             ),

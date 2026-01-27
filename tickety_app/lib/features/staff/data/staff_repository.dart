@@ -52,20 +52,67 @@ class StaffRepository implements IStaffRepository {
   Future<List<EventStaff>> getEventStaff(String eventId) async {
     AppLogger.debug('Fetching staff for event: $eventId', tag: _tag);
 
-    // Use JOIN to fetch staff with profile data in a single query
-    // This avoids N+1 queries (was: 1 query + N profile lookups)
-    final response = await _client
-        .from('event_staff')
-        .select('*, profiles(display_name, email)')
-        .eq('event_id', eventId)
-        .order('created_at', ascending: false);
+    try {
+      // Fetch staff data (no JOIN - foreign key relationship not set up in DB)
+      final staffResponse = await _client
+          .from('event_staff')
+          .select()
+          .eq('event_id', eventId)
+          .order('created_at', ascending: false);
 
-    final results = (response as List<dynamic>)
-        .map((json) => EventStaff.fromJson(json as Map<String, dynamic>))
-        .toList();
+      final staffList = staffResponse as List<dynamic>;
+      if (staffList.isEmpty) {
+        AppLogger.debug('No staff found for event $eventId', tag: _tag);
+        return [];
+      }
 
-    AppLogger.debug('Fetched ${results.length} staff members', tag: _tag);
-    return results;
+      // Get unique user IDs to fetch profiles
+      final userIds = staffList
+          .map((s) => s['user_id'] as String)
+          .toSet()
+          .toList();
+
+      // Fetch profiles for all users in one query (2 queries total, not N+1)
+      final profilesResponse = await _client
+          .from('profiles')
+          .select('id, display_name, email')
+          .inFilter('id', userIds);
+
+      // Create a map of user_id -> profile for quick lookup
+      final profilesMap = <String, Map<String, dynamic>>{};
+      for (final profile in profilesResponse as List<dynamic>) {
+        final profileMap = profile as Map<String, dynamic>;
+        profilesMap[profileMap['id'] as String] = profileMap;
+      }
+
+      // Merge staff with profile data
+      final results = staffList.map((staffJson) {
+        final json = Map<String, dynamic>.from(staffJson as Map<String, dynamic>);
+        final userId = json['user_id'] as String;
+        final profile = profilesMap[userId];
+
+        // Add profile data to staff JSON if available
+        if (profile != null) {
+          json['profiles'] = {
+            'display_name': profile['display_name'],
+            'email': profile['email'],
+          };
+        }
+
+        return EventStaff.fromJson(json);
+      }).toList();
+
+      AppLogger.debug('Fetched ${results.length} staff members', tag: _tag);
+      return results;
+    } catch (e, s) {
+      AppLogger.error(
+        'Failed to fetch staff for event $eventId',
+        error: e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      rethrow;
+    }
   }
 
   @override

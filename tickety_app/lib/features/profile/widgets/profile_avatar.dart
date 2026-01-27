@@ -119,21 +119,10 @@ class _TierBadge extends StatelessWidget {
         ],
       ),
       child: Icon(
-        _getIcon(),
+        tier.icon,
         size: size * 0.55,
         color: Colors.white,
       ),
     );
-  }
-
-  IconData _getIcon() {
-    switch (tier) {
-      case AccountTier.base:
-        return Icons.person;
-      case AccountTier.pro:
-        return Icons.star;
-      case AccountTier.enterprise:
-        return Icons.diamond;
-    }
   }
 }

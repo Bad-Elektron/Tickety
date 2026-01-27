@@ -135,5 +135,82 @@ void main() {
       expect(seller.canManageStaff, isFalse);
       expect(manager.canManageStaff, isTrue);
     });
+
+    test('fromJson handles null profiles gracefully', () {
+      final jsonNullProfiles = {
+        'id': 'staff_003',
+        'event_id': 'evt_001',
+        'user_id': 'user_003',
+        'role': 'seller',
+        'created_at': '2025-01-15T10:00:00Z',
+        'profiles': null,
+      };
+      final staff = EventStaff.fromJson(jsonNullProfiles);
+
+      expect(staff.id, 'staff_003');
+      expect(staff.userName, isNull);
+      expect(staff.userEmail, isNull);
+    });
+
+    test('fromJson handles missing profiles key', () {
+      final jsonNoProfiles = {
+        'id': 'staff_004',
+        'event_id': 'evt_001',
+        'user_id': 'user_004',
+        'role': 'manager',
+        'created_at': '2025-01-15T10:00:00Z',
+      };
+      final staff = EventStaff.fromJson(jsonNoProfiles);
+
+      expect(staff.id, 'staff_004');
+      expect(staff.role, StaffRole.manager);
+      expect(staff.userName, isNull);
+    });
+
+    test('fromJson throws FormatException for missing required fields', () {
+      expect(
+        () => EventStaff.fromJson({'id': 'only_id'}),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('fromJson handles empty profiles object', () {
+      final jsonEmptyProfiles = {
+        'id': 'staff_005',
+        'event_id': 'evt_001',
+        'user_id': 'user_005',
+        'role': 'usher',
+        'created_at': '2025-01-15T10:00:00Z',
+        'profiles': <String, dynamic>{},
+      };
+      final staff = EventStaff.fromJson(jsonEmptyProfiles);
+
+      expect(staff.id, 'staff_005');
+      expect(staff.userName, isNull);
+      expect(staff.userEmail, isNull);
+    });
+
+    test('fromJson handles acceptedAt date', () {
+      final jsonWithAccepted = {
+        ...validJson,
+        'accepted_at': '2025-01-16T14:30:00Z',
+      };
+      final staff = EventStaff.fromJson(jsonWithAccepted);
+
+      expect(staff.acceptedAt, isNotNull);
+      expect(staff.acceptedAt!.year, 2025);
+      expect(staff.acceptedAt!.month, 1);
+      expect(staff.acceptedAt!.day, 16);
+    });
+
+    test('fromJson defaults to usher role for unknown role value', () {
+      final jsonUnknownRole = {
+        ...validJson,
+        'role': 'unknown_role',
+      };
+      final staff = EventStaff.fromJson(jsonUnknownRole);
+
+      expect(staff.role, StaffRole.usher);
+    });
   });
 }

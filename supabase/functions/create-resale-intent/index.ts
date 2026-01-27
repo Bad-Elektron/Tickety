@@ -155,6 +155,8 @@ serve(async (req) => {
       currency,
       customer: customerId,
       automatic_payment_methods: { enabled: true },
+      // Enable saving payment methods for future use
+      setup_future_usage: 'off_session',
       application_fee_amount: platformFeeCents,
       transfer_data: {
         destination: sellerProfile.stripe_connect_account_id,

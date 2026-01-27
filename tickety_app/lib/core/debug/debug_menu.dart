@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/payments/payments.dart';
+import '../providers/notification_provider.dart';
+import '../services/notification_service.dart';
 import '../state/app_state.dart';
 
 /// Global navigator key for accessing navigator from anywhere.
@@ -26,7 +29,7 @@ class DebugMenuItem {
 /// Debug menu that provides quick access to test screens.
 ///
 /// Only available in debug builds (kDebugMode).
-class DebugMenu extends StatelessWidget {
+class DebugMenu extends ConsumerWidget {
   const DebugMenu({super.key});
 
   static final List<DebugMenuItem> _menuItems = [
@@ -55,7 +58,7 @@ class DebugMenu extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -130,6 +133,9 @@ class DebugMenu extends StatelessWidget {
             child: Column(
               children: [
                 ..._menuItems.map((item) => _DebugMenuTile(item: item)),
+                const Divider(height: 24),
+                // Notification testing
+                _NotificationTestSection(ref: ref),
                 const Divider(height: 24),
                 // Quick toggles
                 _DebugToggleRow(),
@@ -323,6 +329,124 @@ class _QuickToggle extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Section for testing notifications in the debug menu.
+class _NotificationTestSection extends StatelessWidget {
+  final WidgetRef ref;
+
+  const _NotificationTestSection({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final notificationState = ref.watch(notificationProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Notification Testing',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Status info
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    NotificationService.isSupported
+                        ? Icons.check_circle
+                        : Icons.cancel,
+                    size: 16,
+                    color: NotificationService.isSupported
+                        ? Colors.green
+                        : Colors.red,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Platform supported: ${NotificationService.isSupported ? 'Yes' : 'No'}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Unread: ${notificationState.unreadCount}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              Text(
+                'Total: ${notificationState.notifications.length}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Test button
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () {
+              ref.read(notificationProvider.notifier).sendTestNotification();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Test notification sent!'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
+            },
+            icon: const Icon(Icons.notifications_active, size: 18),
+            label: const Text('Send Test Notification'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.blue,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Request permissions button
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: NotificationService.isSupported
+                ? () async {
+                    final granted = await NotificationService.instance.requestPermissions();
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            granted
+                                ? 'Notification permissions granted!'
+                                : 'Notification permissions denied',
+                          ),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
+                  }
+                : null,
+            icon: const Icon(Icons.security, size: 18),
+            label: const Text('Request Permissions'),
+          ),
+        ),
+      ],
     );
   }
 }

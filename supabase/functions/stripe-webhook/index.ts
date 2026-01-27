@@ -47,6 +47,19 @@ serve(async (req) => {
         await handleChargeRefunded(event.data.object as Stripe.Charge)
         break
 
+      // Subscription events
+      case 'customer.subscription.created':
+        await handleSubscriptionCreated(event.data.object as Stripe.Subscription)
+        break
+
+      case 'customer.subscription.updated':
+        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription)
+        break
+
+      case 'customer.subscription.deleted':
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
+        break
+
       default:
         console.log(`Unhandled event type: ${event.type}`)
     }
@@ -205,6 +218,167 @@ async function handleChargeRefunded(charge: Stripe.Charge) {
   }
 
   console.log(`Refund processed for payment: ${payment.id}`)
+}
+
+// ============================================================
+// SUBSCRIPTION EVENT HANDLERS
+// ============================================================
+
+// Map Stripe price IDs to tier names
+const PRICE_TO_TIER: Record<string, string> = {
+  [Deno.env.get('STRIPE_PRO_PRICE_ID') || 'price_pro_monthly']: 'pro',
+  [Deno.env.get('STRIPE_ENTERPRISE_PRICE_ID') || 'price_enterprise_monthly']: 'enterprise',
+}
+
+function getTierFromPriceId(priceId: string): string {
+  return PRICE_TO_TIER[priceId] || 'base'
+}
+
+function mapSubscriptionStatus(stripeStatus: string): string {
+  switch (stripeStatus) {
+    case 'active':
+      return 'active'
+    case 'canceled':
+      return 'canceled'
+    case 'past_due':
+      return 'past_due'
+    case 'trialing':
+      return 'trialing'
+    case 'paused':
+      return 'paused'
+    case 'incomplete':
+    case 'incomplete_expired':
+    case 'unpaid':
+    default:
+      return 'canceled'
+  }
+}
+
+async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
+  const userId = subscription.metadata?.supabase_user_id
+  if (!userId) {
+    console.error('No supabase_user_id in subscription metadata:', subscription.id)
+    return
+  }
+
+  const priceId = subscription.items.data[0]?.price?.id
+  const tier = subscription.metadata?.tier || getTierFromPriceId(priceId || '')
+  const status = mapSubscriptionStatus(subscription.status)
+
+  console.log(`Subscription created: ${subscription.id} for user ${userId}, tier: ${tier}, status: ${status}`)
+
+  const { error } = await supabase
+    .from('subscriptions')
+    .upsert({
+      user_id: userId,
+      tier: tier,
+      status: status,
+      stripe_subscription_id: subscription.id,
+      stripe_price_id: priceId,
+      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      cancel_at_period_end: subscription.cancel_at_period_end,
+    }, {
+      onConflict: 'user_id',
+    })
+
+  if (error) {
+    console.error('Failed to upsert subscription:', error)
+  } else {
+    console.log(`Subscription record created/updated for user ${userId}`)
+  }
+}
+
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
+  const userId = subscription.metadata?.supabase_user_id
+
+  // If no user ID in metadata, try to find by subscription ID
+  let targetUserId = userId
+  if (!targetUserId) {
+    const { data: existingSub } = await supabase
+      .from('subscriptions')
+      .select('user_id')
+      .eq('stripe_subscription_id', subscription.id)
+      .single()
+
+    if (existingSub) {
+      targetUserId = existingSub.user_id
+    }
+  }
+
+  if (!targetUserId) {
+    console.error('Cannot find user for subscription:', subscription.id)
+    return
+  }
+
+  const priceId = subscription.items.data[0]?.price?.id
+  const tier = subscription.metadata?.tier || getTierFromPriceId(priceId || '')
+  const status = mapSubscriptionStatus(subscription.status)
+
+  console.log(`Subscription updated: ${subscription.id} for user ${targetUserId}, tier: ${tier}, status: ${status}`)
+
+  const { error } = await supabase
+    .from('subscriptions')
+    .update({
+      tier: tier,
+      status: status,
+      stripe_price_id: priceId,
+      current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+      current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+      cancel_at_period_end: subscription.cancel_at_period_end,
+    })
+    .eq('user_id', targetUserId)
+
+  if (error) {
+    console.error('Failed to update subscription:', error)
+  } else {
+    console.log(`Subscription record updated for user ${targetUserId}`)
+  }
+}
+
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
+  const userId = subscription.metadata?.supabase_user_id
+
+  // If no user ID in metadata, try to find by subscription ID
+  let targetUserId = userId
+  if (!targetUserId) {
+    const { data: existingSub } = await supabase
+      .from('subscriptions')
+      .select('user_id')
+      .eq('stripe_subscription_id', subscription.id)
+      .single()
+
+    if (existingSub) {
+      targetUserId = existingSub.user_id
+    }
+  }
+
+  if (!targetUserId) {
+    console.error('Cannot find user for deleted subscription:', subscription.id)
+    return
+  }
+
+  console.log(`Subscription deleted: ${subscription.id} for user ${targetUserId}`)
+
+  // Reset user to base tier
+  const { error } = await supabase
+    .from('subscriptions')
+    .update({
+      tier: 'base',
+      status: 'canceled',
+      stripe_subscription_id: null,
+      stripe_price_id: null,
+      current_period_start: null,
+      current_period_end: null,
+      cancel_at_period_end: false,
+    })
+    .eq('user_id', targetUserId)
+
+  if (error) {
+    console.error('Failed to reset subscription to base:', error)
+  } else {
+    console.log(`User ${targetUserId} reset to base tier`)
+  }
 }
 
 // Polyfill for padLeft

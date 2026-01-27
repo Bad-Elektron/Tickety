@@ -156,6 +156,8 @@ serve(async (req) => {
       currency,
       customer: customerId,
       automatic_payment_methods: { enabled: true },
+      // Enable saving payment methods for future use
+      setup_future_usage: 'off_session',
       metadata: {
         event_id,
         user_id: user.id,

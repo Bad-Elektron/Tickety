@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
-import '../../noise_lab/noise_lab.dart';
+import '../../notifications/notifications.dart';
 import '../../profile/profile.dart';
-import '../../search/search.dart';
 import '../../tickets/tickets.dart';
 import '../../wallet/wallet.dart';
 import '../models/event_category.dart';
@@ -159,35 +158,7 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Discover',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Find your next experience',
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            GradientSearchButton(
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SearchScreen()),
-                );
-              },
-            ),
-            const SizedBox(width: 12),
+            const Spacer(),
             GradientTicketButton(
               onTap: () {
                 Navigator.of(context).push(
@@ -195,7 +166,7 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             GradientWalletButton(
               onTap: () {
                 Navigator.of(context).push(
@@ -203,7 +174,7 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             GradientEventsButton(
               onTap: () {
                 Navigator.of(context).push(
@@ -211,8 +182,8 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(width: 12),
-            const NoiseOrbButton(size: 40),
+            const SizedBox(width: 10),
+            const NotificationBadge(size: 40),
           ],
         ),
       ),
@@ -230,8 +201,9 @@ class _CarouselSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Featured section
         Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Text(
             'Featured',
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -269,20 +241,11 @@ class _SectionHeader extends StatelessWidget {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            TextButton(
-              onPressed: () {},
-              child: const Text('See all'),
-            ),
-          ],
+        child: Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );

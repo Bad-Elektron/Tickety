@@ -43,19 +43,37 @@ class EventStaff {
   });
 
   factory EventStaff.fromJson(Map<String, dynamic> json) {
-    // Profile data from join
-    final profiles = json['profiles'] as Map<String, dynamic>?;
+    // Profile data from join - handle both nested object and null cases
+    final profilesRaw = json['profiles'];
+    Map<String, dynamic>? profiles;
+    if (profilesRaw is Map<String, dynamic>) {
+      profiles = profilesRaw;
+    }
+
+    // Safely parse required fields with better error messages
+    final id = json['id'];
+    final eventId = json['event_id'];
+    final oderId = json['user_id'];
+    final createdAt = json['created_at'];
+
+    if (id == null || eventId == null || oderId == null || createdAt == null) {
+      throw FormatException(
+        'Missing required fields in EventStaff JSON. '
+        'id=$id, event_id=$eventId, user_id=$oderId, created_at=$createdAt. '
+        'Full JSON: $json',
+      );
+    }
 
     return EventStaff(
-      id: json['id'] as String,
-      eventId: json['event_id'] as String,
-      userId: json['user_id'] as String,
-      role: StaffRole.fromString(json['role'] as String) ?? StaffRole.usher,
+      id: id as String,
+      eventId: eventId as String,
+      userId: oderId as String,
+      role: StaffRole.fromString(json['role'] as String?) ?? StaffRole.usher,
       invitedEmail: json['invited_email'] as String?,
       acceptedAt: json['accepted_at'] != null
           ? DateTime.parse(json['accepted_at'] as String)
           : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: DateTime.parse(createdAt as String),
       userName: profiles?['display_name'] as String?,
       userEmail: profiles?['email'] as String? ?? json['invited_email'] as String?,
     );

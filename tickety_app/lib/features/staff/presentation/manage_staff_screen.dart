@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-import '../../../core/services/services.dart';
+import '../../../core/errors/errors.dart';
 import '../../events/models/event_model.dart';
 import '../data/staff_repository.dart';
 import '../models/staff_role.dart';
+
+const _tag = 'ManageStaffScreen';
 
 /// Screen for event organizers to manage their staff.
 class ManageStaffScreen extends StatefulWidget {
@@ -27,14 +29,33 @@ class _ManageStaffScreenState extends State<ManageStaffScreen> {
   }
 
   Future<void> _loadStaff() async {
+    AppLogger.info('Loading staff for event: ${widget.event.id}', tag: _tag);
+    AppLogger.info('Event name: ${widget.event.title}', tag: _tag);
+
     setState(() => _isLoading = true);
     try {
       final staff = await _repository.getEventStaff(widget.event.id);
+      AppLogger.info('Loaded ${staff.length} staff members', tag: _tag);
+      for (final s in staff) {
+        AppLogger.debug(
+          'Staff: ${s.userName ?? s.userEmail ?? s.userId} - ${s.role.label}',
+          tag: _tag,
+        );
+      }
       setState(() => _staff = staff);
-    } catch (e) {
+    } catch (e, stackTrace) {
+      AppLogger.error(
+        'Failed to load staff for event ${widget.event.id}',
+        error: e,
+        stackTrace: stackTrace,
+        tag: _tag,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load staff: $e')),
+          SnackBar(
+            content: Text('Failed to load staff: $e'),
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     } finally {
@@ -43,32 +64,30 @@ class _ManageStaffScreenState extends State<ManageStaffScreen> {
   }
 
   Future<void> _addStaff() async {
+    // Pass existing user IDs to filter them out of search results
+    final existingUserIds = _staff.map((s) => s.userId).toSet();
+
     final result = await showDialog<_AddStaffResult>(
       context: context,
-      builder: (context) => _AddStaffDialog(),
+      builder: (context) => _AddStaffDialog(existingUserIds: existingUserIds),
     );
 
     if (result == null) return;
 
     try {
-      // For now, use the email as a placeholder - in production you'd
-      // look up the user by email or send an invitation
-      final userId = SupabaseService.instance.currentUser?.id;
-      if (userId == null) return;
-
       await _repository.addStaff(
         eventId: widget.event.id,
-        userId: userId, // TODO: Look up user by email
+        userId: result.user.id,
         role: result.role,
-        email: result.email,
+        email: result.user.email,
       );
 
       await _loadStaff();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Staff member added'),
+          SnackBar(
+            content: Text('${result.user.displayName ?? result.user.email} added as ${result.role.label}'),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -311,13 +330,22 @@ class _StaffCard extends StatelessWidget {
 }
 
 class _AddStaffDialog extends StatefulWidget {
+  final Set<String> existingUserIds;
+
+  const _AddStaffDialog({this.existingUserIds = const {}});
+
   @override
   State<_AddStaffDialog> createState() => _AddStaffDialogState();
 }
 
 class _AddStaffDialogState extends State<_AddStaffDialog> {
+  final _repository = StaffRepository();
   final _emailController = TextEditingController();
   StaffRole _selectedRole = StaffRole.usher;
+  List<UserSearchResult> _searchResults = [];
+  UserSearchResult? _selectedUser;
+  bool _isSearching = false;
+  String? _searchError;
 
   @override
   void dispose() {
@@ -325,48 +353,186 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     super.dispose();
   }
 
+  Future<void> _searchUsers(String query) async {
+    if (query.trim().length < 2) {
+      setState(() {
+        _searchResults = [];
+        _searchError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _searchError = null;
+    });
+
+    try {
+      final results = await _repository.searchUsersByEmail(query);
+      // Filter out users already on staff
+      final filtered = results
+          .where((r) => !widget.existingUserIds.contains(r.id))
+          .toList();
+      setState(() {
+        _searchResults = filtered;
+        _isSearching = false;
+      });
+    } catch (e) {
+      setState(() {
+        _searchError = 'Search failed: $e';
+        _isSearching = false;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
     return AlertDialog(
       title: const Text('Add Staff Member'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Email address',
-              border: OutlineInputBorder(),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'Search by email',
+                border: const OutlineInputBorder(),
+                suffixIcon: _isSearching
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : const Icon(Icons.search),
+              ),
+              onChanged: (value) {
+                _searchUsers(value);
+                if (_selectedUser != null) {
+                  setState(() => _selectedUser = null);
+                }
+              },
             ),
-          ),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<StaffRole>(
-            initialValue: _selectedRole,
-            decoration: const InputDecoration(
-              labelText: 'Role',
-              border: OutlineInputBorder(),
-            ),
-            items: StaffRole.values.map((role) {
-              return DropdownMenuItem(
-                value: role,
-                child: Text(role.label),
-              );
-            }).toList(),
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _selectedRole = value);
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _selectedRole.description,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+            if (_searchError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _searchError!,
+                style: TextStyle(color: colorScheme.error, fontSize: 12),
+              ),
+            ],
+            if (_selectedUser != null) ...[
+              const SizedBox(height: 12),
+              Card(
+                color: colorScheme.primaryContainer,
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: colorScheme.primary,
+                    child: Text(
+                      (_selectedUser!.displayName ?? _selectedUser!.email)
+                          .substring(0, 1)
+                          .toUpperCase(),
+                      style: TextStyle(color: colorScheme.onPrimary),
+                    ),
+                  ),
+                  title: Text(
+                    _selectedUser!.displayName ?? 'No name',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(_selectedUser!.email),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () {
+                      setState(() {
+                        _selectedUser = null;
+                        _emailController.clear();
+                        _searchResults = [];
+                      });
+                    },
+                  ),
                 ),
-          ),
-        ],
+              ),
+            ] else if (_searchResults.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 150),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _searchResults.length,
+                  itemBuilder: (context, index) {
+                    final user = _searchResults[index];
+                    return ListTile(
+                      dense: true,
+                      leading: CircleAvatar(
+                        radius: 16,
+                        child: Text(
+                          (user.displayName ?? user.email)
+                              .substring(0, 1)
+                              .toUpperCase(),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                      title: Text(user.displayName ?? 'No name'),
+                      subtitle: Text(
+                        user.email,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onTap: () {
+                        setState(() {
+                          _selectedUser = user;
+                          _emailController.text = user.email;
+                          _searchResults = [];
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            ] else if (_emailController.text.length >= 2 && !_isSearching) ...[
+              const SizedBox(height: 8),
+              Text(
+                'No users found',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+            DropdownButtonFormField<StaffRole>(
+              initialValue: _selectedRole,
+              decoration: const InputDecoration(
+                labelText: 'Role',
+                border: OutlineInputBorder(),
+              ),
+              items: StaffRole.values.map((role) {
+                return DropdownMenuItem(
+                  value: role,
+                  child: Text(role.label),
+                );
+              }).toList(),
+              onChanged: (value) {
+                if (value != null) {
+                  setState(() => _selectedRole = value);
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _selectedRole.description,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -374,17 +540,17 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () {
-            if (_emailController.text.trim().isNotEmpty) {
-              Navigator.pop(
-                context,
-                _AddStaffResult(
-                  email: _emailController.text.trim(),
-                  role: _selectedRole,
-                ),
-              );
-            }
-          },
+          onPressed: _selectedUser == null
+              ? null
+              : () {
+                  Navigator.pop(
+                    context,
+                    _AddStaffResult(
+                      user: _selectedUser!,
+                      role: _selectedRole,
+                    ),
+                  );
+                },
           child: const Text('Add'),
         ),
       ],
@@ -393,8 +559,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
 }
 
 class _AddStaffResult {
-  final String email;
+  final UserSearchResult user;
   final StaffRole role;
 
-  _AddStaffResult({required this.email, required this.role});
+  _AddStaffResult({required this.user, required this.role});
 }

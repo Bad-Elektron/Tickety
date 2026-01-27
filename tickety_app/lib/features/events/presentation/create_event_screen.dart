@@ -1,14 +1,15 @@
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/graphics/graphics.dart';
 import '../../../core/services/services.dart';
 import '../../../core/utils/utils.dart';
 import '../../auth/auth.dart';
 import '../data/data.dart';
 import '../models/event_tag.dart';
-import '../widgets/tag_selector.dart';
 
 /// Screen for creating a new event.
 class CreateEventScreen extends StatefulWidget {
@@ -18,6 +19,113 @@ class CreateEventScreen extends StatefulWidget {
   State<CreateEventScreen> createState() => _CreateEventScreenState();
 }
 
+/// Predefined ticket type names in order of suggestion.
+const _predefinedTicketNames = [
+  'General Admission',
+  'VIP',
+  'Early Bird',
+  'Student',
+  'Group',
+  'Premium',
+  'Standing',
+  'Seated',
+  'Backstage',
+  'All Access',
+];
+
+/// Subscription tiers for promotion access.
+enum SubscriptionTier { free, pro, enterprise }
+
+/// Promotion package for event marketing.
+class PromotionPackage {
+  final String id;
+  final String name;
+  final String description;
+  final IconData icon;
+  final double priceEur;
+  final SubscriptionTier includedIn; // Tier where this is free
+  final Color color;
+
+  const PromotionPackage({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.icon,
+    required this.priceEur,
+    required this.includedIn,
+    required this.color,
+  });
+}
+
+/// Available promotion packages.
+const _promotionPackages = [
+  PromotionPackage(
+    id: 'featured',
+    name: 'Featured',
+    description: 'Appear in the Featured carousel on home screen for 7 days',
+    icon: Icons.star_rounded,
+    priceEur: 15,
+    includedIn: SubscriptionTier.pro,
+    color: Color(0xFFF59E0B),
+  ),
+  PromotionPackage(
+    id: 'spotlight',
+    name: 'Spotlight',
+    description: 'Highlighted badge + priority in search results for 14 days',
+    icon: Icons.lightbulb_rounded,
+    priceEur: 25,
+    includedIn: SubscriptionTier.pro,
+    color: Color(0xFF8B5CF6),
+  ),
+  PromotionPackage(
+    id: 'push_notification',
+    name: 'Push Blast',
+    description: 'Send a push notification to users in your city',
+    icon: Icons.notifications_active_rounded,
+    priceEur: 35,
+    includedIn: SubscriptionTier.enterprise,
+    color: Color(0xFFEF4444),
+  ),
+  PromotionPackage(
+    id: 'social_boost',
+    name: 'Social Boost',
+    description: 'We promote your event on our social media channels',
+    icon: Icons.share_rounded,
+    priceEur: 45,
+    includedIn: SubscriptionTier.enterprise,
+    color: Color(0xFF3B82F6),
+  ),
+];
+
+/// Represents a ticket type with name, price, quantity, and description.
+class _TicketType {
+  String name;
+  String description;
+  double price;
+  int quantity;
+  final TextEditingController nameController;
+  final TextEditingController descriptionController;
+  final TextEditingController priceController;
+  final TextEditingController quantityController;
+
+  _TicketType({
+    required this.name,
+    this.description = '',
+    this.price = 0,
+    this.quantity = 10,
+  })  : nameController = TextEditingController(text: name),
+        descriptionController = TextEditingController(text: description),
+        priceController = TextEditingController(text: price > 0 ? price.toString() : '0'),
+        quantityController = TextEditingController(text: quantity.toString());
+
+  void dispose() {
+    nameController.dispose();
+    descriptionController.dispose();
+    priceController.dispose();
+    quantityController.dispose();
+  }
+}
+
 class _CreateEventScreenState extends State<CreateEventScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -25,29 +133,128 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   final _descriptionController = TextEditingController();
   final _venueController = TextEditingController();
   final _cityController = TextEditingController();
-  final _priceController = TextEditingController(text: '0');
 
   final _repository = SupabaseEventRepository();
 
   bool _isPublic = false;
   bool _isLoading = false;
+  bool _hideLocation = false;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
-  int _ticketCount = 10;
   Set<EventTag> _selectedTags = {};
+
+  // Ticket types
+  late List<_TicketType> _ticketTypes;
+
+  // Promotions
+  Set<String> _selectedPromotions = {};
+  // TODO: Get actual subscription tier from user profile
+  final SubscriptionTier _userTier = SubscriptionTier.free;
 
   // Track which step we're on (0 = basics, 1 = details, 2 = pricing)
   int _currentStep = 0;
 
+  // Noise preview state
+  late int _noiseSeed;
+  Timer? _noiseAnimationTimer;
+  double _noiseTimeOffset = 0;
+  double _noiseColorProgress = 0;
+  int _fromColorIndex = 0;
+  int _toColorIndex = 1;
+  bool _isGeneratingNoise = false;
+
+  // Color schemes for noise animation
+  static const List<List<Color>> _colorSchemes = [
+    [Color(0xFFFF6B6B), Color(0xFF4ECDC4), Color(0xFF45B7D1), Color(0xFFDDA0DD)],
+    [Color(0xFFf093fb), Color(0xFFf5576c), Color(0xFFffecd2)],
+    [Color(0xFF0077B6), Color(0xFF00B4D8), Color(0xFF90E0EF), Color(0xFFCAF0F8)],
+    [Color(0xFF667eea), Color(0xFF764ba2), Color(0xFFf093fb)],
+    [Color(0xFFFFE66D), Color(0xFFFF6B6B), Color(0xFF4ECDC4)],
+    [Color(0xFF2C3E50), Color(0xFF3498DB), Color(0xFF1ABC9C)],
+    [Color(0xFFE74C3C), Color(0xFFF39C12), Color(0xFFF1C40F)],
+    [Color(0xFF8E44AD), Color(0xFF3498DB), Color(0xFF1ABC9C), Color(0xFFE74C3C)],
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _noiseSeed = Random().nextInt(10000);
+    _fromColorIndex = Random().nextInt(_colorSchemes.length);
+    _toColorIndex = (_fromColorIndex + 1) % _colorSchemes.length;
+    // Initialize with default General Admission ticket
+    _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
+  }
+
   @override
   void dispose() {
+    _noiseAnimationTimer?.cancel();
     _nameController.dispose();
     _subtitleController.dispose();
     _descriptionController.dispose();
     _venueController.dispose();
     _cityController.dispose();
-    _priceController.dispose();
+    for (final ticketType in _ticketTypes) {
+      ticketType.dispose();
+    }
     super.dispose();
+  }
+
+  // Interpolate between two color lists
+  List<Color> _lerpColors(List<Color> from, List<Color> to, double t) {
+    final maxLen = max(from.length, to.length);
+    final result = <Color>[];
+    for (var i = 0; i < maxLen; i++) {
+      final fromColor = from[i % from.length];
+      final toColor = to[i % to.length];
+      result.add(Color.lerp(fromColor, toColor, t)!);
+    }
+    return result;
+  }
+
+  List<Color> get _currentNoiseColors {
+    final from = _colorSchemes[_fromColorIndex % _colorSchemes.length];
+    final to = _colorSchemes[_toColorIndex % _colorSchemes.length];
+    return _lerpColors(from, to, _noiseColorProgress);
+  }
+
+  void _startNoiseGeneration() {
+    setState(() => _isGeneratingNoise = true);
+    HapticFeedback.lightImpact();
+
+    _noiseAnimationTimer = Timer.periodic(const Duration(milliseconds: 33), (_) {
+      setState(() {
+        _noiseTimeOffset += 0.25;
+        _noiseColorProgress += 0.003;
+        if (_noiseColorProgress >= 1.0) {
+          _noiseColorProgress = 0;
+          _fromColorIndex = _toColorIndex;
+          _toColorIndex = (_toColorIndex + 1) % _colorSchemes.length;
+        }
+      });
+    });
+  }
+
+  void _stopNoiseGeneration() {
+    _noiseAnimationTimer?.cancel();
+    HapticFeedback.mediumImpact();
+
+    // Just stop generating - keep the current visual state exactly as is
+    setState(() {
+      _isGeneratingNoise = false;
+    });
+  }
+
+  Future<void> _pickImage() async {
+    // TODO: Implement image picker
+    // For now, show a message that this feature is coming
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Image upload coming soon! Using generated art for now.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _createEvent() async {
@@ -110,9 +317,10 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         _selectedTime.minute,
       );
 
-      // Parse price (convert dollars to cents)
-      final priceText = _priceController.text.replaceAll(RegExp(r'[^\d.]'), '');
-      final priceDollars = double.tryParse(priceText) ?? 0;
+      // Use the first ticket type's price (convert dollars to cents)
+      // TODO: Support multiple ticket types in the database
+      final firstTicket = _ticketTypes.first;
+      final priceDollars = double.tryParse(firstTicket.priceController.text) ?? 0;
       final priceCents = (priceDollars * 100).round();
 
       // Get all selected tag IDs
@@ -138,7 +346,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         city: sanitizedCity.isNotEmpty ? sanitizedCity : null,
         priceInCents: priceCents > 0 ? priceCents : null,
         tags: tagIds,
-        noiseSeed: Random().nextInt(10000),
+        noiseSeed: _noiseSeed,
+        hideLocation: _hideLocation,
       );
 
       HapticFeedback.mediumImpact();
@@ -238,14 +447,15 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_getStepTitle()),
-        centerTitle: true,
         leading: _currentStep > 0
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: _previousStep,
               )
-            : null,
+            : IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
         actions: [
           _VisibilityToggle(
             isPublic: _isPublic,
@@ -259,21 +469,21 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // Step indicator
+              // Step indicator dots
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (int i = 0; i < 3; i++) ...[
-                      Expanded(
-                        child: Container(
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: i <= _currentStep
-                                ? colorScheme.primary
-                                : colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i <= _currentStep
+                              ? colorScheme.primary
+                              : colorScheme.surfaceContainerHighest,
                         ),
                       ),
                       if (i < 2) const SizedBox(width: 8),
@@ -344,9 +554,9 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       case 0:
         return _buildBasicsStep(theme, colorScheme);
       case 1:
-        return _buildDetailsStep(theme, colorScheme);
+        return _buildPromotionStep(theme, colorScheme);
       case 2:
-        return _buildPricingStep(theme, colorScheme);
+        return _buildTicketsStep(theme, colorScheme);
       default:
         return const SizedBox.shrink();
     }
@@ -356,15 +566,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     return Column(
       key: const ValueKey('basics'),
       children: [
-        const SizedBox(height: 32),
-        Text(
-          'What\'s your event called?',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        // Event name input at the top
         TextField(
           controller: _nameController,
           textAlign: TextAlign.center,
@@ -385,6 +588,18 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           autofocus: true,
         ),
         const SizedBox(height: 16),
+        // Noise preview card with press-and-hold to generate
+        _NoisePreviewCard(
+          colors: _currentNoiseColors,
+          timeOffset: _noiseTimeOffset,
+          seed: _noiseSeed,
+          isGenerating: _isGeneratingNoise,
+          onLongPressStart: _startNoiseGeneration,
+          onLongPressEnd: _stopNoiseGeneration,
+          onUploadTap: _pickImage,
+        ),
+        const SizedBox(height: 8),
+        // Tagline below the cover
         TextField(
           controller: _subtitleController,
           textAlign: TextAlign.center,
@@ -400,7 +615,57 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           ),
           textCapitalization: TextCapitalization.sentences,
         ),
-        const SizedBox(height: 32),
+        const SizedBox(height: 16),
+        // Venue and City
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _venueController,
+                decoration: const InputDecoration(
+                  labelText: 'Venue',
+                  hintText: 'e.g., Madison Square Garden',
+                  prefixIcon: Icon(Icons.place_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextFormField(
+                controller: _cityController,
+                decoration: const InputDecoration(
+                  labelText: 'City',
+                  hintText: 'e.g., New York',
+                  prefixIcon: Icon(Icons.location_city_outlined),
+                  border: OutlineInputBorder(),
+                ),
+                textCapitalization: TextCapitalization.words,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Hide location toggle
+        _HideLocationToggle(
+          value: _hideLocation,
+          onChanged: (value) => setState(() => _hideLocation = value),
+        ),
+        const SizedBox(height: 16),
+        // Description
+        TextFormField(
+          controller: _descriptionController,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: 'Description (optional)',
+            hintText: 'What can attendees expect?',
+            alignLabelWithHint: true,
+            border: OutlineInputBorder(),
+          ),
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        const SizedBox(height: 24),
         _DateTimePicker(
           date: _selectedDate,
           time: _selectedTime,
@@ -414,120 +679,225 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     );
   }
 
-  Widget _buildDetailsStep(ThemeData theme, ColorScheme colorScheme) {
-    return Column(
-      key: const ValueKey('details'),
-      children: [
-        const SizedBox(height: 32),
-        Text(
-          'Where is it happening?',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        TextFormField(
-          controller: _venueController,
-          decoration: const InputDecoration(
-            labelText: 'Venue Name',
-            hintText: 'e.g., Madison Square Garden',
-            prefixIcon: Icon(Icons.place_outlined),
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.words,
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _cityController,
-          decoration: const InputDecoration(
-            labelText: 'City',
-            hintText: 'e.g., New York',
-            prefixIcon: Icon(Icons.location_city_outlined),
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.words,
-        ),
-        const SizedBox(height: 32),
-        Text(
-          'Tell us more about it',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _descriptionController,
-          maxLines: 4,
-          decoration: const InputDecoration(
-            labelText: 'Description (optional)',
-            hintText: 'What can attendees expect?',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
-          ),
-          textCapitalization: TextCapitalization.sentences,
-        ),
-        const SizedBox(height: 32),
-      ],
+  Widget _buildPromotionStep(ThemeData theme, ColorScheme colorScheme) {
+    return _PromotionStep(
+      key: const ValueKey('promotion'),
+      selectedTags: _selectedTags,
+      onTagsChanged: (tags) => setState(() => _selectedTags = tags),
+      selectedPromotions: _selectedPromotions,
+      onPromotionsChanged: (promos) => setState(() => _selectedPromotions = promos),
+      userTier: _userTier,
     );
   }
 
-  Widget _buildPricingStep(ThemeData theme, ColorScheme colorScheme) {
+  String _getNextTicketName() {
+    final usedNames = _ticketTypes.map((t) => t.name).toSet();
+    for (final name in _predefinedTicketNames) {
+      if (!usedNames.contains(name)) {
+        return name;
+      }
+    }
+    // Fallback when all predefined names are used
+    return 'Ticket ${_ticketTypes.length + 1}';
+  }
+
+  void _addTicketType() {
+    setState(() {
+      _ticketTypes.add(_TicketType(name: _getNextTicketName()));
+    });
+  }
+
+  void _removeTicketType(int index) {
+    if (_ticketTypes.length <= 1) return; // Keep at least one
+    setState(() {
+      _ticketTypes[index].dispose();
+      _ticketTypes.removeAt(index);
+    });
+  }
+
+  Widget _buildTicketsStep(ThemeData theme, ColorScheme colorScheme) {
     return Column(
-      key: const ValueKey('pricing'),
+      key: const ValueKey('tickets'),
       children: [
-        const SizedBox(height: 32),
-        Text(
-          'Set your ticket price',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 24),
-        TextFormField(
-          controller: _priceController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textAlign: TextAlign.center,
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
-          decoration: InputDecoration(
-            prefixText: '\$ ',
-            prefixStyle: theme.textTheme.headlineMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: colorScheme.primary,
+        const SizedBox(height: 16),
+        // Ticket types list
+        ...List.generate(_ticketTypes.length, (index) {
+          final ticketType = _ticketTypes[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _TicketTypeRow(
+              ticketType: ticketType,
+              canRemove: _ticketTypes.length > 1,
+              onRemove: () => _removeTicketType(index),
+              onNameChanged: (value) => ticketType.name = value,
+              onDescriptionChanged: (value) => ticketType.description = value,
+              onPriceChanged: (value) => ticketType.price = double.tryParse(value) ?? 0,
+              onQuantityChanged: (value) => ticketType.quantity = int.tryParse(value) ?? 10,
             ),
-            hintText: '0.00',
-            border: const OutlineInputBorder(),
-            helperText: 'Leave as 0 for free events',
+          );
+        }),
+        // Add ticket type button
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _addTicketType,
+          icon: const Icon(Icons.add, size: 20),
+          label: const Text('Add Ticket Type'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
-          inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-          ],
-        ),
-        const SizedBox(height: 32),
-        _TicketSelector(
-          count: _ticketCount,
-          onChanged: (value) => setState(() => _ticketCount = value),
-        ),
-        const SizedBox(height: 32),
-        Text(
-          'Choose a category',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 16),
-        TagSelector(
-          selectedTags: _selectedTags,
-          onTagsChanged: (tags) => setState(() => _selectedTags = tags),
-          maxTags: 3,
+        Text(
+          'Price 0 = free entry',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 32),
       ],
+    );
+  }
+}
+
+/// Row widget for a single ticket type with name, description, price, and quantity.
+class _TicketTypeRow extends StatelessWidget {
+  final _TicketType ticketType;
+  final bool canRemove;
+  final VoidCallback onRemove;
+  final ValueChanged<String> onNameChanged;
+  final ValueChanged<String> onDescriptionChanged;
+  final ValueChanged<String> onPriceChanged;
+  final ValueChanged<String> onQuantityChanged;
+
+  const _TicketTypeRow({
+    required this.ticketType,
+    required this.canRemove,
+    required this.onRemove,
+    required this.onNameChanged,
+    required this.onDescriptionChanged,
+    required this.onPriceChanged,
+    required this.onQuantityChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        children: [
+          // Name row with remove button
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: ticketType.nameController,
+                  decoration: const InputDecoration(
+                    hintText: 'Ticket name',
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(vertical: 8),
+                  ),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  onChanged: onNameChanged,
+                ),
+              ),
+              if (canRemove)
+                IconButton(
+                  icon: Icon(
+                    Icons.close,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  onPressed: onRemove,
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                ),
+            ],
+          ),
+          // Description field
+          TextField(
+            controller: ticketType.descriptionController,
+            decoration: InputDecoration(
+              hintText: 'Description (optional)',
+              hintStyle: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurface.withValues(alpha: 0.4),
+              ),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+            ),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            onChanged: onDescriptionChanged,
+          ),
+          const SizedBox(height: 8),
+          // Price and quantity row
+          Row(
+            children: [
+              // Price
+              Expanded(
+                child: TextField(
+                  controller: ticketType.priceController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    prefixText: '\$ ',
+                    prefixStyle: TextStyle(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    hintText: '0',
+                    labelText: 'Price',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                  ],
+                  onChanged: onPriceChanged,
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Quantity
+              Expanded(
+                child: TextField(
+                  controller: ticketType.quantityController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Quantity',
+                    hintText: '10',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+                  onChanged: onQuantityChanged,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -558,6 +928,76 @@ class _VisibilityToggle extends StatelessWidget {
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
       ],
+    );
+  }
+}
+
+/// Toggle for hiding location until ticket purchase.
+class _HideLocationToggle extends StatelessWidget {
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _HideLocationToggle({
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: value
+              ? colorScheme.primaryContainer.withValues(alpha: 0.5)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: value
+                ? colorScheme.primary.withValues(alpha: 0.5)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              value ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+              size: 20,
+              color: value ? colorScheme.primary : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Secret Location',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: value ? colorScheme.primary : colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    'Reveal location only after ticket purchase',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: onChanged,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1027,5 +1467,633 @@ class _TicketIconPainter extends CustomPainter {
   @override
   bool shouldRepaint(_TicketIconPainter oldDelegate) {
     return oldDelegate.color != color;
+  }
+}
+
+/// Noise preview card with press-and-hold to generate new patterns.
+class _NoisePreviewCard extends StatelessWidget {
+  final List<Color> colors;
+  final double timeOffset;
+  final int seed;
+  final bool isGenerating;
+  final VoidCallback onLongPressStart;
+  final VoidCallback onLongPressEnd;
+  final VoidCallback onUploadTap;
+
+  const _NoisePreviewCard({
+    required this.colors,
+    required this.timeOffset,
+    required this.seed,
+    required this.isGenerating,
+    required this.onLongPressStart,
+    required this.onLongPressEnd,
+    required this.onUploadTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      children: [
+        GestureDetector(
+          onLongPressStart: (_) => onLongPressStart(),
+          onLongPressEnd: (_) => onLongPressEnd(),
+          child: Stack(
+            children: [
+              // Noise card
+              Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colors.first.withValues(alpha: 0.3),
+                      blurRadius: isGenerating ? 24 : 12,
+                      spreadRadius: isGenerating ? 4 : 0,
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: CustomPaint(
+                    size: const Size(double.infinity, 180),
+                    painter: _EventNoisePainter(
+                      colors: colors,
+                      timeOffset: timeOffset,
+                      seed: seed,
+                    ),
+                  ),
+                ),
+              ),
+              // Upload photo button - fades out while generating
+              Positioned(
+                bottom: 12,
+                right: 12,
+                child: AnimatedOpacity(
+                  opacity: isGenerating ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Material(
+                    color: Colors.black.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: isGenerating ? null : onUploadTap,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add_photo_alternate_outlined,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Upload',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Hint text below the cover
+        const SizedBox(height: 8),
+        Text(
+          'Hold to generate new art',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Custom painter for event noise preview.
+class _EventNoisePainter extends CustomPainter {
+  final List<Color> colors;
+  final double timeOffset;
+  final int seed;
+
+  _EventNoisePainter({
+    required this.colors,
+    required this.timeOffset,
+    required this.seed,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final config = NoiseConfig(
+      colors: colors,
+      seed: seed,
+      scale: 0.015,
+      octaves: 3,
+      persistence: 0.7,
+    );
+    final generator = NoiseGenerator(config: config);
+    final paint = Paint();
+
+    // Slowly rotating direction
+    final angle = timeOffset * 0.004;
+    final dirX = cos(angle);
+    final dirY = sin(angle);
+
+    const pixelSize = 4.0;
+    final cols = (size.width / pixelSize).ceil();
+    final rows = (size.height / pixelSize).ceil();
+
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        final color = generator.getColorAt(
+          x + timeOffset * dirX,
+          y + timeOffset * dirY,
+        );
+        paint.color = color;
+        canvas.drawRect(
+          Rect.fromLTWH(
+            x * pixelSize,
+            y * pixelSize,
+            pixelSize,
+            pixelSize,
+          ),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_EventNoisePainter oldDelegate) =>
+      oldDelegate.timeOffset != timeOffset ||
+      oldDelegate.colors != colors ||
+      oldDelegate.seed != seed;
+}
+
+/// Promotion step with tags and marketing packages.
+class _PromotionStep extends StatefulWidget {
+  final Set<EventTag> selectedTags;
+  final ValueChanged<Set<EventTag>> onTagsChanged;
+  final Set<String> selectedPromotions;
+  final ValueChanged<Set<String>> onPromotionsChanged;
+  final SubscriptionTier userTier;
+
+  const _PromotionStep({
+    super.key,
+    required this.selectedTags,
+    required this.onTagsChanged,
+    required this.selectedPromotions,
+    required this.onPromotionsChanged,
+    required this.userTier,
+  });
+
+  @override
+  State<_PromotionStep> createState() => _PromotionStepState();
+}
+
+class _PromotionStepState extends State<_PromotionStep> {
+  final _tagController = TextEditingController();
+  final _tagFocusNode = FocusNode();
+  List<EventTag> _suggestions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _tagController.addListener(_onTextChanged);
+  }
+
+  @override
+  void dispose() {
+    _tagController.dispose();
+    _tagFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onTextChanged() {
+    final query = _tagController.text.toLowerCase().trim();
+    if (query.isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    final matches = PredefinedTags.all.where((tag) {
+      if (widget.selectedTags.contains(tag)) return false;
+      return tag.label.toLowerCase().contains(query);
+    }).toList();
+    setState(() => _suggestions = matches.take(5).toList());
+  }
+
+  void _addTag(EventTag tag) {
+    if (widget.selectedTags.length >= 3) return;
+    final newTags = Set<EventTag>.from(widget.selectedTags)..add(tag);
+    widget.onTagsChanged(newTags);
+    _tagController.clear();
+    setState(() => _suggestions = []);
+  }
+
+  void _removeTag(EventTag tag) {
+    final newTags = Set<EventTag>.from(widget.selectedTags)..remove(tag);
+    widget.onTagsChanged(newTags);
+  }
+
+  void _submitCustomTag() {
+    final text = _tagController.text.trim();
+    if (text.isEmpty || widget.selectedTags.length >= 3) return;
+    final existing = PredefinedTags.all.where(
+      (t) => t.label.toLowerCase() == text.toLowerCase(),
+    );
+    final tag = existing.isNotEmpty ? existing.first : EventTag.custom(text);
+    _addTag(tag);
+  }
+
+  void _togglePromotion(String id) {
+    final newPromos = Set<String>.from(widget.selectedPromotions);
+    if (newPromos.contains(id)) {
+      newPromos.remove(id);
+    } else {
+      newPromos.add(id);
+    }
+    widget.onPromotionsChanged(newPromos);
+  }
+
+  bool _isIncludedFree(PromotionPackage pkg) {
+    if (widget.userTier == SubscriptionTier.enterprise) return true;
+    if (widget.userTier == SubscriptionTier.pro &&
+        pkg.includedIn == SubscriptionTier.pro) return true;
+    return false;
+  }
+
+  double _calculateTotal() {
+    double total = 0;
+    for (final pkg in _promotionPackages) {
+      if (widget.selectedPromotions.contains(pkg.id) && !_isIncludedFree(pkg)) {
+        total += pkg.priceEur;
+      }
+    }
+    return total;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final total = _calculateTotal();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 16),
+        // Tags section
+        Text(
+          'Tags',
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Selected tags
+        if (widget.selectedTags.isNotEmpty) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: widget.selectedTags.map((tag) {
+              final tagColor = tag.color ?? colorScheme.primary;
+              return Container(
+                padding: const EdgeInsets.only(left: 10, right: 2, top: 6, bottom: 6),
+                decoration: BoxDecoration(
+                  color: tagColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: tagColor.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (tag.icon != null) ...[
+                      Icon(tag.icon, size: 16, color: tagColor),
+                      const SizedBox(width: 4),
+                    ],
+                    Text(
+                      tag.label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: tagColor,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () => _removeTag(tag),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.close, size: 14, color: tagColor),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 8),
+        ],
+        // Tag input
+        if (widget.selectedTags.length < 3)
+          TextField(
+            controller: _tagController,
+            focusNode: _tagFocusNode,
+            decoration: InputDecoration(
+              hintText: 'Add tags...',
+              prefixIcon: const Icon(Icons.label_outline, size: 20),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              suffixText: '${widget.selectedTags.length}/3',
+            ),
+            style: theme.textTheme.bodyMedium,
+            textCapitalization: TextCapitalization.words,
+            onSubmitted: (_) => _submitCustomTag(),
+          ),
+        // Suggestions
+        if (_suggestions.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _suggestions.map((tag) {
+              final tagColor = tag.color ?? colorScheme.primary;
+              return GestureDetector(
+                onTap: () => _addTag(tag),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: tagColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (tag.icon != null) ...[
+                        Icon(tag.icon, size: 14, color: tagColor),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(tag.label, style: theme.textTheme.labelSmall),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+
+        const SizedBox(height: 24),
+        // Promotion packages section
+        Row(
+          children: [
+            Icon(Icons.campaign_rounded, size: 20, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Boost Your Event',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Get more visibility with promotion packages',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // Promotion cards
+        ..._promotionPackages.map((pkg) {
+          final isSelected = widget.selectedPromotions.contains(pkg.id);
+          final isFree = _isIncludedFree(pkg);
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: _PromotionCard(
+              package: pkg,
+              isSelected: isSelected,
+              isFree: isFree,
+              userTier: widget.userTier,
+              onTap: () => _togglePromotion(pkg.id),
+            ),
+          );
+        }),
+
+        // Total and subscription upsell
+        if (total > 0) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Promotion total',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      '€${total.toStringAsFixed(0)}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.diamond_outlined, size: 18, color: colorScheme.secondary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Get Pro for €12/mo and promotions are included free!',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+/// Card for a single promotion package.
+class _PromotionCard extends StatelessWidget {
+  final PromotionPackage package;
+  final bool isSelected;
+  final bool isFree;
+  final SubscriptionTier userTier;
+  final VoidCallback onTap;
+
+  const _PromotionCard({
+    required this.package,
+    required this.isSelected,
+    required this.isFree,
+    required this.userTier,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? package.color.withValues(alpha: 0.1)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? package.color.withValues(alpha: 0.6)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: package.color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(package.icon, size: 20, color: package.color),
+            ),
+            const SizedBox(width: 12),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        package.name,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (isFree) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'FREE',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 10,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    package.description,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            // Price / checkbox
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!isFree)
+                  Text(
+                    '€${package.priceEur.toStringAsFixed(0)}',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? package.color : colorScheme.onSurface,
+                    ),
+                  )
+                else
+                  Text(
+                    '€${package.priceEur.toStringAsFixed(0)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      decoration: TextDecoration.lineThrough,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: isSelected ? package.color : Colors.transparent,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isSelected ? package.color : colorScheme.outline,
+                      width: 2,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

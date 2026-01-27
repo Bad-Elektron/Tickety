@@ -787,8 +787,7 @@ class _ManageUshersSheetState extends ConsumerState<_ManageUshersSheet> {
   @override
   void dispose() {
     _emailController.dispose();
-    // Clear search results when closing
-    ref.read(userSearchProvider.notifier).clear();
+    // Note: Don't use ref in dispose() - it's not valid after widget disposal
     super.dispose();
   }
 
@@ -1083,6 +1082,14 @@ class _ManageUshersSheetState extends ConsumerState<_ManageUshersSheet> {
                               const SizedBox(height: 16),
                               Text('Failed to load staff', style: theme.textTheme.titleMedium),
                               const SizedBox(height: 8),
+                              Text(
+                                staffState.error ?? 'Unknown error',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: colorScheme.error,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
                               OutlinedButton(
                                 onPressed: () => ref.read(staffProvider.notifier).refresh(),
                                 child: const Text('Retry'),

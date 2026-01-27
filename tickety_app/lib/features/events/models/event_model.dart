@@ -63,6 +63,10 @@ class EventModel {
   /// Currency code (e.g., "USD", "EUR").
   final String currency;
 
+  /// Whether the location should be hidden until ticket purchase.
+  /// When true, venue/city/country are only shown to ticket holders.
+  final bool hideLocation;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -80,6 +84,7 @@ class EventModel {
     this.tags = const [],
     this.priceInCents,
     this.currency = 'USD',
+    this.hideLocation = false,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -90,6 +95,8 @@ class EventModel {
 
   /// Combines venue and city for display purposes.
   /// Falls back to [location] if venue/city are not set.
+  /// Note: This returns the raw location regardless of [hideLocation].
+  /// Use [getDisplayLocation] to respect the hide setting.
   String? get displayLocation {
     if (venue != null && city != null) {
       return '$venue, $city';
@@ -97,6 +104,15 @@ class EventModel {
     if (venue != null) return venue;
     if (city != null) return city;
     return location;
+  }
+
+  /// Returns the location for display, respecting [hideLocation] setting.
+  /// If [hideLocation] is true and [hasTicket] is false, returns a placeholder.
+  String? getDisplayLocation({required bool hasTicket}) {
+    if (hideLocation && !hasTicket) {
+      return 'Location revealed after purchase';
+    }
+    return displayLocation;
   }
 
   /// Returns the parsed [EventCategory] for this event.
@@ -158,6 +174,7 @@ class EventModel {
     List<String>? tags,
     int? priceInCents,
     String? currency,
+    bool? hideLocation,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -176,6 +193,7 @@ class EventModel {
       tags: tags ?? this.tags,
       priceInCents: priceInCents ?? this.priceInCents,
       currency: currency ?? this.currency,
+      hideLocation: hideLocation ?? this.hideLocation,
     );
   }
 
