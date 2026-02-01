@@ -50,6 +50,9 @@ dependencies:
   # QR code scanning
   mobile_scanner: ^5.1.1
 
+  # QR code generation
+  qr_flutter: ^4.1.0
+
   # NFC for tap-to-check-in
   nfc_manager: ^4.1.1
   nfc_manager_ndef: ^1.1.0
