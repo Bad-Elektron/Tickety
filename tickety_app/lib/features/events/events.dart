@@ -6,4 +6,5 @@ library;
 
 export 'models/event_analytics.dart';
 export 'models/event_model.dart';
+export 'models/ticket_type.dart';
 export 'widgets/widgets.dart';

@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../events/data/supabase_event_repository.dart';
 import '../../events/models/event_model.dart';
+import '../../events/models/ticket_type.dart';
 import '../models/ticket.dart';
 
 /// Payment method for POS sales.
@@ -26,12 +28,29 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
   final _walletController = TextEditingController();
 
   bool _isLoading = false;
+  bool _isLoadingTicketTypes = true;
   Ticket? _lastSoldTicket;
   int _ticketsSoldThisSession = 0;
   POSPaymentMethod _paymentMethod = POSPaymentMethod.cash;
   bool _isProcessingPayment = false;
 
-  int get _ticketPrice => widget.event.priceInCents ?? 0;
+  // Ticket types
+  List<TicketType> _ticketTypes = [];
+  TicketType? _selectedTicketType;
+
+  int get _ticketPrice => _selectedTicketType?.priceInCents ?? widget.event.priceInCents ?? 0;
+
+  String get _formattedPrice {
+    if (_ticketPrice == 0) return 'Free';
+    final dollars = _ticketPrice / 100;
+    return '\$${dollars.toStringAsFixed(dollars.truncateToDouble() == dollars ? 0 : 2)}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTicketTypes();
+  }
 
   @override
   void dispose() {
@@ -41,8 +60,59 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
     super.dispose();
   }
 
+  Future<void> _loadTicketTypes() async {
+    setState(() => _isLoadingTicketTypes = true);
+    try {
+      final repository = SupabaseEventRepository();
+      final types = await repository.getEventTicketTypes(widget.event.id);
+      if (mounted) {
+        setState(() {
+          _ticketTypes = types;
+          // Auto-select first available ticket type
+          _selectedTicketType = types.where((t) => t.isAvailable).firstOrNull;
+          _isLoadingTicketTypes = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingTicketTypes = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load ticket types: $e'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _sellTicket() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Validate ticket type selection if types exist
+    if (_ticketTypes.isNotEmpty && _selectedTicketType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a ticket type'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Check if selected ticket type is still available
+    if (_selectedTicketType != null && !_selectedTicketType!.isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${_selectedTicketType!.name} is sold out'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     // For card payments, process payment first
     if (_paymentMethod == POSPaymentMethod.card) {
@@ -65,6 +135,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
             walletAddress: _walletController.text.trim().isNotEmpty
                 ? _walletController.text.trim()
                 : null,
+            ticketTypeId: _selectedTicketType?.id,
+            ticketTypeName: _selectedTicketType?.name,
           );
 
       if (ticket != null) {
@@ -270,14 +342,14 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          widget.event.formattedPrice,
+                          _formattedPrice,
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colorScheme.primary,
                           ),
                         ),
                         Text(
-                          'per ticket',
+                          _selectedTicketType?.name ?? 'per ticket',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -289,6 +361,36 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // Ticket type selector (if event has ticket types)
+            if (_isLoadingTicketTypes)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_ticketTypes.isNotEmpty) ...[
+              Text(
+                'Select Ticket Type',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              ..._ticketTypes.map((ticketType) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _TicketTypeCard(
+                  ticketType: ticketType,
+                  isSelected: _selectedTicketType?.id == ticketType.id,
+                  onTap: ticketType.isAvailable
+                      ? () => setState(() => _selectedTicketType = ticketType)
+                      : null,
+                ),
+              )),
+              const SizedBox(height: 16),
+            ],
 
             // Sale form
             Form(
@@ -398,8 +500,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                           : _isLoading
                               ? 'Creating Ticket...'
                               : _paymentMethod == POSPaymentMethod.card
-                                  ? 'Charge ${widget.event.formattedPrice}'
-                                  : 'Sell Ticket - ${widget.event.formattedPrice}',
+                                  ? 'Charge $_formattedPrice'
+                                  : 'Sell Ticket - $_formattedPrice',
                     ),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -538,6 +640,153 @@ class _PaymentMethodCard extends StatelessWidget {
                 color: isSelected
                     ? colorScheme.primary.withValues(alpha: 0.8)
                     : colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card widget for selecting ticket type.
+class _TicketTypeCard extends StatelessWidget {
+  const _TicketTypeCard({
+    required this.ticketType,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final TicketType ticketType;
+  final bool isSelected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDisabled = onTap == null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? colorScheme.primaryContainer
+              : isDisabled
+                  ? colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
+                  : colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? colorScheme.primary
+                : isDisabled
+                    ? colorScheme.outline.withValues(alpha: 0.2)
+                    : colorScheme.outline.withValues(alpha: 0.3),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Radio indicator
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? colorScheme.primary : Colors.transparent,
+                border: Border.all(
+                  color: isSelected
+                      ? colorScheme.primary
+                      : isDisabled
+                          ? colorScheme.outline.withValues(alpha: 0.3)
+                          : colorScheme.outline,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            // Ticket type info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ticketType.name,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isDisabled
+                                ? colorScheme.onSurface.withValues(alpha: 0.5)
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      if (ticketType.isSoldOut)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Sold Out',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else if (ticketType.hasLimit && ticketType.remainingQuantity! <= 10)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${ticketType.remainingQuantity} left',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (ticketType.description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      ticketType.description!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Price
+            Text(
+              ticketType.formattedPrice,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: isSelected
+                    ? colorScheme.primary
+                    : isDisabled
+                        ? colorScheme.onSurface.withValues(alpha: 0.5)
+                        : colorScheme.onSurface,
               ),
             ),
           ],

@@ -162,9 +162,11 @@ class TicketNotifier extends StateNotifier<TicketState> {
     String? ownerEmail,
     required int priceCents,
     String? walletAddress,
+    String? ticketTypeId,
+    String? ticketTypeName,
   }) async {
     AppLogger.info(
-      'Selling ticket for event $eventId (price: $priceCents cents)',
+      'Selling ticket for event $eventId (price: $priceCents cents, type: ${ticketTypeName ?? "default"})',
       tag: _tag,
     );
 
@@ -175,6 +177,7 @@ class TicketNotifier extends StateNotifier<TicketState> {
         ownerEmail: ownerEmail,
         priceCents: priceCents,
         walletAddress: walletAddress,
+        ticketTypeId: ticketTypeId,
       );
 
       AppLogger.info(

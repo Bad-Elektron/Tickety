@@ -3,8 +3,24 @@ import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
 import '../models/event_model.dart';
 import '../models/ticket_availability.dart';
+import '../models/ticket_type.dart';
 import 'event_mapper.dart';
 import 'event_repository.dart';
+
+/// Data class for creating ticket types (used in event creation).
+class TicketTypeInput {
+  final String name;
+  final String? description;
+  final int priceCents;
+  final int? maxQuantity;
+
+  const TicketTypeInput({
+    required this.name,
+    required this.priceCents,
+    this.description,
+    this.maxQuantity,
+  });
+}
 
 const _tag = 'EventRepository';
 
@@ -287,5 +303,112 @@ class SupabaseEventRepository implements EventRepository {
     );
 
     return TicketAvailability.fromJson(data);
+  }
+
+  /// Get all ticket types for an event.
+  Future<List<TicketType>> getEventTicketTypes(String eventId) async {
+    AppLogger.debug('Fetching ticket types for event: $eventId', tag: _tag);
+
+    final response = await _client.rpc(
+      'get_event_ticket_types',
+      params: {'p_event_id': eventId},
+    );
+
+    final ticketTypes = (response as List<dynamic>)
+        .map((json) => TicketType.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    AppLogger.debug('Fetched ${ticketTypes.length} ticket types', tag: _tag);
+    return ticketTypes;
+  }
+
+  /// Create ticket types for an event.
+  Future<List<TicketType>> createTicketTypes(
+    String eventId,
+    List<TicketTypeInput> ticketTypes,
+  ) async {
+    if (ticketTypes.isEmpty) {
+      AppLogger.debug('No ticket types to create for event: $eventId', tag: _tag);
+      return [];
+    }
+
+    AppLogger.debug(
+      'Creating ${ticketTypes.length} ticket types for event: $eventId',
+      tag: _tag,
+    );
+
+    final data = ticketTypes.asMap().entries.map((entry) {
+      final index = entry.key;
+      final tt = entry.value;
+      return {
+        'event_id': eventId,
+        'name': tt.name,
+        'description': tt.description,
+        'price_cents': tt.priceCents,
+        'max_quantity': tt.maxQuantity,
+        'sort_order': index,
+        'is_active': true,
+      };
+    }).toList();
+
+    final response = await _client
+        .from('event_ticket_types')
+        .insert(data)
+        .select();
+
+    final created = (response as List<dynamic>)
+        .map((json) => TicketType.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    AppLogger.info('Created ${created.length} ticket types for event: $eventId', tag: _tag);
+    return created;
+  }
+
+  /// Create an event with ticket types in a single operation.
+  Future<EventModel> createEventWithTicketTypes({
+    required String title,
+    required String subtitle,
+    required DateTime date,
+    required List<TicketTypeInput> ticketTypes,
+    String? description,
+    String? venue,
+    String? city,
+    String? country,
+    String? imageUrl,
+    String? currency,
+    String? category,
+    List<String>? tags,
+    int? noiseSeed,
+    bool hideLocation = false,
+  }) async {
+    // Use the lowest ticket price as the event's display price
+    final lowestPrice = ticketTypes.isEmpty
+        ? null
+        : ticketTypes.map((t) => t.priceCents).reduce((a, b) => a < b ? a : b);
+
+    // Create the event first
+    final event = await createEventFromParams(
+      title: title,
+      subtitle: subtitle,
+      date: date,
+      description: description,
+      venue: venue,
+      city: city,
+      country: country,
+      imageUrl: imageUrl,
+      priceInCents: lowestPrice,
+      currency: currency,
+      category: category,
+      tags: tags,
+      noiseSeed: noiseSeed,
+      hideLocation: hideLocation,
+    );
+
+    // Then create the ticket types
+    if (ticketTypes.isNotEmpty) {
+      await createTicketTypes(event.id, ticketTypes);
+    }
+
+    return event;
   }
 }

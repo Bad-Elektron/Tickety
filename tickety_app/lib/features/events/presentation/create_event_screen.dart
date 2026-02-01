@@ -9,6 +9,7 @@ import '../../../core/services/services.dart';
 import '../../../core/utils/utils.dart';
 import '../../auth/auth.dart';
 import '../data/data.dart';
+import '../data/supabase_event_repository.dart' show TicketTypeInput;
 import '../models/event_tag.dart';
 
 /// Screen for creating a new event.
@@ -317,11 +318,22 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         _selectedTime.minute,
       );
 
-      // Use the first ticket type's price (convert dollars to cents)
-      // TODO: Support multiple ticket types in the database
-      final firstTicket = _ticketTypes.first;
-      final priceDollars = double.tryParse(firstTicket.priceController.text) ?? 0;
-      final priceCents = (priceDollars * 100).round();
+      // Convert ticket types to TicketTypeInput list
+      final ticketTypeInputs = _ticketTypes.map((tt) {
+        final priceDollars = double.tryParse(tt.priceController.text) ?? 0;
+        final priceCents = (priceDollars * 100).round();
+        final quantity = int.tryParse(tt.quantityController.text);
+        return TicketTypeInput(
+          name: Validators.sanitize(tt.nameController.text).isNotEmpty
+              ? Validators.sanitize(tt.nameController.text)
+              : 'General Admission',
+          description: Validators.sanitize(tt.descriptionController.text).isNotEmpty
+              ? Validators.sanitize(tt.descriptionController.text)
+              : null,
+          priceCents: priceCents,
+          maxQuantity: quantity,
+        );
+      }).toList();
 
       // Get all selected tag IDs
       final tagIds = _selectedTags.map((tag) => tag.id).toList();
@@ -333,7 +345,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       final sanitizedVenue = Validators.sanitize(_venueController.text);
       final sanitizedCity = Validators.sanitize(_cityController.text);
 
-      await _repository.createEventFromParams(
+      await _repository.createEventWithTicketTypes(
         title: sanitizedTitle,
         subtitle: sanitizedSubtitle.isNotEmpty
             ? sanitizedSubtitle
@@ -344,7 +356,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         date: eventDateTime,
         venue: sanitizedVenue.isNotEmpty ? sanitizedVenue : null,
         city: sanitizedCity.isNotEmpty ? sanitizedCity : null,
-        priceInCents: priceCents > 0 ? priceCents : null,
+        ticketTypes: ticketTypeInputs,
         tags: tagIds,
         noiseSeed: _noiseSeed,
         hideLocation: _hideLocation,

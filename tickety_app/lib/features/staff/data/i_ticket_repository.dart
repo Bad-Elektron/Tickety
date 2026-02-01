@@ -42,6 +42,7 @@ abstract class ITicketRepository {
     required String? ownerName,
     required int priceCents,
     String? walletAddress,
+    String? ticketTypeId,
   });
 
   /// Get ticket by ID or ticket number.

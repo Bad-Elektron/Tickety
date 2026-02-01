@@ -22,6 +22,7 @@ class TicketRepository implements ITicketRepository {
     required String? ownerName,
     required int priceCents,
     String? walletAddress,
+    String? ticketTypeId,
   }) async {
     final userId = SupabaseService.instance.currentUser?.id;
 
@@ -29,23 +30,30 @@ class TicketRepository implements ITicketRepository {
     final ticketNumber = _generateTicketNumber();
 
     AppLogger.debug(
-      'Selling ticket: event=$eventId, price=$priceCents cents, number=$ticketNumber',
+      'Selling ticket: event=$eventId, price=$priceCents cents, number=$ticketNumber, typeId=$ticketTypeId',
       tag: _tag,
     );
 
+    final data = <String, dynamic>{
+      'event_id': eventId,
+      'ticket_number': ticketNumber,
+      'owner_email': ownerEmail,
+      'owner_name': ownerName,
+      'owner_wallet_address': walletAddress,
+      'price_paid_cents': priceCents,
+      'currency': 'USD',
+      'sold_by': userId,
+      'status': 'valid',
+    };
+
+    // Add ticket type ID if provided
+    if (ticketTypeId != null) {
+      data['ticket_type_id'] = ticketTypeId;
+    }
+
     final response = await _client
         .from('tickets')
-        .insert({
-          'event_id': eventId,
-          'ticket_number': ticketNumber,
-          'owner_email': ownerEmail,
-          'owner_name': ownerName,
-          'owner_wallet_address': walletAddress,
-          'price_paid_cents': priceCents,
-          'currency': 'USD',
-          'sold_by': userId,
-          'status': 'valid',
-        })
+        .insert(data)
         .select()
         .single();
 
