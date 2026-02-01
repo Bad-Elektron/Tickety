@@ -1,12 +1,35 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../payments/models/payment.dart';
 import '../../payments/presentation/checkout_screen.dart';
+import '../../payments/presentation/resale_browse_screen.dart';
+import '../../payments/presentation/seller_onboarding_screen.dart';
 import '../models/event_model.dart';
+import '../models/ticket_availability.dart';
+
+/// Provider for ticket availability (official + resale counts).
+final _ticketAvailabilityProvider =
+    FutureProvider.family<TicketAvailability, String>((ref, eventId) async {
+  final eventRepo = ref.watch(eventRepositoryProvider);
+  final resaleRepo = ref.watch(resaleRepositoryProvider);
+
+  // Fetch both counts in parallel
+  final results = await Future.wait([
+    eventRepo.getTicketAvailability(eventId),
+    resaleRepo.getResaleListingCount(eventId),
+  ]);
+
+  final availability = results[0] as TicketAvailability;
+  final resaleCount = results[1] as int;
+
+  return availability.copyWith(resaleCount: resaleCount);
+});
 
 /// Screen displaying detailed information about an event.
-class EventDetailsScreen extends StatelessWidget {
+class EventDetailsScreen extends ConsumerWidget {
   final EventModel event;
 
   const EventDetailsScreen({
@@ -15,10 +38,11 @@ class EventDetailsScreen extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();
+    final availabilityAsync = ref.watch(_ticketAvailabilityProvider(event.id));
 
     return Scaffold(
       body: CustomScrollView(
@@ -111,11 +135,45 @@ class EventDetailsScreen extends StatelessWidget {
                       color: colorScheme.tertiary,
                     ),
                   const SizedBox(height: 12),
-                  _InfoCard(
-                    icon: Icons.confirmation_number_outlined,
-                    title: 'Tickets Available',
-                    value: '47 of 100 remaining',
-                    color: colorScheme.secondary,
+                  // Official Tickets
+                  availabilityAsync.when(
+                    loading: () => _InfoCard(
+                      icon: Icons.confirmation_number_outlined,
+                      title: 'Official Tickets',
+                      value: 'Loading...',
+                      color: colorScheme.secondary,
+                    ),
+                    error: (_, __) => _InfoCard(
+                      icon: Icons.confirmation_number_outlined,
+                      title: 'Official Tickets',
+                      value: 'Available',
+                      color: colorScheme.secondary,
+                    ),
+                    data: (availability) => _InfoCard(
+                      icon: Icons.confirmation_number_outlined,
+                      title: 'Official Tickets',
+                      value: availability.officialAvailabilityText,
+                      color: colorScheme.secondary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Resale Tickets
+                  availabilityAsync.when(
+                    loading: () => _InfoCard(
+                      icon: Icons.swap_horiz_rounded,
+                      title: 'Resale Tickets',
+                      value: 'Loading...',
+                      color: colorScheme.tertiary,
+                    ),
+                    error: (_, __) => const SizedBox.shrink(),
+                    data: (availability) => availability.resaleCount > 0
+                        ? _InfoCard(
+                            icon: Icons.swap_horiz_rounded,
+                            title: 'Resale Tickets',
+                            value: availability.resaleAvailabilityText,
+                            color: colorScheme.tertiary,
+                          )
+                        : const SizedBox.shrink(),
                   ),
                   const SizedBox(height: 24),
                   // Description
@@ -335,17 +393,17 @@ class _BottomBuyBar extends StatelessWidget {
   }
 }
 
-/// Bottom sheet for selecting ticket quantity and purchasing.
-class _BuyTicketSheet extends StatefulWidget {
+/// Bottom sheet for selecting ticket type and purchasing.
+class _BuyTicketSheet extends ConsumerStatefulWidget {
   final EventModel event;
 
   const _BuyTicketSheet({required this.event});
 
   @override
-  State<_BuyTicketSheet> createState() => _BuyTicketSheetState();
+  ConsumerState<_BuyTicketSheet> createState() => _BuyTicketSheetState();
 }
 
-class _BuyTicketSheetState extends State<_BuyTicketSheet> {
+class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
   int _quantity = 1;
   static const int _maxTickets = 10;
 
@@ -361,6 +419,7 @@ class _BuyTicketSheetState extends State<_BuyTicketSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final availabilityAsync = ref.watch(_ticketAvailabilityProvider(widget.event.id));
 
     return Container(
       decoration: BoxDecoration(
@@ -375,121 +434,177 @@ class _BuyTicketSheetState extends State<_BuyTicketSheet> {
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Handle
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 24),
-          // Title
-          Text(
-            'How many tickets?',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.event.title,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 32),
-          // Quantity selector
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _QuantityButton(
-                icon: Icons.remove,
-                onTap: _quantity > 1
-                    ? () => setState(() => _quantity--)
-                    : null,
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
-              const SizedBox(width: 24),
-              Text(
-                '$_quantity',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 24),
-              _QuantityButton(
-                icon: Icons.add,
-                onTap: _quantity < _maxTickets
-                    ? () => setState(() => _quantity++)
-                    : null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Max $_maxTickets tickets per purchase',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 32),
-          // Total and confirm
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Total',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  _formatPrice(_totalPriceCents),
-                  style: theme.textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ],
             ),
           ),
           const SizedBox(height: 20),
+          // Title
+          Center(
+            child: Text(
+              'Get Tickets',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Center(
+            child: Text(
+              widget.event.title,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Official Tickets Section
+          _TicketOptionCard(
+            icon: Icons.verified_outlined,
+            iconColor: colorScheme.primary,
+            title: 'Official Tickets',
+            subtitle: _formatPrice(_pricePerTicketCents),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SmallQuantityButton(
+                  icon: Icons.remove,
+                  onTap: _quantity > 1
+                      ? () => setState(() => _quantity--)
+                      : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '$_quantity',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                _SmallQuantityButton(
+                  icon: Icons.add,
+                  onTap: _quantity < _maxTickets
+                      ? () => setState(() => _quantity++)
+                      : null,
+                ),
+              ],
+            ),
+            onTap: null, // Handled by buy button below
+          ),
+          const SizedBox(height: 12),
+
+          // Buy Official Button
           FilledButton(
-            onPressed: _totalPriceCents > 0
-                ? () {
-                    Navigator.pop(context);
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => CheckoutScreen(
-                          event: widget.event,
-                          amountCents: _totalPriceCents,
-                          paymentType: PaymentType.primaryPurchase,
-                          quantity: _quantity,
-                        ),
-                      ),
-                    );
-                  }
-                : null,
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => CheckoutScreen(
+                    event: widget.event,
+                    amountCents: _totalPriceCents,
+                    paymentType: PaymentType.primaryPurchase,
+                    quantity: _quantity,
+                  ),
+                ),
+              );
+            },
             style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(56),
+              minimumSize: const Size.fromHeight(52),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
             child: Text(
-              _totalPriceCents > 0 ? 'Continue to Payment' : 'Free - Get Ticket',
+              _totalPriceCents > 0
+                  ? 'Buy Official \u2022 ${_formatPrice(_totalPriceCents)}'
+                  : 'Get Free Ticket',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Divider with "or"
+          Row(
+            children: [
+              Expanded(child: Divider(color: colorScheme.outlineVariant)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'or',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: colorScheme.outlineVariant)),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // Resale Tickets Section
+          availabilityAsync.when(
+            loading: () => _TicketOptionCard(
+              icon: Icons.swap_horiz_rounded,
+              iconColor: colorScheme.secondary,
+              title: 'Resale Tickets',
+              subtitle: 'Loading...',
+              trailing: const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              onTap: null,
+            ),
+            error: (_, __) => _TicketOptionCard(
+              icon: Icons.swap_horiz_rounded,
+              iconColor: colorScheme.secondary,
+              title: 'Resale Tickets',
+              subtitle: 'Unable to load',
+              trailing: Icon(
+                Icons.chevron_right,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              onTap: null,
+            ),
+            data: (availability) => _TicketOptionCard(
+              icon: Icons.swap_horiz_rounded,
+              iconColor: colorScheme.secondary,
+              title: 'Resale Tickets',
+              subtitle: availability.hasResaleTickets
+                  ? '${availability.resaleCount} available from other fans'
+                  : 'None available',
+              trailing: availability.hasResaleTickets
+                  ? Icon(
+                      Icons.chevron_right,
+                      color: colorScheme.onSurfaceVariant,
+                    )
+                  : null,
+              onTap: availability.hasResaleTickets
+                  ? () {
+                      Navigator.pop(context);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ResaleBrowseScreen(event: widget.event),
+                        ),
+                      );
+                    }
+                  : null,
+              enabled: availability.hasResaleTickets,
             ),
           ),
         ],
@@ -498,11 +613,88 @@ class _BuyTicketSheetState extends State<_BuyTicketSheet> {
   }
 }
 
-class _QuantityButton extends StatelessWidget {
+/// Card for displaying a ticket purchase option.
+class _TicketOptionCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  const _TicketOptionCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: enabled
+          ? colorScheme.surfaceContainerLow
+          : colorScheme.surfaceContainerLow.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: enabled ? null : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small quantity adjustment button.
+class _SmallQuantityButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
 
-  const _QuantityButton({
+  const _SmallQuantityButton({
     required this.icon,
     this.onTap,
   });
@@ -516,22 +708,23 @@ class _QuantityButton extends StatelessWidget {
       color: isEnabled
           ? colorScheme.primaryContainer
           : colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         child: SizedBox(
-          width: 56,
-          height: 56,
+          width: 36,
+          height: 36,
           child: Icon(
             icon,
             color: isEnabled
                 ? colorScheme.onPrimaryContainer
                 : colorScheme.onSurface.withValues(alpha: 0.3),
-            size: 28,
+            size: 20,
           ),
         ),
       ),
     );
   }
 }
+

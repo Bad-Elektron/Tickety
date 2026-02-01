@@ -4,4 +4,5 @@
 /// wallet, balances, and financial transactions.
 library;
 
+export 'presentation/transactions_screen.dart';
 export 'presentation/wallet_screen.dart';

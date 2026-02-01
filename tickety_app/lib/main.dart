@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/config.dart';
 import 'core/debug/debug.dart';
 import 'core/errors/errors.dart';
+import 'core/providers/subscription_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/services/services.dart';
 import 'core/state/state.dart';
@@ -113,6 +114,9 @@ class _TicketyAppState extends ConsumerState<TicketyApp> {
   Widget build(BuildContext context) {
     // Watch theme mode from Riverpod provider
     final themeMode = ref.watch(themeModeProvider);
+
+    // Initialize subscription provider at app start so tier is loaded when authenticated
+    ref.watch(subscriptionProvider);
 
     return MaterialApp(
       title: 'Tickety',

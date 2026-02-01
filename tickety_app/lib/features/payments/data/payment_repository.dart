@@ -1,4 +1,5 @@
 import '../../../core/errors/errors.dart';
+import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
 import '../models/payment.dart';
 import 'i_payment_repository.dart';
@@ -67,6 +68,8 @@ class PaymentRepository implements IPaymentRepository {
       tag: _tag,
     );
 
+    print('>>> RESALE: Calling create-resale-intent with listing=$resaleListingId, amount=$amountCents, user=$userId');
+
     final response = await _client.functions.invoke(
       'create-resale-intent',
       body: {
@@ -77,12 +80,13 @@ class PaymentRepository implements IPaymentRepository {
       },
     );
 
+    print('>>> RESALE: Response status=${response.status}, data=${response.data}');
+
     if (response.status != 200) {
-      final error = response.data is Map ? response.data['error'] : 'Unknown error';
-      AppLogger.error(
-        'Failed to create resale payment intent: $error',
-        tag: _tag,
-      );
+      final errorData = response.data is Map ? response.data : {};
+      final error = errorData['error'] ?? 'Unknown error';
+      final details = errorData['details'] ?? '';
+      print('>>> RESALE ERROR: status=${response.status}, error=$error, details=$details, fullData=${response.data}');
 
       // Check for specific error types
       if (error.toString().contains('Connect account')) {
@@ -119,45 +123,92 @@ class PaymentRepository implements IPaymentRepository {
   }
 
   @override
-  Future<List<Payment>> getMyPayments() async {
+  Future<PaginatedResult<Payment>> getMyPayments({
+    int page = 0,
+    int pageSize = 25,
+  }) async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
       AppLogger.debug('No current user for payments', tag: _tag);
-      return [];
+      return PaginatedResult.empty(page: page, pageSize: pageSize);
     }
 
-    AppLogger.debug('Fetching payments for user: $userId', tag: _tag);
+    AppLogger.debug(
+      'Fetching payments for user: $userId (page: $page, pageSize: $pageSize)',
+      tag: _tag,
+    );
+
+    final from = page * pageSize;
+    final to = from + pageSize;
 
     final response = await _client
         .from('payments')
         .select()
         .eq('user_id', userId)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .range(from, to);
 
-    final payments = (response as List<dynamic>)
+    final allItems = (response as List<dynamic>)
         .map((json) => Payment.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Found ${payments.length} payments', tag: _tag);
-    return payments;
+    final hasMore = allItems.length > pageSize;
+    final payments = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Found ${payments.length} payments (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: payments,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
   }
 
   @override
-  Future<List<Payment>> getEventPayments(String eventId) async {
-    AppLogger.debug('Fetching payments for event: $eventId', tag: _tag);
+  Future<PaginatedResult<Payment>> getEventPayments(
+    String eventId, {
+    int page = 0,
+    int pageSize = 20,
+  }) async {
+    AppLogger.debug(
+      'Fetching payments for event: $eventId (page: $page, pageSize: $pageSize)',
+      tag: _tag,
+    );
+
+    final from = page * pageSize;
+    // Fetch one extra to determine if there are more pages
+    final to = from + pageSize;
 
     final response = await _client
         .from('payments')
         .select()
         .eq('event_id', eventId)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .range(from, to);
 
-    final payments = (response as List<dynamic>)
+    final allItems = (response as List<dynamic>)
         .map((json) => Payment.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Found ${payments.length} event payments', tag: _tag);
-    return payments;
+    // Check if we got more than pageSize (meaning there are more pages)
+    final hasMore = allItems.length > pageSize;
+    final payments = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Found ${payments.length} event payments (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: payments,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
   }
 
   @override

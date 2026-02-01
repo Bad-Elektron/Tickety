@@ -50,8 +50,13 @@ dependencies:
   # QR code scanning
   mobile_scanner: ^5.1.1
 
-  # NFC for tap-to-check-in (temporarily disabled for Android build compatibility)
-  # nfc_manager: ^4.1.1
+  # NFC for tap-to-check-in
+  nfc_manager: ^4.1.1
+  nfc_manager_ndef: ^1.1.0
+  ndef_record: ^1.4.1
+
+  # NFC Host Card Emulation for Android ticket broadcasting
+  flutter_nfc_hce: ^0.1.8
 
   # Stripe payments
   flutter_stripe: ^11.3.0

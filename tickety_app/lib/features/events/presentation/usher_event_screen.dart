@@ -1,54 +1,21 @@
-import 'dart:io';
+import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/ticket_provider.dart';
+import '../../../core/services/nfc_service.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../staff/models/ticket.dart';
 import '../models/event_model.dart';
-import '../widgets/nfc_tap_view.dart';
 import '../widgets/qr_scanner_view.dart';
 import '../widgets/ticket_info_card.dart';
 import 'vendor_event_screen.dart';
 
-/// Check-in method options.
-enum CheckInMode {
-  qrScan(
-    icon: Icons.qr_code_scanner,
-    label: 'Scan QR',
-    shortLabel: 'QR',
-  ),
-  nfcTap(
-    icon: Icons.nfc_rounded,
-    label: 'Tap NFC',
-    shortLabel: 'NFC',
-  ),
-  manual(
-    icon: Icons.keyboard_alt_outlined,
-    label: 'Manual',
-    shortLabel: 'Manual',
-  );
-
-  const CheckInMode({
-    required this.icon,
-    required this.label,
-    required this.shortLabel,
-  });
-
-  final IconData icon;
-  final String label;
-  final String shortLabel;
-}
-
 /// Screen for ushers to scan and validate tickets at an event.
 ///
-/// Supports three check-in methods:
-/// - QR code scanning (camera)
-/// - NFC tap (phone-to-phone)
-/// - Manual entry (keyboard)
+/// NFC-first design with hold-to-scan and optional continuous mode.
 class UsherEventScreen extends ConsumerStatefulWidget {
   const UsherEventScreen({
     super.key,
@@ -63,13 +30,27 @@ class UsherEventScreen extends ConsumerStatefulWidget {
   ConsumerState<UsherEventScreen> createState() => _UsherEventScreenState();
 }
 
-class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
-  CheckInMode _currentMode = CheckInMode.qrScan;
+class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
+    with SingleTickerProviderStateMixin {
   Ticket? _scannedTicket;
   CheckInValidationStatus? _validationStatus;
   bool _isLoading = false;
   bool _isCheckingIn = false;
   int _sessionCheckedIn = 0;
+
+  // NFC state
+  bool _isNfcAvailable = false;
+  bool _isNfcScanning = false;
+  bool _nfcContinuousMode = false;
+  bool _isHoldingButton = false;
+  final NfcService _nfcService = NfcService.instance;
+
+  // Camera state
+  bool _showCamera = false;
+
+  // Animation
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -79,15 +60,99 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
       ref.read(ticketProvider.notifier).loadStats(widget.event.id);
     });
 
-    // Default to manual on desktop/web where camera/NFC aren't available
-    if (kIsWeb || !(Platform.isIOS || Platform.isAndroid)) {
-      _currentMode = CheckInMode.manual;
+    // Check NFC availability
+    _checkNfcAvailability();
+
+    // Pulse animation for NFC scanning
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+  }
+
+  Future<void> _checkNfcAvailability() async {
+    final available = await _nfcService.isNfcAvailable();
+    if (mounted) {
+      setState(() => _isNfcAvailable = available);
     }
   }
 
   @override
   void dispose() {
+    _pulseController.dispose();
+    _stopNfcScanning();
     super.dispose();
+  }
+
+  Future<void> _startNfcScanning() async {
+    if (!_isNfcAvailable) {
+      _showError('NFC is not available on this device');
+      return;
+    }
+
+    setState(() => _isNfcScanning = true);
+    _pulseController.repeat(reverse: true);
+    HapticFeedback.mediumImpact();
+
+    await _nfcService.startReading(
+      onTagRead: (payload) {
+        // Check if the scanned ticket is for this event
+        if (payload.eventId == widget.event.id) {
+          _lookupTicket(payload.ticketId);
+        } else {
+          _showError('Ticket is for a different event');
+          HapticFeedback.heavyImpact();
+        }
+      },
+      onError: (error) {
+        _showError(error);
+        HapticFeedback.heavyImpact();
+      },
+    );
+  }
+
+  Future<void> _stopNfcScanning() async {
+    await _nfcService.stopReading();
+    if (mounted) {
+      setState(() => _isNfcScanning = false);
+    }
+    _pulseController.stop();
+    _pulseController.reset();
+  }
+
+  void _onHoldStart() {
+    if (_nfcContinuousMode) return; // Already scanning continuously
+    setState(() => _isHoldingButton = true);
+    unawaited(_startNfcScanning());
+  }
+
+  void _onHoldEnd() {
+    if (_nfcContinuousMode) return; // Keep scanning in continuous mode
+    setState(() => _isHoldingButton = false);
+    unawaited(_stopNfcScanning());
+  }
+
+  void _toggleContinuousMode(bool value) {
+    setState(() {
+      _nfcContinuousMode = value;
+      if (value) {
+        unawaited(_startNfcScanning());
+      } else if (!_isHoldingButton) {
+        unawaited(_stopNfcScanning());
+      }
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _openCamera() {
+    setState(() => _showCamera = true);
+  }
+
+  void _closeCamera() {
+    setState(() => _showCamera = false);
   }
 
   /// Look up a ticket by ID or number.
@@ -143,6 +208,11 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
         HapticFeedback.mediumImpact();
       } else {
         HapticFeedback.heavyImpact();
+      }
+
+      // Close camera if open
+      if (_showCamera) {
+        _closeCamera();
       }
     } catch (e) {
       if (!mounted) return;
@@ -224,12 +294,22 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
     final config = widget.event.getNoiseConfig();
     final stats = ref.watch(ticketStatsProvider);
 
+    // Show camera view if open
+    if (_showCamera) {
+      return _CameraOverlay(
+        event: widget.event,
+        onScanned: _lookupTicket,
+        onClose: _closeCamera,
+        onError: _showError,
+      );
+    }
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           // App bar with gradient
           SliverAppBar(
-            expandedHeight: 140,
+            expandedHeight: 120,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
@@ -268,6 +348,26 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
               ),
             ),
             actions: [
+              // Camera button
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                child: Material(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _openCamera,
+                    child: const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: Icon(
+                        Icons.qr_code_scanner,
+                        size: 22,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               // Role switch button (if user has both roles)
               if (widget.canSwitchToSelling)
                 Container(
@@ -382,7 +482,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
                     color: colorScheme.outline.withValues(alpha: 0.3),
                   ),
                   _StatItem(
-                    icon: Icons.qr_code_scanner,
+                    icon: Icons.nfc_rounded,
                     value: '$_sessionCheckedIn',
                     label: 'This Session',
                     color: colorScheme.primary,
@@ -392,100 +492,232 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
             ),
           ),
 
-          // Mode selector
-          SliverToBoxAdapter(
-            child: _ModeSelector(
-              currentMode: _currentMode,
-              onModeChanged: (mode) {
-                setState(() {
-                  _currentMode = mode;
-                  _scannedTicket = null;
-                  _validationStatus = null;
-                });
-              },
-            ),
-          ),
-
           // Main content
           SliverFillRemaining(
             hasScrollBody: false,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(0, 0.1),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: _scannedTicket != null || _validationStatus != null
-                  ? _buildTicketResult()
-                  : _buildCheckInView(),
-            ),
+            child: _scannedTicket != null || _validationStatus != null
+                ? _buildTicketResult()
+                : _buildNfcScanView(),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCheckInView() {
-    return Column(
-      key: ValueKey('checkin_${_currentMode.name}'),
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: switch (_currentMode) {
-                CheckInMode.qrScan => QrScannerView(
-                    onScanned: _lookupTicket,
-                    onError: _showError,
+  Widget _buildNfcScanView() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const Spacer(),
+
+          // NFC Scan Button
+          GestureDetector(
+            onTapDown: (_) => _onHoldStart(),
+            onTapUp: (_) => _onHoldEnd(),
+            onTapCancel: _onHoldEnd,
+            onLongPressStart: (_) => _onHoldStart(),
+            onLongPressEnd: (_) => _onHoldEnd(),
+            child: AnimatedBuilder(
+              animation: _pulseAnimation,
+              builder: (context, child) {
+                return Container(
+                  width: 200,
+                  height: 200,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: _isNfcScanning
+                        ? [
+                            BoxShadow(
+                              color: colorScheme.primary.withValues(alpha: 0.4),
+                              blurRadius: 30 * _pulseAnimation.value,
+                              spreadRadius: 10 * (_pulseAnimation.value - 1),
+                            ),
+                          ]
+                        : null,
                   ),
-                CheckInMode.nfcTap => NfcTapView(
-                    onTicketReceived: _lookupTicket,
-                    onError: _showError,
-                  ),
-                CheckInMode.manual => _ManualEntryView(
-                    onLookup: _lookupTicket,
-                    isLoading: _isLoading,
-                  ),
+                  child: child,
+                );
               },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 200,
+                height: 200,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: _isNfcScanning
+                        ? [colorScheme.primary, colorScheme.tertiary]
+                        : [
+                            colorScheme.surfaceContainerHighest,
+                            colorScheme.surfaceContainerHigh,
+                          ],
+                  ),
+                  border: Border.all(
+                    color: _isNfcScanning
+                        ? colorScheme.primary
+                        : colorScheme.outline.withValues(alpha: 0.3),
+                    width: 3,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.nfc_rounded,
+                      size: 64,
+                      color: _isNfcScanning
+                          ? Colors.white
+                          : colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _isNfcScanning ? 'Scanning...' : 'Hold to Scan',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: _isNfcScanning
+                            ? Colors.white
+                            : colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
 
-        // Loading indicator
-        if (_isLoading)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+          const SizedBox(height: 32),
+
+          // Instructions
+          Text(
+            !_isNfcAvailable
+                ? 'NFC not available. Use QR scanner instead.'
+                : _isNfcScanning
+                    ? 'Hold device near attendee\'s phone'
+                    : 'Hold the button to activate NFC scanning',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+
+          const SizedBox(height: 24),
+
+          // Continuous mode toggle
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _nfcContinuousMode
+                    ? colorScheme.primary
+                    : colorScheme.outline.withValues(alpha: 0.3),
+              ),
+            ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
+                Icon(
+                  Icons.repeat,
+                  size: 20,
+                  color: _nfcContinuousMode
+                      ? colorScheme.primary
+                      : colorScheme.onSurfaceVariant,
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  'Looking up ticket...',
-                  style: Theme.of(context).textTheme.bodyMedium,
+                  'Continuous Scanning',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Switch(
+                  value: _nfcContinuousMode,
+                  onChanged: _toggleContinuousMode,
                 ),
               ],
             ),
           ),
-      ],
+
+          const Spacer(),
+
+          // Loading indicator
+          if (_isLoading)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Looking up ticket...',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ],
+              ),
+            ),
+
+          // Manual entry hint
+          TextButton.icon(
+            onPressed: () => _showManualEntryDialog(),
+            icon: const Icon(Icons.keyboard, size: 18),
+            label: const Text('Enter ticket manually'),
+          ),
+
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+  }
+
+  void _showManualEntryDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Ticket Number'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.characters,
+          decoration: const InputDecoration(
+            hintText: 'TKT-XXXXXXX-XXXX',
+            prefixIcon: Icon(Icons.confirmation_number_outlined),
+          ),
+          onSubmitted: (value) {
+            Navigator.pop(context);
+            _lookupTicket(value);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _lookupTicket(controller.text);
+            },
+            child: const Text('Look Up'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -512,198 +744,132 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen> {
   }
 }
 
-/// Mode selector tabs for check-in methods.
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({
-    required this.currentMode,
-    required this.onModeChanged,
+/// Camera overlay for QR scanning.
+class _CameraOverlay extends StatelessWidget {
+  const _CameraOverlay({
+    required this.event,
+    required this.onScanned,
+    required this.onClose,
+    required this.onError,
   });
 
-  final CheckInMode currentMode;
-  final ValueChanged<CheckInMode> onModeChanged;
+  final EventModel event;
+  final void Function(String) onScanned;
+  final VoidCallback onClose;
+  final void Function(String) onError;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
-    // Filter modes based on platform
-    final availableModes = CheckInMode.values.where((mode) {
-      if (kIsWeb) {
-        // Web only supports QR (with HTTPS) and manual
-        return mode == CheckInMode.qrScan || mode == CheckInMode.manual;
-      }
-      if (!(Platform.isIOS || Platform.isAndroid)) {
-        // Desktop only supports manual
-        return mode == CheckInMode.manual;
-      }
-      return true; // Mobile supports all
-    }).toList();
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Camera view
+          QrScannerView(
+            onScanned: onScanned,
+            onError: onError,
+          ),
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: availableModes.map((mode) {
-          final isSelected = mode == currentMode;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onModeChanged(mode),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? colorScheme.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      mode.icon,
-                      size: 18,
-                      color: isSelected
-                          ? colorScheme.onPrimary
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      mode.shortLabel,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: isSelected
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
+          // Header overlay
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.7),
+                    Colors.transparent,
                   ],
                 ),
               ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      // Close button
+                      Material(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: onClose,
+                          child: const Padding(
+                            padding: EdgeInsets.all(10),
+                            child: Icon(
+                              Icons.close,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Scan QR Code',
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              event.title,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.8),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-}
+          ),
 
-/// Manual ticket entry view.
-class _ManualEntryView extends StatefulWidget {
-  const _ManualEntryView({
-    required this.onLookup,
-    required this.isLoading,
-  });
-
-  final void Function(String) onLookup;
-  final bool isLoading;
-
-  @override
-  State<_ManualEntryView> createState() => _ManualEntryViewState();
-}
-
-class _ManualEntryViewState extends State<_ManualEntryView> {
-  final _controller = TextEditingController();
-  final _focusNode = FocusNode();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    if (_controller.text.trim().isNotEmpty) {
-      widget.onLookup(_controller.text);
-      _controller.clear();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Icon
-            Container(
-              padding: const EdgeInsets.all(20),
+          // Bottom hint
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.keyboard_alt_outlined,
-                size: 48,
-                color: colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Title
-            Text(
-              'Manual Entry',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Enter the ticket number to look up',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Input field
-            TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              enabled: !widget.isLoading,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                hintText: 'TKT-XXXXXXX-XXXX',
-                prefixIcon: const Icon(Icons.confirmation_number_outlined),
-                suffixIcon: IconButton(
-                  onPressed: widget.isLoading ? null : _submit,
-                  icon: widget.isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.search),
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.7),
+                    Colors.transparent,
+                  ],
                 ),
               ),
-              onSubmitted: (_) => _submit(),
-            ),
-            const SizedBox(height: 16),
-
-            // Look up button
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: widget.isLoading ? null : _submit,
-                icon: const Icon(Icons.search),
-                label: const Text('Look Up Ticket'),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'Point camera at the ticket QR code',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

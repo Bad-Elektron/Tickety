@@ -186,10 +186,16 @@ class EventBannerCard extends StatelessWidget {
   String _formatDate(DateTime date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final now = DateTime.now();
-    final difference = date.difference(now).inDays;
+    final today = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(date.year, date.month, date.day);
+    final difference = eventDay.difference(today).inDays;
 
     if (difference == 0) return 'Today';
     if (difference == 1) return 'Tomorrow';
+    if (difference == -1) return 'Yesterday';
+    if (difference < -1) {
+      return 'Ended · ${months[date.month - 1]} ${date.day}';
+    }
     if (difference < 7) return 'In $difference days';
 
     return '${months[date.month - 1]} ${date.day}, ${date.year}';

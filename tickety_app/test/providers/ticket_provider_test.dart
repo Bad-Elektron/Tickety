@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:tickety/core/models/paginated_result.dart';
 import 'package:tickety/core/providers/ticket_provider.dart';
 import 'package:tickety/features/staff/data/i_ticket_repository.dart';
 import 'package:tickety/features/staff/models/ticket.dart';
@@ -173,51 +174,42 @@ void main() {
       expect(notifier.state.isLoading, isFalse);
     });
 
-    test('loadTickets fetches tickets and stats', () async {
-      final tickets = [_createMockTicket('1')];
+    test('loadStats fetches stats for event', () async {
       const stats = TicketStats(
-        totalSold: 1,
-        checkedIn: 0,
-        totalRevenueCents: 5000,
+        totalSold: 10,
+        checkedIn: 5,
+        totalRevenueCents: 50000,
       );
 
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => tickets);
       when(() => mockRepository.getTicketStats('evt_001'))
           .thenAnswer((_) async => stats);
 
-      await notifier.loadTickets('evt_001');
+      await notifier.loadStats('evt_001');
 
-      expect(notifier.state.tickets, tickets);
       expect(notifier.state.stats, stats);
-      expect(notifier.state.isLoading, isFalse);
-      expect(notifier.state.currentEventId, 'evt_001');
     });
 
-    test('loadTickets handles errors', () async {
-      when(() => mockRepository.getEventTickets('evt_001'))
+    test('loadStats handles errors', () async {
+      when(() => mockRepository.getTicketStats('evt_001'))
           .thenThrow(Exception('Network error'));
 
-      await notifier.loadTickets('evt_001');
+      await notifier.loadStats('evt_001');
 
-      expect(notifier.state.isLoading, isFalse);
       // Error is normalized to user-friendly message
       expect(notifier.state.error, isNotNull);
     });
 
-    test('sellTicket adds ticket to state', () async {
+    test('sellTicket adds ticket to state and refreshes stats', () async {
       final newTicket = _createMockTicket('new_1');
 
-      // Set up current event
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => []);
+      // Set up current event with loadStats
       when(() => mockRepository.getTicketStats('evt_001'))
           .thenAnswer((_) async => const TicketStats(
                 totalSold: 0,
                 checkedIn: 0,
                 totalRevenueCents: 0,
               ));
-      await notifier.loadTickets('evt_001');
+      await notifier.loadStats('evt_001');
 
       when(() => mockRepository.sellTicket(
             eventId: 'evt_001',
@@ -245,22 +237,24 @@ void main() {
       expect(notifier.state.tickets.contains(newTicket), isTrue);
     });
 
-    test('checkInTicket updates ticket status', () async {
+    test('checkInTicket updates ticket in state', () async {
       final ticket = _createMockTicket('1');
       final checkedInTicket = _createMockTicket('1', status: TicketStatus.used);
 
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => [ticket]);
-      when(() => mockRepository.getTicketStats('evt_001'))
-          .thenAnswer((_) async => const TicketStats(
-                totalSold: 1,
-                checkedIn: 0,
-                totalRevenueCents: 5000,
-              ));
-      await notifier.loadTickets('evt_001');
+      // Add ticket to state first
+      notifier.state = notifier.state.copyWith(
+        tickets: [ticket],
+        currentEventId: 'evt_001',
+      );
 
       when(() => mockRepository.checkInTicket('1'))
           .thenAnswer((_) async => checkedInTicket);
+      when(() => mockRepository.getTicketStats('evt_001'))
+          .thenAnswer((_) async => const TicketStats(
+                totalSold: 1,
+                checkedIn: 1,
+                totalRevenueCents: 5000,
+              ));
 
       final result = await notifier.checkInTicket('1');
 
@@ -272,18 +266,20 @@ void main() {
       final ticket = _createMockTicket('1', status: TicketStatus.used);
       final validTicket = _createMockTicket('1', status: TicketStatus.valid);
 
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => [ticket]);
-      when(() => mockRepository.getTicketStats('evt_001'))
-          .thenAnswer((_) async => const TicketStats(
-                totalSold: 1,
-                checkedIn: 1,
-                totalRevenueCents: 5000,
-              ));
-      await notifier.loadTickets('evt_001');
+      // Add ticket to state first
+      notifier.state = notifier.state.copyWith(
+        tickets: [ticket],
+        currentEventId: 'evt_001',
+      );
 
       when(() => mockRepository.undoCheckIn('1'))
           .thenAnswer((_) async => validTicket);
+      when(() => mockRepository.getTicketStats('evt_001'))
+          .thenAnswer((_) async => const TicketStats(
+                totalSold: 1,
+                checkedIn: 0,
+                totalRevenueCents: 5000,
+              ));
 
       final result = await notifier.undoCheckIn('1');
 
@@ -296,18 +292,20 @@ void main() {
       final cancelledTicket =
           _createMockTicket('1', status: TicketStatus.cancelled);
 
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => [ticket]);
+      // Add ticket to state first
+      notifier.state = notifier.state.copyWith(
+        tickets: [ticket],
+        currentEventId: 'evt_001',
+      );
+
+      when(() => mockRepository.cancelTicket('1'))
+          .thenAnswer((_) async => cancelledTicket);
       when(() => mockRepository.getTicketStats('evt_001'))
           .thenAnswer((_) async => const TicketStats(
                 totalSold: 1,
                 checkedIn: 0,
-                totalRevenueCents: 5000,
+                totalRevenueCents: 4500,
               ));
-      await notifier.loadTickets('evt_001');
-
-      when(() => mockRepository.cancelTicket('1'))
-          .thenAnswer((_) async => cancelledTicket);
 
       final result = await notifier.cancelTicket('1');
 
@@ -316,15 +314,16 @@ void main() {
     });
 
     test('clear resets state', () async {
-      when(() => mockRepository.getEventTickets('evt_001'))
-          .thenAnswer((_) async => [_createMockTicket('1')]);
-      when(() => mockRepository.getTicketStats('evt_001'))
-          .thenAnswer((_) async => const TicketStats(
-                totalSold: 1,
-                checkedIn: 0,
-                totalRevenueCents: 5000,
-              ));
-      await notifier.loadTickets('evt_001');
+      // Set up state with some data
+      notifier.state = notifier.state.copyWith(
+        tickets: [_createMockTicket('1')],
+        stats: const TicketStats(
+          totalSold: 1,
+          checkedIn: 0,
+          totalRevenueCents: 5000,
+        ),
+        currentEventId: 'evt_001',
+      );
 
       notifier.clear();
 
@@ -384,8 +383,8 @@ void main() {
     test('load fetches user tickets', () async {
       final tickets = [_createMockTicket('1')];
 
-      when(() => mockRepository.getMyTickets())
-          .thenAnswer((_) async => tickets);
+      when(() => mockRepository.getMyTickets(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: tickets, page: 0, pageSize: 20, hasMore: false));
 
       await notifier.load();
 
@@ -394,7 +393,7 @@ void main() {
     });
 
     test('load handles errors', () async {
-      when(() => mockRepository.getMyTickets())
+      when(() => mockRepository.getMyTickets(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
           .thenThrow(Exception('Not authenticated'));
 
       await notifier.load();
@@ -405,16 +404,16 @@ void main() {
     });
 
     test('refresh reloads tickets', () async {
-      when(() => mockRepository.getMyTickets())
-          .thenAnswer((_) async => [_createMockTicket('1')]);
+      when(() => mockRepository.getMyTickets(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: [_createMockTicket('1')], page: 0, pageSize: 20, hasMore: false));
 
       await notifier.refresh();
 
-      verify(() => mockRepository.getMyTickets()).called(1);
+      verify(() => mockRepository.getMyTickets(page: any(named: 'page'), pageSize: any(named: 'pageSize'))).called(1);
     });
 
     test('clearError removes error', () async {
-      when(() => mockRepository.getMyTickets())
+      when(() => mockRepository.getMyTickets(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
           .thenThrow(Exception('Error'));
       await notifier.load();
 

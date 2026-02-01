@@ -1,3 +1,5 @@
+import '../../../core/models/models.dart';
+import '../../events/models/event_analytics.dart';
 import '../models/ticket.dart';
 
 /// Statistics for tickets at an event.
@@ -42,9 +44,6 @@ abstract class ITicketRepository {
     String? walletAddress,
   });
 
-  /// Get tickets sold for an event.
-  Future<List<Ticket>> getEventTickets(String eventId);
-
   /// Get ticket by ID or ticket number.
   Future<Ticket?> getTicket(String eventId, String ticketIdOrNumber);
 
@@ -60,6 +59,17 @@ abstract class ITicketRepository {
   /// Get ticket stats for an event.
   Future<TicketStats> getTicketStats(String eventId);
 
+  /// Get pre-aggregated analytics for an event.
+  ///
+  /// This uses a database function to compute stats server-side,
+  /// avoiding the need to fetch all ticket rows.
+  Future<EventAnalytics> getEventAnalytics(String eventId);
+
   /// Get tickets for current user (purchased tickets).
-  Future<List<Ticket>> getMyTickets();
+  ///
+  /// Returns paginated results. Use [page] and [pageSize] to control pagination.
+  Future<PaginatedResult<Ticket>> getMyTickets({
+    int page = 0,
+    int pageSize = 20,
+  });
 }

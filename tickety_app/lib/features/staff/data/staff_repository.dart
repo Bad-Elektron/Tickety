@@ -1,4 +1,5 @@
 import '../../../core/errors/errors.dart';
+import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
 import '../models/staff_role.dart';
 import 'i_staff_repository.dart';
@@ -195,23 +196,46 @@ class StaffRepository implements IStaffRepository {
   }
 
   @override
-  Future<List<Map<String, dynamic>>> getMyStaffEvents() async {
+  Future<PaginatedResult<Map<String, dynamic>>> getMyStaffEvents({
+    int page = 0,
+    int pageSize = 20,
+  }) async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
       AppLogger.debug('No current user for staff events', tag: _tag);
-      return [];
+      return PaginatedResult.empty(pageSize: pageSize);
     }
 
-    AppLogger.debug('Fetching staff events for user: $userId', tag: _tag);
+    AppLogger.debug(
+      'Fetching staff events for user: $userId (page: $page, pageSize: $pageSize)',
+      tag: _tag,
+    );
+
+    final from = page * pageSize;
+    final to = from + pageSize; // Fetch one extra to check hasMore
 
     final response = await _client
         .from('event_staff')
         .select('*, events(*)')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .range(from, to);
 
-    final results = (response as List<dynamic>).cast<Map<String, dynamic>>();
-    AppLogger.debug('Found ${results.length} staff events', tag: _tag);
-    return results;
+    final allItems = (response as List<dynamic>).cast<Map<String, dynamic>>();
+
+    final hasMore = allItems.length > pageSize;
+    final results = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Found ${results.length} staff events (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: results,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
   }
 
   @override

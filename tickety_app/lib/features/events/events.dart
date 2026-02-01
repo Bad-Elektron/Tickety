@@ -4,5 +4,6 @@
 /// including models, widgets, and screens.
 library;
 
+export 'models/event_analytics.dart';
 export 'models/event_model.dart';
 export 'widgets/widgets.dart';

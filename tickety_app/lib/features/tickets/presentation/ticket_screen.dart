@@ -1,7 +1,16 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../core/graphics/graphics.dart';
+import '../../../core/services/nfc_service.dart';
+import '../../events/data/event_mapper.dart';
+import '../../events/models/event_model.dart';
+import '../../events/presentation/event_details_screen.dart';
 import '../../staff/models/ticket.dart';
+import 'resale_listing_screen.dart';
 
 /// Screen displaying details of a single ticket.
 ///
@@ -17,7 +26,9 @@ class TicketScreen extends StatefulWidget {
 
 class _TicketScreenState extends State<TicketScreen> {
   bool _nfcAvailable = false;
+  bool _hceAvailable = false;
   bool _nfcBroadcasting = false;
+  final NfcService _nfcService = NfcService.instance;
 
   // Helper getters to extract event data
   String get _eventTitle =>
@@ -50,20 +61,96 @@ class _TicketScreenState extends State<TicketScreen> {
     return parts.isNotEmpty ? parts.join(', ') : null;
   }
 
+  /// Get the EventModel from ticket's event data.
+  EventModel? get _eventModel {
+    final eventData = widget.ticket.eventData;
+    if (eventData == null) return null;
+    try {
+      return EventMapper.fromJson(eventData);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _navigateToEvent() {
+    final event = _eventModel;
+    if (event == null) {
+      _showMessage('Event details not available');
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EventDetailsScreen(event: event),
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    // NFC temporarily disabled
+    _checkNfcAvailability();
   }
 
   @override
   void dispose() {
+    // Stop broadcasting when screen is disposed
+    if (_nfcBroadcasting) {
+      _nfcService.stopBroadcasting();
+    }
     super.dispose();
   }
 
-  void _toggleNfcBroadcast() {
-    // NFC temporarily disabled
-    _showMessage('NFC is temporarily unavailable. Please use QR code.');
+  Future<void> _checkNfcAvailability() async {
+    // Only check on mobile platforms
+    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) {
+      return;
+    }
+
+    final nfcAvailable = await _nfcService.isNfcAvailable();
+    final hceAvailable = await _nfcService.isHceAvailable();
+
+    if (mounted) {
+      setState(() {
+        _nfcAvailable = nfcAvailable;
+        _hceAvailable = hceAvailable;
+      });
+    }
+  }
+
+  Future<void> _toggleNfcBroadcast() async {
+    if (!_hceAvailable) {
+      if (Platform.isIOS) {
+        _showMessage('NFC broadcasting is not available on iOS. Please use QR code.');
+      } else {
+        _showMessage('NFC is not available on this device. Please use QR code.');
+      }
+      return;
+    }
+
+    if (_nfcBroadcasting) {
+      await _nfcService.stopBroadcasting();
+      if (mounted) {
+        setState(() => _nfcBroadcasting = false);
+        HapticFeedback.lightImpact();
+      }
+    } else {
+      final payload = TicketNfcPayload(
+        ticketId: widget.ticket.id,
+        ticketNumber: widget.ticket.ticketNumber,
+        eventId: widget.ticket.eventId,
+      );
+
+      final success = await _nfcService.startBroadcasting(payload);
+      if (mounted) {
+        if (success) {
+          setState(() => _nfcBroadcasting = true);
+          HapticFeedback.mediumImpact();
+          _showMessage('NFC ready. Hold phone near usher device.');
+        } else {
+          _showMessage('Failed to start NFC. Please use QR code.');
+        }
+      }
+    }
   }
 
   void _showMessage(String message) {
@@ -100,6 +187,47 @@ class _TicketScreenState extends State<TicketScreen> {
     );
   }
 
+  void _showSellConfirmation() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sell This Ticket?'),
+        content: const Text(
+          'By confirming, your ticket will be listed on the marketplace. '
+          'Other users will be able to purchase it. You can cancel the listing at any time.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToSellScreen();
+            },
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _navigateToSellScreen() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ResaleListingScreen(ticket: widget.ticket),
+      ),
+    );
+
+    if (result == true && mounted) {
+      HapticFeedback.mediumImpact();
+      _showMessage('Ticket listed for sale!');
+      // Pop back to refresh the tickets list
+      Navigator.of(context).pop(true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -129,30 +257,71 @@ class _TicketScreenState extends State<TicketScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Event title and subtitle
-                  Text(
-                    _eventTitle,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_eventSubtitle != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _eventSubtitle!,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                  // Event title and subtitle - tappable to view event
+                  Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: _navigateToEvent,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _eventTitle,
+                                    style: theme.textTheme.headlineSmall?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (_eventSubtitle != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _eventSubtitle!,
+                                      style: theme.textTheme.bodyLarge?.copyWith(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.arrow_forward_rounded,
+                                color: colorScheme.primary,
+                                size: 20,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 24),
 
-                  // NFC Check-in card (if available and ticket is valid)
-                  if (_nfcAvailable && widget.ticket.isValid) ...[
+                  // NFC Check-in card (Android only with HCE, and ticket is valid)
+                  if (_hceAvailable && widget.ticket.isValid) ...[
                     _NfcCheckInCard(
                       isActive: _nfcBroadcasting,
                       onToggle: _toggleNfcBroadcast,
                     ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // iOS NFC notice (show that NFC is not available for broadcasting)
+                  if (!kIsWeb && Platform.isIOS && widget.ticket.isValid) ...[
+                    _IosQrNotice(),
                     const SizedBox(height: 16),
                   ],
 
@@ -192,6 +361,15 @@ class _TicketScreenState extends State<TicketScreen> {
                       icon: const Icon(Icons.navigation_rounded, size: 20),
                       tooltip: 'Get directions',
                     ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Wallet Status Card
+                  _WalletStatusCard(
+                    ticket: widget.ticket,
+                    onSellPressed: widget.ticket.isValid && !widget.ticket.isListedForSale
+                        ? _showSellConfirmation
+                        : null,
                   ),
                   const SizedBox(height: 24),
 
@@ -811,6 +989,216 @@ class _DetailRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Card showing ticket wallet status and sell option.
+class _WalletStatusCard extends StatelessWidget {
+  const _WalletStatusCard({
+    required this.ticket,
+    this.onSellPressed,
+  });
+
+  final Ticket ticket;
+  final VoidCallback? onSellPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isOnSale = ticket.isListedForSale;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: isOnSale
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.orange.shade600,
+                  Colors.orange.shade400,
+                ],
+              )
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.green.shade600,
+                  Colors.green.shade400,
+                ],
+              ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: (isOnSale ? Colors.orange : Colors.green).withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              // Status icon
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isOnSale ? Icons.storefront_rounded : Icons.lock_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Status text
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOnSale ? 'Listed for Sale' : 'Secure in Wallet',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isOnSale
+                          ? 'Visible on marketplace \u2022 ${ticket.formattedListingPrice ?? "Price TBD"}'
+                          : 'Only you can access this ticket',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Status indicator
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isOnSale ? Icons.visibility : Icons.shield,
+                      size: 14,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isOnSale ? 'Public' : 'Private',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          // Sell button (only if not already listed and ticket is valid)
+          if (onSellPressed != null && !isOnSale) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onSellPressed,
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.green.shade700,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                icon: const Icon(Icons.sell_outlined, size: 20),
+                label: const Text(
+                  'Sell This Ticket',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+          // Cancel listing hint (if on sale)
+          if (isOnSale) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Tap to manage or cancel listing',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.white.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Notice shown on iOS explaining QR-only check-in.
+class _IosQrNotice extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.outline.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.qr_code_2,
+              size: 24,
+              color: colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'QR Code Check-in',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Show the QR code above to the usher for check-in',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -22,7 +22,7 @@ class GradientWalletButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = NoisePresets.subtle(seed);
+    final config = NoisePresets.sunset(seed);
 
     return RepaintBoundary(
       child: Material(

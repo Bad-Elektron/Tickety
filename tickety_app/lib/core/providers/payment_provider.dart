@@ -146,18 +146,22 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
 
     try {
       // Create payment intent via Edge Function
+      print('>>> PROVIDER: Step 1 - Calling createResalePaymentIntent...');
       final paymentIntent = await _repository.createResalePaymentIntent(
         resaleListingId: resaleListingId,
         amountCents: amountCents,
         currency: currency,
       );
+      print('>>> PROVIDER: Step 1 SUCCESS - Got paymentIntent id=${paymentIntent.paymentIntentId}');
 
       // Initialize the Stripe Payment Sheet
+      print('>>> PROVIDER: Step 2 - Initializing Stripe Payment Sheet...');
       await StripeService.instance.initPaymentSheet(
         paymentIntentClientSecret: paymentIntent.clientSecret,
         customerId: paymentIntent.customerId,
         customerEphemeralKeySecret: paymentIntent.ephemeralKey,
       );
+      print('>>> PROVIDER: Step 2 SUCCESS - Payment sheet initialized');
 
       AppLogger.info('Payment sheet ready for resale purchase', tag: _tag);
 
@@ -169,9 +173,11 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
 
       return true;
     } catch (e, s) {
+      print('>>> PROVIDER ERROR: ${e.runtimeType}: $e');
+      print('>>> PROVIDER ERROR STACK: $s');
       final appError = ErrorHandler.normalize(e, s);
       AppLogger.error(
-        'Failed to initialize resale purchase',
+        'Failed to initialize resale purchase: ${e.runtimeType}: $e',
         error: appError.technicalDetails ?? e,
         stackTrace: s,
         tag: _tag,
@@ -315,28 +321,50 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
   }
 }
 
+/// Default page size for payment history pagination.
+const int kPaymentHistoryPageSize = 25;
+
 /// State for user's payment history.
 class PaymentHistoryState {
   final List<Payment> payments;
   final bool isLoading;
+  final bool isLoadingMore;
   final String? error;
+  final int currentPage;
+  final bool hasMore;
+  final int pageSize;
 
   const PaymentHistoryState({
     this.payments = const [],
     this.isLoading = false,
+    this.isLoadingMore = false,
     this.error,
+    this.currentPage = 0,
+    this.hasMore = true,
+    this.pageSize = kPaymentHistoryPageSize,
   });
+
+  /// Whether more payments can be loaded.
+  bool get canLoadMore => hasMore && !isLoading && !isLoadingMore;
 
   PaymentHistoryState copyWith({
     List<Payment>? payments,
     bool? isLoading,
+    bool? isLoadingMore,
     String? error,
+    int? currentPage,
+    bool? hasMore,
+    int? pageSize,
     bool clearError = false,
   }) {
     return PaymentHistoryState(
       payments: payments ?? this.payments,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       error: clearError ? null : (error ?? this.error),
+      currentPage: currentPage ?? this.currentPage,
+      hasMore: hasMore ?? this.hasMore,
+      pageSize: pageSize ?? this.pageSize,
     );
   }
 
@@ -355,7 +383,7 @@ class PaymentHistoryState {
     return payments.where((p) => p.status.isRefunded).toList();
   }
 
-  /// Total spent in cents.
+  /// Total spent in cents (from loaded payments).
   int get totalSpentCents {
     return completedPayments.fold(0, (sum, p) => sum + p.amountCents);
   }
@@ -367,20 +395,33 @@ class PaymentHistoryNotifier extends StateNotifier<PaymentHistoryState> {
 
   PaymentHistoryNotifier(this._repository) : super(const PaymentHistoryState());
 
-  /// Load payment history.
+  /// Load the first page of payment history.
   Future<void> load() async {
     if (state.isLoading) return;
 
     AppLogger.debug('Loading payment history', tag: _tag);
 
-    state = state.copyWith(isLoading: true, clearError: true);
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      currentPage: 0,
+      hasMore: true,
+    );
 
     try {
-      final payments = await _repository.getMyPayments();
-      AppLogger.info('Loaded ${payments.length} payments', tag: _tag);
+      final result = await _repository.getMyPayments(
+        page: 0,
+        pageSize: state.pageSize,
+      );
+      AppLogger.info(
+        'Loaded ${result.items.length} payments (hasMore: ${result.hasMore})',
+        tag: _tag,
+      );
       state = state.copyWith(
-        payments: payments,
+        payments: result.items,
         isLoading: false,
+        currentPage: 0,
+        hasMore: result.hasMore,
       );
     } catch (e, s) {
       final appError = ErrorHandler.normalize(e, s);
@@ -393,11 +434,58 @@ class PaymentHistoryNotifier extends StateNotifier<PaymentHistoryState> {
       state = state.copyWith(
         isLoading: false,
         error: appError.userMessage,
+        hasMore: false,
       );
     }
   }
 
-  /// Refresh payment history.
+  /// Load more payments (next page).
+  Future<void> loadMore() async {
+    if (!state.canLoadMore) {
+      AppLogger.debug(
+        'Cannot load more payments: canLoadMore=${state.canLoadMore}',
+        tag: _tag,
+      );
+      return;
+    }
+
+    final nextPage = state.currentPage + 1;
+    AppLogger.debug('Loading more payments (page: $nextPage)', tag: _tag);
+    state = state.copyWith(isLoadingMore: true);
+
+    try {
+      final result = await _repository.getMyPayments(
+        page: nextPage,
+        pageSize: state.pageSize,
+      );
+
+      AppLogger.info(
+        'Loaded ${result.items.length} more payments (hasMore: ${result.hasMore})',
+        tag: _tag,
+      );
+
+      state = state.copyWith(
+        payments: [...state.payments, ...result.items],
+        isLoadingMore: false,
+        currentPage: nextPage,
+        hasMore: result.hasMore,
+      );
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load more payments',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isLoadingMore: false,
+        error: appError.userMessage,
+      );
+    }
+  }
+
+  /// Refresh payment history (reload first page).
   Future<void> refresh() async {
     state = state.copyWith(isLoading: false);
     await load();
@@ -474,4 +562,14 @@ final paymentReadyProvider = Provider<bool>((ref) {
 /// Convenience provider for payment error.
 final paymentErrorProvider = Provider<String?>((ref) {
   return ref.watch(paymentProcessProvider).error;
+});
+
+/// Convenience provider for payment history loading more state.
+final paymentHistoryLoadingMoreProvider = Provider<bool>((ref) {
+  return ref.watch(paymentHistoryProvider).isLoadingMore;
+});
+
+/// Convenience provider for payment history can load more state.
+final paymentHistoryCanLoadMoreProvider = Provider<bool>((ref) {
+  return ref.watch(paymentHistoryProvider).canLoadMore;
 });

@@ -83,6 +83,84 @@ Each module uses a library file (e.g., `events.dart`, `widgets.dart`) for clean 
 
 ## TODO
 
+### Pagination Implementation
+
+All repository methods that fetch user-specific lists are now paginated for scalability.
+
+**Completed (using `PaginatedResult<T>` with `.range()`):**
+- `getEventPayments()` in `payment_repository.dart` - Returns `PaginatedResult<Payment>`
+- `getUpcomingEvents()` in `supabase_event_repository.dart` - Returns `PaginatedResult<EventModel>`
+- `getMyPayments()` in `payment_repository.dart` - Returns `PaginatedResult<Payment>` (25 per page)
+- `getEventListings()` in `resale_repository.dart` - Returns `PaginatedResult<ResaleListing>` (20 per page)
+- `getMyTickets()` in `ticket_repository.dart` - Returns `PaginatedResult<Ticket>` (20 per page)
+- `getMyEvents()` in `supabase_event_repository.dart` - Returns `PaginatedResult<EventModel>` (20 per page)
+- `getMyStaffEvents()` in `staff_repository.dart` - Returns `PaginatedResult<Map>` (20 per page)
+- `getMyListings()` in `resale_repository.dart` - Returns `PaginatedResult<ResaleListing>` (20 per page)
+- `EventsProvider` - Supports `loadMore()` with infinite scroll on home screen
+- `PaymentHistoryProvider` - Supports `loadMore()` for user payment history
+- `MyTicketsNotifier` - Supports `loadMore()` for user's purchased tickets
+- `MyEventsNotifier` - Supports `loadMore()` for organizer's events
+
+**Deleted (unused):**
+- `getActiveListings()` - Removed, was never used in UI
+
+**Optimized with SQL COUNT:**
+- `getResaleListingCount(eventId)` in `resale_repository.dart` - Returns count without fetching records
+
+**Already optimized (using SQL aggregation):**
+- `getTicketStats()` - Uses `get_ticket_stats()` RPC function
+- `getEventAnalytics()` - Uses `get_event_analytics()` RPC function
+
+**Implementation approach used:**
+- Supabase `.range(from, to)` for offset-based pagination
+- `page` and `pageSize` parameters on repository methods
+- Return `PaginatedResult<T>` from `core/models/paginated_result.dart`
+- Fetch `pageSize + 1` items and check length to determine `hasMore`
+- Provider state includes `isLoadingMore`, `hasMore`, `currentPage` fields
+- `loadMore()` method on notifiers for infinite scroll UI pattern
+
+### Seller Wallet System (Completed)
+
+Sellers can now list tickets for resale without requiring full Stripe onboarding upfront. Funds are held in their Stripe Express account until they add bank details to withdraw.
+
+**Architecture:**
+- Stripe holds funds (not Tickety) - avoids Money Transmitter License requirements
+- Minimal Stripe Express account created on first listing attempt
+- Bank details only required when seller wants to withdraw
+
+**Database:**
+- `seller_balances` table caches Stripe balance info (available/pending cents, payouts_enabled)
+- Migration: `20260131000002_create_seller_balances.sql`
+
+**Edge Functions (all use `stripe@14.21.0`):**
+- `create-seller-account` - Creates minimal Stripe Express account (email only)
+- `get-seller-balance` - Fetches balance from Stripe API, caches in DB
+- `initiate-withdrawal` - Returns onboarding URL if bank not set up, or creates payout
+- `create-resale-intent` - Uses `on_behalf_of` pattern (funds stay in seller's Stripe balance)
+- `create-payment-intent` - Primary ticket purchases
+- `create-connect-account` - Full Stripe Connect Express setup (legacy)
+- `verify-subscription` - Verifies subscription status with Stripe
+- `create-subscription-checkout` - Creates subscription checkout sessions
+- `stripe-webhook` - Handles payment and subscription events
+- `connect-webhook` - Handles Connect account events
+- `process-refund` - Processes refunds via Stripe
+
+**RLS Policies:**
+- `20260131000003_fix_resale_listing_rls.sql` - Fixes ticket ownership check for resale listings (uses `sold_by` instead of `owner_email`)
+
+**Flutter:**
+- `seller_balance_provider.dart` - Manages seller balance state
+- `wallet_screen.dart` - Shows Stripe Balance + Crypto Balance (ADA placeholder), separate "Add Bank Details" and "Withdraw" buttons
+- `resale_repository.dart` - Wallet methods (hasSellerAccount, createSellerAccount, getSellerBalance, initiateWithdrawal)
+
+**Stripe Test Mode Values:**
+- Verification codes: `000000`
+- SSN: `000-00-0000`
+- Bank routing: `110000000`
+- Bank account: `000123456789`
+
+**Important:** Uses `https://esm.sh/stripe@14.21.0` import (not `@13.10.0?target=deno`) for Supabase Edge Runtime compatibility.
+
 ### Stripe Webhooks Setup (Production)
 
 Set up Stripe webhooks to handle subscription lifecycle events:
@@ -101,3 +179,10 @@ This enables:
 - Failed payment retries
 - Cancellations from Stripe dashboard
 - Plan changes from billing portal
+
+## Future: Cardano (ADA) Integration
+
+The wallet screen includes a placeholder for "Crypto Balance" showing ADA. This is reserved for future Cardano blockchain integration for:
+- NFT-based ticket ownership
+- Decentralized ticket resale
+- Crypto payments

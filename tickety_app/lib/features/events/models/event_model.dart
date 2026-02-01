@@ -67,6 +67,10 @@ class EventModel {
   /// When true, venue/city/country are only shown to ticket holders.
   final bool hideLocation;
 
+  /// Maximum number of tickets available for this event.
+  /// Null means unlimited tickets.
+  final int? maxTickets;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -85,6 +89,7 @@ class EventModel {
     this.priceInCents,
     this.currency = 'USD',
     this.hideLocation = false,
+    this.maxTickets,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -175,6 +180,7 @@ class EventModel {
     int? priceInCents,
     String? currency,
     bool? hideLocation,
+    int? maxTickets,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -194,6 +200,7 @@ class EventModel {
       priceInCents: priceInCents ?? this.priceInCents,
       currency: currency ?? this.currency,
       hideLocation: hideLocation ?? this.hideLocation,
+      maxTickets: maxTickets ?? this.maxTickets,
     );
   }
 

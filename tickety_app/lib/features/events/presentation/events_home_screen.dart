@@ -252,17 +252,53 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _EventList extends StatelessWidget {
+class _EventList extends ConsumerStatefulWidget {
   final List<EventModel> events;
 
   const _EventList({required this.events});
 
   @override
+  ConsumerState<_EventList> createState() => _EventListState();
+}
+
+class _EventListState extends ConsumerState<_EventList> {
+  @override
   Widget build(BuildContext context) {
+    final isLoadingMore = ref.watch(eventsLoadingMoreProvider);
+    final canLoadMore = ref.watch(eventsCanLoadMoreProvider);
+
+    // Total items: events + optional loading indicator
+    final itemCount = widget.events.length + (isLoadingMore || canLoadMore ? 1 : 0);
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-        (context, index) => _EventListTile(event: events[index]),
-        childCount: events.length,
+        (context, index) {
+          // If this is the last item and we can load more, trigger load
+          if (index == widget.events.length) {
+            // Show loading indicator or trigger load more
+            if (isLoadingMore) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            // Trigger load more when this item becomes visible
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ref.read(eventsProvider.notifier).loadMore();
+            });
+            return const SizedBox(height: 16);
+          }
+
+          // Check if we're near the end and should preload
+          if (index >= widget.events.length - 3 && canLoadMore && !isLoadingMore) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ref.read(eventsProvider.notifier).loadMore();
+            });
+          }
+
+          return _EventListTile(event: widget.events[index]);
+        },
+        childCount: itemCount,
       ),
     );
   }

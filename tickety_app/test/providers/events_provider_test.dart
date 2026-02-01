@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:tickety/core/models/paginated_result.dart';
 import 'package:tickety/core/providers/events_provider.dart';
 import 'package:tickety/features/events/models/event_model.dart';
 
@@ -18,8 +19,12 @@ void main() {
       expect(state.events, isEmpty);
       expect(state.featuredEvents, isEmpty);
       expect(state.isLoading, isFalse);
+      expect(state.isLoadingMore, isFalse);
       expect(state.error, isNull);
       expect(state.isUsingPlaceholders, isFalse);
+      expect(state.currentPage, 0);
+      expect(state.hasMore, isTrue);
+      expect(state.pageSize, kEventsPageSize);
     });
 
     test('copyWith creates copy with modified values', () {
@@ -31,12 +36,16 @@ void main() {
         featuredEvents: featured,
         isLoading: true,
         isUsingPlaceholders: true,
+        currentPage: 2,
+        hasMore: false,
       );
 
       expect(state.events, events);
       expect(state.featuredEvents, featured);
       expect(state.isLoading, isTrue);
       expect(state.isUsingPlaceholders, isTrue);
+      expect(state.currentPage, 2);
+      expect(state.hasMore, isFalse);
     });
 
     test('copyWith with clearError removes error', () {
@@ -52,17 +61,47 @@ void main() {
 
       expect(modified.isUsingPlaceholders, isTrue);
     });
+
+    test('canLoadMore returns true when conditions are met', () {
+      const state = EventsState(hasMore: true, isLoading: false, isLoadingMore: false);
+      expect(state.canLoadMore, isTrue);
+    });
+
+    test('canLoadMore returns false when loading', () {
+      const loading = EventsState(hasMore: true, isLoading: true, isLoadingMore: false);
+      const loadingMore = EventsState(hasMore: true, isLoading: false, isLoadingMore: true);
+      const noMore = EventsState(hasMore: false, isLoading: false, isLoadingMore: false);
+
+      expect(loading.canLoadMore, isFalse);
+      expect(loadingMore.canLoadMore, isFalse);
+      expect(noMore.canLoadMore, isFalse);
+    });
   });
 
   group('EventsNotifier', () {
     late MockEventRepository mockRepository;
     late EventsNotifier notifier;
 
+    PaginatedResult<EventModel> _paginatedResult(
+      List<EventModel> items, {
+      int page = 0,
+      bool hasMore = false,
+    }) {
+      return PaginatedResult(
+        items: items,
+        page: page,
+        pageSize: kEventsPageSize,
+        hasMore: hasMore,
+      );
+    }
+
     setUp(() {
       mockRepository = MockEventRepository();
       // Set up default stubs for constructor that calls loadEvents
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => []);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult([]));
       when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
           .thenAnswer((_) async => []);
       notifier = EventsNotifier(mockRepository);
@@ -71,15 +110,20 @@ void main() {
     test('constructor calls loadEvents', () async {
       // Wait for initial load to complete
       await Future.delayed(Duration.zero);
-      verify(() => mockRepository.getUpcomingEvents()).called(1);
+      verify(() => mockRepository.getUpcomingEvents(
+            page: 0,
+            pageSize: any(named: 'pageSize'),
+          )).called(1);
     });
 
     test('loadEvents fetches events from repository', () async {
       final events = [_createMockEvent('1'), _createMockEvent('2')];
       final featured = [_createMockEvent('3')];
 
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult(events, hasMore: true));
       when(() => mockRepository.getFeaturedEvents(limit: 5))
           .thenAnswer((_) async => featured);
 
@@ -89,6 +133,8 @@ void main() {
       expect(notifier.state.featuredEvents, featured);
       expect(notifier.state.isLoading, isFalse);
       expect(notifier.state.isUsingPlaceholders, isFalse);
+      expect(notifier.state.currentPage, 0);
+      expect(notifier.state.hasMore, isTrue);
     });
 
     test('loadEvents falls back to placeholders on error', () async {
@@ -96,8 +142,10 @@ void main() {
       await Future.delayed(Duration.zero);
 
       // Now change mock to throw on next call
-      when(() => mockRepository.getUpcomingEvents())
-          .thenThrow(Exception('Network error'));
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenThrow(Exception('Network error'));
 
       await notifier.loadEvents();
 
@@ -106,19 +154,94 @@ void main() {
       expect(notifier.state.error, isNotNull);
       expect(notifier.state.isUsingPlaceholders, isTrue);
       expect(notifier.state.events, isNotEmpty); // Placeholder data
+      expect(notifier.state.hasMore, isFalse);
     });
 
     test('refresh calls loadEvents', () async {
       final events = [_createMockEvent('1')];
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult(events));
       when(() => mockRepository.getFeaturedEvents(limit: 5))
           .thenAnswer((_) async => []);
 
       await notifier.refresh();
 
       // Called once in constructor, once in refresh
-      verify(() => mockRepository.getUpcomingEvents()).called(greaterThanOrEqualTo(1));
+      verify(() => mockRepository.getUpcomingEvents(
+            page: 0,
+            pageSize: any(named: 'pageSize'),
+          )).called(greaterThanOrEqualTo(1));
+    });
+
+    test('loadMore appends items and increments page', () async {
+      final page1Events = [_createMockEvent('1'), _createMockEvent('2')];
+      final page2Events = [_createMockEvent('3'), _createMockEvent('4')];
+
+      when(() => mockRepository.getUpcomingEvents(page: 0, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedResult(page1Events, hasMore: true));
+      when(() => mockRepository.getUpcomingEvents(page: 1, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedResult(page2Events, page: 1, hasMore: false));
+      when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
+          .thenAnswer((_) async => []);
+
+      await notifier.loadEvents();
+      expect(notifier.state.events.length, 2);
+      expect(notifier.state.currentPage, 0);
+
+      await notifier.loadMore();
+      expect(notifier.state.events.length, 4);
+      expect(notifier.state.currentPage, 1);
+      expect(notifier.state.hasMore, isFalse);
+    });
+
+    test('loadMore does nothing when hasMore is false', () async {
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult([], hasMore: false));
+      when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
+          .thenAnswer((_) async => []);
+
+      // Wait for constructor's loadEvents to complete
+      await Future.delayed(Duration.zero);
+
+      // Reset interactions to start fresh
+      reset(mockRepository);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult([], hasMore: false));
+
+      await notifier.loadEvents();
+      expect(notifier.state.hasMore, isFalse);
+
+      await notifier.loadMore();
+      // Should only have been called once (in loadEvents), loadMore should be no-op
+      verify(() => mockRepository.getUpcomingEvents(
+            page: 0,
+            pageSize: any(named: 'pageSize'),
+          )).called(1);
+    });
+
+    test('loadMore preserves existing data on error', () async {
+      final events = [_createMockEvent('1')];
+
+      when(() => mockRepository.getUpcomingEvents(page: 0, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedResult(events, hasMore: true));
+      when(() => mockRepository.getUpcomingEvents(page: 1, pageSize: any(named: 'pageSize')))
+          .thenThrow(Exception('Network error'));
+      when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
+          .thenAnswer((_) async => []);
+
+      await notifier.loadEvents();
+      await notifier.loadMore();
+
+      // Original events should still be there
+      expect(notifier.state.events, events);
+      expect(notifier.state.error, isNotNull);
+      expect(notifier.state.isLoadingMore, isFalse);
     });
 
     test('filterByCategory filters events correctly', () async {
@@ -128,8 +251,10 @@ void main() {
         _createMockEvent('3', category: 'Music'),
       ];
 
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult(events));
       when(() => mockRepository.getFeaturedEvents(limit: 5))
           .thenAnswer((_) async => []);
 
@@ -148,8 +273,10 @@ void main() {
         _createMockEvent('3', city: 'New York'),
       ];
 
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult(events));
       when(() => mockRepository.getFeaturedEvents(limit: 5))
           .thenAnswer((_) async => []);
 
@@ -168,8 +295,10 @@ void main() {
         _createMockEvent('3'),
       ];
 
-      when(() => mockRepository.getUpcomingEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getUpcomingEvents(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedResult(events));
       when(() => mockRepository.getFeaturedEvents(limit: 5))
           .thenAnswer((_) async => []);
 
@@ -219,8 +348,8 @@ void main() {
     test('loads events when authenticated', () async {
       final events = [_createMockEvent('1')];
 
-      when(() => mockRepository.getMyEvents())
-          .thenAnswer((_) async => events);
+      when(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: events, page: 0, pageSize: 20, hasMore: false));
 
       final notifier = MyEventsNotifier(mockRepository, true);
       // Wait for initial load
@@ -236,11 +365,11 @@ void main() {
       await Future.delayed(Duration.zero);
 
       expect(notifier.state.events, isEmpty);
-      verifyNever(() => mockRepository.getMyEvents());
+      verifyNever(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')));
     });
 
     test('loadMyEvents handles errors', () async {
-      when(() => mockRepository.getMyEvents())
+      when(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
           .thenThrow(Exception('Not authenticated'));
 
       final notifier = MyEventsNotifier(mockRepository, true);
@@ -251,8 +380,8 @@ void main() {
     });
 
     test('loadMyEvents clears events when not authenticated', () async {
-      when(() => mockRepository.getMyEvents())
-          .thenAnswer((_) async => [_createMockEvent('1')]);
+      when(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: [_createMockEvent('1')], page: 0, pageSize: 20, hasMore: false));
 
       final notifier = MyEventsNotifier(mockRepository, true);
       await Future.delayed(Duration.zero);
@@ -266,8 +395,8 @@ void main() {
     });
 
     test('addEvent adds to local state', () async {
-      when(() => mockRepository.getMyEvents())
-          .thenAnswer((_) async => []);
+      when(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: <EventModel>[], page: 0, pageSize: 20, hasMore: false));
 
       final notifier = MyEventsNotifier(mockRepository, true);
       await Future.delayed(Duration.zero);
@@ -280,8 +409,8 @@ void main() {
     });
 
     test('refresh reloads events', () async {
-      when(() => mockRepository.getMyEvents())
-          .thenAnswer((_) async => [_createMockEvent('1')]);
+      when(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => PaginatedResult(items: [_createMockEvent('1')], page: 0, pageSize: 20, hasMore: false));
 
       final notifier = MyEventsNotifier(mockRepository, true);
       await Future.delayed(Duration.zero);
@@ -289,7 +418,7 @@ void main() {
       await notifier.refresh();
 
       // Called twice: once in constructor, once in refresh
-      verify(() => mockRepository.getMyEvents()).called(2);
+      verify(() => mockRepository.getMyEvents(page: any(named: 'page'), pageSize: any(named: 'pageSize'))).called(2);
     });
   });
 }

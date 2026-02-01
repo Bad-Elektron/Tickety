@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/ticket_provider.dart';
+import '../models/event_analytics.dart';
 import '../models/event_model.dart';
-import '../models/event_statistics.dart';
 
 /// Dashboard screen showing event statistics and analytics.
 class EventDataScreen extends ConsumerStatefulWidget {
@@ -24,9 +24,9 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
   @override
   void initState() {
     super.initState();
-    // Load ticket stats when screen opens
+    // Load analytics when screen opens (uses server-side aggregation)
     Future.microtask(() {
-      ref.read(ticketProvider.notifier).loadTickets(widget.event.id);
+      ref.read(ticketProvider.notifier).loadAnalytics(widget.event.id);
     });
   }
 
@@ -34,9 +34,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
   Widget build(BuildContext context) {
     final ticketState = ref.watch(ticketProvider);
     final config = widget.event.getNoiseConfig();
-
-    // Build EventStatistics from real ticket data when available
-    final stats = _buildStatsFromTicketData(ticketState);
+    final analytics = ticketState.analytics ?? EventAnalytics.empty;
 
     if (ticketState.isLoading) {
       return Scaffold(
@@ -71,7 +69,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
               IconButton(
                 icon: const Icon(Icons.refresh),
                 onPressed: () {
-                  ref.read(ticketProvider.notifier).loadTickets(widget.event.id);
+                  ref.read(ticketProvider.notifier).loadAnalytics(widget.event.id);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
                       content: Text('Refreshing statistics...'),
@@ -91,11 +89,11 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 // Summary cards row
-                _SummaryCardsSection(stats: stats),
+                _SummaryCardsSection(analytics: analytics),
                 const SizedBox(height: 24),
 
                 // Check-in progress
-                _CheckInProgressCard(stats: stats),
+                _CheckInProgressCard(analytics: analytics),
                 const SizedBox(height: 24),
 
                 // Hourly chart
@@ -104,7 +102,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
                   icon: Icons.bar_chart,
                 ),
                 const SizedBox(height: 12),
-                _HourlyCheckInChart(stats: stats),
+                _HourlyCheckInChart(analytics: analytics),
                 const SizedBox(height: 24),
 
                 // Usher performance
@@ -113,7 +111,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
                   icon: Icons.people_outline,
                 ),
                 const SizedBox(height: 12),
-                _UsherPerformanceCard(stats: stats),
+                _UsherPerformanceCard(analytics: analytics),
                 const SizedBox(height: 24),
 
                 // Ticket type breakdown
@@ -122,97 +120,13 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
                   icon: Icons.confirmation_number_outlined,
                 ),
                 const SizedBox(height: 12),
-                _TicketTypeBreakdownCard(stats: stats),
+                _TicketTypeBreakdownCard(analytics: analytics),
                 const SizedBox(height: 32),
               ]),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  EventStatistics _buildStatsFromTicketData(TicketState ticketState) {
-    final tickets = ticketState.tickets;
-    final dbStats = ticketState.stats;
-
-    // Calculate hourly check-ins from actual ticket data
-    final hourlyMap = <int, int>{};
-    for (final ticket in tickets) {
-      if (ticket.checkedInAt != null) {
-        final hour = ticket.checkedInAt!.hour;
-        hourlyMap[hour] = (hourlyMap[hour] ?? 0) + 1;
-      }
-    }
-
-    // Build sorted hourly data
-    final hourlyCheckIns = <HourlyCheckIn>[];
-    if (hourlyMap.isNotEmpty) {
-      final minHour = hourlyMap.keys.reduce(math.min);
-      final maxHour = hourlyMap.keys.reduce(math.max);
-      for (var h = minHour; h <= maxHour; h++) {
-        hourlyCheckIns.add(HourlyCheckIn(hour: h, count: hourlyMap[h] ?? 0));
-      }
-    }
-
-    // Find peak check-in time
-    DateTime? peakTime;
-    if (hourlyMap.isNotEmpty) {
-      final peakHour = hourlyMap.entries
-          .reduce((a, b) => a.value > b.value ? a : b)
-          .key;
-      peakTime = DateTime.now().copyWith(hour: peakHour, minute: 0);
-    }
-
-    // Calculate usher stats from checked_in_by
-    final usherMap = <String, int>{};
-    for (final ticket in tickets) {
-      if (ticket.checkedInBy != null) {
-        usherMap[ticket.checkedInBy!] =
-            (usherMap[ticket.checkedInBy!] ?? 0) + 1;
-      }
-    }
-
-    final usherStats = usherMap.entries.map((e) {
-      final shortId = e.key.length > 6 ? e.key.substring(0, 6) : e.key;
-      return UsherStats(
-        odentifier: e.key,
-        name: 'Staff $shortId...',
-        ticketsChecked: e.value,
-      );
-    }).toList();
-
-    return EventStatistics(
-      eventId: widget.event.id,
-      totalTicketsSold: dbStats?.totalSold ?? tickets.length,
-      totalTicketsChecked: dbStats?.checkedIn ??
-          tickets.where((t) => t.checkedInAt != null).length,
-      totalRevenueCents: dbStats?.totalRevenueCents ??
-          tickets.fold(0, (sum, t) => sum + t.pricePaidCents),
-      usherStats: usherStats.isEmpty
-          ? [
-              const UsherStats(
-                odentifier: 'none',
-                name: 'No check-ins yet',
-                ticketsChecked: 0,
-              )
-            ]
-          : usherStats,
-      hourlyCheckIns: hourlyCheckIns.isEmpty
-          ? [const HourlyCheckIn(hour: 12, count: 0)]
-          : hourlyCheckIns,
-      ticketTypeBreakdown: [
-        TicketTypeBreakdown(
-          type: 'General Admission',
-          sold: dbStats?.totalSold ?? tickets.length,
-          checked: dbStats?.checkedIn ??
-              tickets.where((t) => t.checkedInAt != null).length,
-          revenueCents: dbStats?.totalRevenueCents ??
-              tickets.fold(0, (sum, t) => sum + t.pricePaidCents),
-        ),
-      ],
-      peakCheckInTime: peakTime,
-      averageCheckInDurationSeconds: 0,
     );
   }
 }
@@ -247,9 +161,9 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _SummaryCardsSection extends StatelessWidget {
-  final EventStatistics stats;
+  final EventAnalytics analytics;
 
-  const _SummaryCardsSection({required this.stats});
+  const _SummaryCardsSection({required this.analytics});
 
   @override
   Widget build(BuildContext context) {
@@ -263,8 +177,8 @@ class _SummaryCardsSection extends StatelessWidget {
               child: _SummaryCard(
                 icon: Icons.check_circle_outline,
                 label: 'Checked In',
-                value: '${stats.totalTicketsChecked}',
-                subtitle: 'of ${stats.totalTicketsSold} tickets',
+                value: '${analytics.checkedIn}',
+                subtitle: 'of ${analytics.totalSold} tickets',
                 color: colorScheme.primary,
               ),
             ),
@@ -273,7 +187,7 @@ class _SummaryCardsSection extends StatelessWidget {
               child: _SummaryCard(
                 icon: Icons.trending_up,
                 label: 'Check-in Rate',
-                value: '${stats.checkInRate.toStringAsFixed(1)}%',
+                value: '${analytics.checkInRate.toStringAsFixed(1)}%',
                 subtitle: 'attendance',
                 color: Colors.green,
               ),
@@ -285,10 +199,10 @@ class _SummaryCardsSection extends StatelessWidget {
           children: [
             Expanded(
               child: _SummaryCard(
-                icon: Icons.schedule,
-                label: 'Avg. Scan Time',
-                value: '${stats.averageCheckInDurationSeconds.toStringAsFixed(1)}s',
-                subtitle: 'per ticket',
+                icon: Icons.confirmation_number_outlined,
+                label: 'Tickets Sold',
+                value: '${analytics.totalSold}',
+                subtitle: '${analytics.remaining} remaining',
                 color: colorScheme.tertiary,
               ),
             ),
@@ -297,7 +211,7 @@ class _SummaryCardsSection extends StatelessWidget {
               child: _SummaryCard(
                 icon: Icons.attach_money,
                 label: 'Revenue',
-                value: stats.formattedRevenue,
+                value: analytics.formattedRevenue,
                 subtitle: 'total earned',
                 color: colorScheme.secondary,
               ),
@@ -385,15 +299,15 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _CheckInProgressCard extends StatelessWidget {
-  final EventStatistics stats;
+  final EventAnalytics analytics;
 
-  const _CheckInProgressCard({required this.stats});
+  const _CheckInProgressCard({required this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final progress = stats.checkInRate / 100;
+    final progress = analytics.checkInRate / 100;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -424,7 +338,7 @@ class _CheckInProgressCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${stats.totalTicketsChecked} of ${stats.totalTicketsSold} guests arrived',
+                      '${analytics.checkedIn} of ${analytics.totalSold} guests arrived',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -445,7 +359,7 @@ class _CheckInProgressCard extends StatelessWidget {
                   ),
                   child: Center(
                     child: Text(
-                      '${stats.checkInRate.toInt()}%',
+                      '${analytics.checkInRate.toInt()}%',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: colorScheme.primary,
@@ -475,12 +389,12 @@ class _CheckInProgressCard extends StatelessWidget {
               _LegendItem(
                 color: colorScheme.primary,
                 label: 'Checked in',
-                value: '${stats.totalTicketsChecked}',
+                value: '${analytics.checkedIn}',
               ),
               _LegendItem(
                 color: colorScheme.surfaceContainerHighest,
                 label: 'Remaining',
-                value: '${stats.totalTicketsSold - stats.totalTicketsChecked}',
+                value: '${analytics.remaining}',
               ),
             ],
           ),
@@ -534,18 +448,35 @@ class _LegendItem extends StatelessWidget {
 }
 
 class _HourlyCheckInChart extends StatelessWidget {
-  final EventStatistics stats;
+  final EventAnalytics analytics;
 
-  const _HourlyCheckInChart({required this.stats});
+  const _HourlyCheckInChart({required this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final maxCount = stats.hourlyCheckIns.isEmpty
-        ? 1
-        : stats.hourlyCheckIns.map((e) => e.count).reduce(math.max);
+    // Show placeholder if no data
+    if (analytics.hourlyCheckins.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Text(
+            'No check-ins yet',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final maxCount = analytics.hourlyCheckins.map((e) => e.count).reduce(math.max);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -559,7 +490,7 @@ class _HourlyCheckInChart extends StatelessWidget {
             height: 160,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
-              children: stats.hourlyCheckIns.map((hourData) {
+              children: analytics.hourlyCheckins.map((hourData) {
                 final heightPercent = maxCount > 0 ? hourData.count / maxCount : 0.0;
                 final isPeak = hourData.count == maxCount;
 
@@ -616,7 +547,7 @@ class _HourlyCheckInChart extends StatelessWidget {
           const SizedBox(height: 12),
           // Hour labels
           Row(
-            children: stats.hourlyCheckIns.map((hourData) {
+            children: analytics.hourlyCheckins.map((hourData) {
               return Expanded(
                 child: Text(
                   hourData.formattedHour,
@@ -629,7 +560,7 @@ class _HourlyCheckInChart extends StatelessWidget {
               );
             }).toList(),
           ),
-          if (stats.peakCheckInTime != null) ...[
+          if (analytics.peakHour != null) ...[
             const SizedBox(height: 16),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -647,7 +578,7 @@ class _HourlyCheckInChart extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Peak: ${_formatTime(stats.peakCheckInTime!)}',
+                    'Peak: ${_formatHour(analytics.peakHour!)}',
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: colorScheme.primary,
                       fontWeight: FontWeight.w500,
@@ -662,27 +593,46 @@ class _HourlyCheckInChart extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime time) {
-    final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute $period';
+  String _formatHour(int hour) {
+    if (hour == 0) return '12 AM';
+    if (hour == 12) return '12 PM';
+    if (hour < 12) return '$hour AM';
+    return '${hour - 12} PM';
   }
 }
 
 class _UsherPerformanceCard extends StatelessWidget {
-  final EventStatistics stats;
+  final EventAnalytics analytics;
 
-  const _UsherPerformanceCard({required this.stats});
+  const _UsherPerformanceCard({required this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final totalByUshers = stats.usherStats.fold<int>(
+    // Show placeholder if no data
+    if (analytics.usherStats.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Text(
+            'No check-ins yet',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final totalByUshers = analytics.usherStats.fold<int>(
       0,
-      (sum, usher) => sum + usher.ticketsChecked,
+      (sum, usher) => sum + usher.count,
     );
 
     return Container(
@@ -704,11 +654,11 @@ class _UsherPerformanceCard extends StatelessWidget {
                   height: 120,
                   child: CustomPaint(
                     painter: _PieChartPainter(
-                      values: stats.usherStats
-                          .map((e) => e.ticketsChecked.toDouble())
+                      values: analytics.usherStats
+                          .map((e) => e.count.toDouble())
                           .toList(),
                       colors: _generateColors(
-                        stats.usherStats.length,
+                        analytics.usherStats.length,
                         colorScheme,
                       ),
                     ),
@@ -721,7 +671,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      for (var i = 0; i < stats.usherStats.length; i++)
+                      for (var i = 0; i < analytics.usherStats.length; i++)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Row(
@@ -731,7 +681,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                                 height: 12,
                                 decoration: BoxDecoration(
                                   color: _generateColors(
-                                    stats.usherStats.length,
+                                    analytics.usherStats.length,
                                     colorScheme,
                                   )[i],
                                   borderRadius: BorderRadius.circular(3),
@@ -740,7 +690,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  stats.usherStats[i].name,
+                                  analytics.usherStats[i].displayName,
                                   style: theme.textTheme.bodySmall,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -756,11 +706,11 @@ class _UsherPerformanceCard extends StatelessWidget {
           ),
           const Divider(height: 24),
           // Usher list with stats
-          ...stats.usherStats.asMap().entries.map((entry) {
+          ...analytics.usherStats.asMap().entries.map((entry) {
             final i = entry.key;
             final usher = entry.value;
             final percent = totalByUshers > 0
-                ? (usher.ticketsChecked / totalByUshers * 100)
+                ? (usher.count / totalByUshers * 100)
                 : 0.0;
 
             return Padding(
@@ -770,14 +720,14 @@ class _UsherPerformanceCard extends StatelessWidget {
                   CircleAvatar(
                     radius: 20,
                     backgroundColor: _generateColors(
-                      stats.usherStats.length,
+                      analytics.usherStats.length,
                       colorScheme,
                     )[i].withValues(alpha: 0.2),
                     child: Text(
-                      usher.name[0].toUpperCase(),
+                      usher.displayName[0].toUpperCase(),
                       style: TextStyle(
                         color: _generateColors(
-                          stats.usherStats.length,
+                          analytics.usherStats.length,
                           colorScheme,
                         )[i],
                         fontWeight: FontWeight.bold,
@@ -790,7 +740,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          usher.name,
+                          usher.displayName,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             fontWeight: FontWeight.w500,
                           ),
@@ -804,7 +754,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                             backgroundColor: colorScheme.surfaceContainerHighest,
                             valueColor: AlwaysStoppedAnimation(
                               _generateColors(
-                                stats.usherStats.length,
+                                analytics.usherStats.length,
                                 colorScheme,
                               )[i],
                             ),
@@ -818,7 +768,7 @@ class _UsherPerformanceCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '${usher.ticketsChecked}',
+                        '${usher.count}',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -852,94 +802,81 @@ class _UsherPerformanceCard extends StatelessWidget {
 }
 
 class _TicketTypeBreakdownCard extends StatelessWidget {
-  final EventStatistics stats;
+  final EventAnalytics analytics;
 
-  const _TicketTypeBreakdownCard({required this.stats});
+  const _TicketTypeBreakdownCard({required this.analytics});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // Currently we only have one ticket type (General Admission)
+    // This can be expanded when ticket types are added to the database
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        children: stats.ticketTypeBreakdown.asMap().entries.map((entry) {
-          final i = entry.key;
-          final type = entry.value;
-          final isLast = i == stats.ticketTypeBreakdown.length - 1;
-
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        type.type.toLowerCase().contains('vip')
-                            ? Icons.star
-                            : Icons.confirmation_number_outlined,
-                        color: colorScheme.primary,
-                        size: 22,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            type.type,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${type.checked}/${type.sold} checked in',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '${type.checkInRate.toStringAsFixed(0)}%',
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                        Text(
-                          '\$${(type.revenueCents / 100).toStringAsFixed(0)}',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(10),
               ),
-              if (!isLast) const Divider(height: 1),
-            ],
-          );
-        }).toList(),
+              child: Icon(
+                Icons.confirmation_number_outlined,
+                color: colorScheme.primary,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'General Admission',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${analytics.checkedIn}/${analytics.totalSold} checked in',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${analytics.checkInRate.toStringAsFixed(0)}%',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                  ),
+                ),
+                Text(
+                  analytics.formattedRevenue,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

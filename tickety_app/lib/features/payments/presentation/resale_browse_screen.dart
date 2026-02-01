@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/models/models.dart';
 import '../../events/models/event_model.dart';
 import '../models/payment.dart';
 import '../models/resale_listing.dart';
 import 'checkout_screen.dart';
 import 'seller_onboarding_screen.dart';
 
-/// Provider for event resale listings.
-final eventResaleListingsProvider =
-    FutureProvider.family<List<ResaleListing>, String>((ref, eventId) async {
+/// Provider for event resale listings (paginated).
+final eventResaleListingsProvider = FutureProvider.family<
+    PaginatedResult<ResaleListing>, String>((ref, eventId) async {
   final repository = ref.watch(resaleRepositoryProvider);
   return repository.getEventListings(eventId);
 });
@@ -39,7 +40,8 @@ class ResaleBrowseScreen extends ConsumerWidget {
           error: e.toString(),
           onRetry: () => ref.refresh(eventResaleListingsProvider(event.id)),
         ),
-        data: (listings) {
+        data: (result) {
+          final listings = result.items;
           if (listings.isEmpty) {
             return _EmptyView(event: event);
           }
@@ -85,7 +87,7 @@ class ResaleBrowseScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${listings.length} ${listings.length == 1 ? "ticket" : "tickets"} available',
+                            '${listings.length}${result.hasMore ? "+" : ""} ${listings.length == 1 ? "ticket" : "tickets"} available',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w500,
@@ -309,6 +311,7 @@ class _ResaleListingCard extends StatelessWidget {
           amountCents: listing.priceCents,
           paymentType: PaymentType.resalePurchase,
           resaleListingId: listing.id,
+          sellerId: listing.sellerId,
         ),
       ),
     );

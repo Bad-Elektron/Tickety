@@ -17,6 +17,7 @@ class CheckoutScreen extends ConsumerStatefulWidget {
     required this.paymentType,
     this.quantity = 1,
     this.resaleListingId,
+    this.sellerId,
     this.metadata,
   });
 
@@ -25,6 +26,7 @@ class CheckoutScreen extends ConsumerStatefulWidget {
   final PaymentType paymentType;
   final int quantity;
   final String? resaleListingId;
+  final String? sellerId;
   final Map<String, dynamic>? metadata;
 
   @override
@@ -34,18 +36,34 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _isInitializing = false;
   bool _isPaymentReady = false;
+  bool _isOwnListing = false;
 
   @override
   void initState() {
     super.initState();
+    // Check if this is the user's own listing
+    _checkOwnListing();
     // Delay initialization until after the build phase completes
     // to avoid "modifying provider while widget tree is building" error
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializePayment();
+      if (!_isOwnListing) {
+        _initializePayment();
+      }
     });
   }
 
+  void _checkOwnListing() {
+    if (widget.paymentType == PaymentType.resalePurchase && widget.sellerId != null) {
+      final currentUserId = ref.read(currentUserIdProvider);
+      if (currentUserId != null && currentUserId == widget.sellerId) {
+        _isOwnListing = true;
+      }
+    }
+  }
+
   Future<void> _initializePayment() async {
+    if (_isOwnListing) return;
+
     setState(() => _isInitializing = true);
 
     final notifier = ref.read(paymentProcessProvider.notifier);
@@ -282,58 +300,100 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Pay button
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: (_isInitializing || paymentState.isLoading || !_isPaymentReady)
-                          ? null
-                          : _handlePay,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                  // Pay button or own listing message
+                  if (_isOwnListing) ...[
+                    // Own listing - show disabled state
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: null,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          disabledBackgroundColor: colorScheme.surfaceContainerHighest,
+                        ),
+                        child: Text(
+                          'Cannot buy your own ticket',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
-                      child: _isInitializing || paymentState.isLoading
-                          ? SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: colorScheme.onPrimary,
-                              ),
-                            )
-                          : Text(
-                              'Pay ${_formatAmount(widget.amountCents)}',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                color: colorScheme.onPrimary,
-                              ),
-                            ),
                     ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Secure payment notice
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.lock_outline,
-                        size: 14,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Secured by Stripe',
-                        style: theme.textTheme.labelSmall?.copyWith(
+                    const SizedBox(height: 12),
+                    // Info message
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 14,
                           color: colorScheme.onSurfaceVariant,
                         ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'This is your listing',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    // Normal pay button
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: (_isInitializing || paymentState.isLoading || !_isPaymentReady)
+                            ? null
+                            : _handlePay,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: _isInitializing || paymentState.isLoading
+                            ? SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: colorScheme.onPrimary,
+                                ),
+                              )
+                            : Text(
+                                'Pay ${_formatAmount(widget.amountCents)}',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: colorScheme.onPrimary,
+                                ),
+                              ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Secure payment notice
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.lock_outline,
+                          size: 14,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Secured by Stripe',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),

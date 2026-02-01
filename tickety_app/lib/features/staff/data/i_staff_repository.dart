@@ -1,3 +1,4 @@
+import '../../../core/models/models.dart';
 import '../models/staff_role.dart';
 
 /// Simple user data for staff assignment.
@@ -55,8 +56,14 @@ abstract class IStaffRepository {
   /// Check if current user is staff for an event.
   Future<EventStaff?> getCurrentUserStaffRole(String eventId);
 
-  /// Get all events where current user is staff.
-  Future<List<Map<String, dynamic>>> getMyStaffEvents();
+  /// Get all events where current user is staff (paginated).
+  ///
+  /// [page] - Page number (0-indexed).
+  /// [pageSize] - Number of items per page.
+  Future<PaginatedResult<Map<String, dynamic>>> getMyStaffEvents({
+    int page = 0,
+    int pageSize = 20,
+  });
 
   /// Get staff count for an event.
   Future<int> getStaffCount(String eventId);

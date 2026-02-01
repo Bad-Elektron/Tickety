@@ -22,7 +22,7 @@ class GradientEventsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final config = NoisePresets.darkMood(seed);
+    final config = NoisePresets.vibrantEvents(seed);
 
     return RepaintBoundary(
       child: Material(

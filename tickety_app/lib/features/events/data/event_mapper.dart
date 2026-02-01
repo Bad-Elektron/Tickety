@@ -34,6 +34,7 @@ abstract class EventMapper {
       priceInCents: json['price_in_cents'] as int?,
       currency: json['currency'] as String? ?? 'USD',
       hideLocation: json['hide_location'] as bool? ?? false,
+      maxTickets: json['max_tickets'] as int?,
     );
   }
 
@@ -57,6 +58,7 @@ abstract class EventMapper {
       'price_in_cents': event.priceInCents,
       'currency': event.currency,
       'hide_location': event.hideLocation,
+      'max_tickets': event.maxTickets,
     };
   }
 

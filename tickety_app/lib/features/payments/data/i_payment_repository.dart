@@ -1,3 +1,4 @@
+import '../../../core/models/models.dart';
 import '../models/payment.dart';
 
 /// Interface for payment data operations.
@@ -24,11 +25,24 @@ abstract class IPaymentRepository {
   /// Get a payment by ID.
   Future<Payment?> getPayment(String paymentId);
 
-  /// Get all payments for the current user.
-  Future<List<Payment>> getMyPayments();
+  /// Get payments for the current user.
+  ///
+  /// Returns a paginated result with payments ordered by creation date (newest first).
+  /// [page] is 0-indexed.
+  Future<PaginatedResult<Payment>> getMyPayments({
+    int page = 0,
+    int pageSize = 25,
+  });
 
   /// Get payments for a specific event (organizer view).
-  Future<List<Payment>> getEventPayments(String eventId);
+  ///
+  /// Returns a paginated result with payments ordered by creation date (newest first).
+  /// [page] is 0-indexed.
+  Future<PaginatedResult<Payment>> getEventPayments(
+    String eventId, {
+    int page = 0,
+    int pageSize = 20,
+  });
 
   /// Request a refund for a payment.
   ///

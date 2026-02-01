@@ -10,6 +10,7 @@ import '../../auth/auth.dart';
 import '../../settings/settings.dart';
 import '../../staff/staff.dart';
 import '../../subscriptions/subscriptions.dart';
+import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
 
 /// The profile screen displaying user information and settings.
@@ -127,6 +128,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.history_outlined,
                   title: 'Transactions',
                   subtitle: 'Purchase history',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const TransactionsScreen(),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

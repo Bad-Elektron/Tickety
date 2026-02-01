@@ -4,11 +4,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:tickety/main.dart';
+import 'package:tickety/core/models/paginated_result.dart';
 import 'package:tickety/core/providers/events_provider.dart';
 import 'package:tickety/features/events/data/data.dart';
 import 'package:tickety/features/events/models/event_model.dart';
 
 class MockEventRepository extends Mock implements EventRepository {}
+
+PaginatedResult<EventModel> _paginatedResult(List<EventModel> items) {
+  return PaginatedResult(
+    items: items,
+    page: 0,
+    pageSize: kEventsPageSize,
+    hasMore: false,
+  );
+}
 
 void main() {
   late MockEventRepository mockRepository;
@@ -19,8 +29,10 @@ void main() {
 
   testWidgets('App renders home screen', (WidgetTester tester) async {
     // Set up mock to return placeholder events
-    when(() => mockRepository.getUpcomingEvents())
-        .thenAnswer((_) async => PlaceholderEvents.upcoming);
+    when(() => mockRepository.getUpcomingEvents(
+          page: any(named: 'page'),
+          pageSize: any(named: 'pageSize'),
+        )).thenAnswer((_) async => _paginatedResult(PlaceholderEvents.upcoming));
     when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
         .thenAnswer((_) async => PlaceholderEvents.featured);
 
@@ -44,8 +56,10 @@ void main() {
 
   testWidgets('App renders MaterialApp correctly', (WidgetTester tester) async {
     // Set up mock to return empty lists quickly
-    when(() => mockRepository.getUpcomingEvents())
-        .thenAnswer((_) async => []);
+    when(() => mockRepository.getUpcomingEvents(
+          page: any(named: 'page'),
+          pageSize: any(named: 'pageSize'),
+        )).thenAnswer((_) async => _paginatedResult([]));
     when(() => mockRepository.getFeaturedEvents(limit: any(named: 'limit')))
         .thenAnswer((_) async => []);
 

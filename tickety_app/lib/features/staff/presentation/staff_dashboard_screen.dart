@@ -34,10 +34,10 @@ class _StaffDashboardScreenState extends ConsumerState<StaffDashboardScreen> {
       final staffRepository = ref.read(staffRepositoryProvider);
       final ticketRepository = ref.read(ticketRepositoryProvider);
 
-      final staffAssignments = await staffRepository.getMyStaffEvents();
+      final staffResult = await staffRepository.getMyStaffEvents();
       final events = <_StaffEventData>[];
 
-      for (final assignment in staffAssignments) {
+      for (final assignment in staffResult.items) {
         final eventData = assignment['events'] as Map<String, dynamic>?;
         if (eventData != null) {
           final event = EventMapper.fromJson(eventData);

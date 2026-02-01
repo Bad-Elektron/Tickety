@@ -1,7 +1,9 @@
 import 'dart:math';
 
 import '../../../core/errors/errors.dart';
+import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
+import '../../events/models/event_analytics.dart';
 import '../models/ticket.dart';
 import 'i_ticket_repository.dart';
 
@@ -49,24 +51,6 @@ class TicketRepository implements ITicketRepository {
 
     AppLogger.info('Ticket sold: $ticketNumber', tag: _tag);
     return Ticket.fromJson(response);
-  }
-
-  @override
-  Future<List<Ticket>> getEventTickets(String eventId) async {
-    AppLogger.debug('Fetching tickets for event: $eventId', tag: _tag);
-
-    final response = await _client
-        .from('tickets')
-        .select()
-        .eq('event_id', eventId)
-        .order('sold_at', ascending: false);
-
-    final tickets = (response as List<dynamic>)
-        .map((json) => Ticket.fromJson(json as Map<String, dynamic>))
-        .toList();
-
-    AppLogger.debug('Fetched ${tickets.length} tickets', tag: _tag);
-    return tickets;
   }
 
   @override
@@ -170,21 +154,17 @@ class TicketRepository implements ITicketRepository {
   Future<TicketStats> getTicketStats(String eventId) async {
     AppLogger.debug('Fetching ticket stats for event: $eventId', tag: _tag);
 
-    final response = await _client
-        .from('tickets')
-        .select('status, price_paid_cents')
-        .eq('event_id', eventId);
+    // Use SQL aggregation instead of fetching all rows
+    final response = await _client.rpc(
+      'get_ticket_stats',
+      params: {'p_event_id': eventId},
+    );
 
-    final tickets = response as List<dynamic>;
+    final data = response as Map<String, dynamic>?;
 
-    int totalSold = tickets.length;
-    int checkedIn = 0;
-    int totalRevenueCents = 0;
-
-    for (final ticket in tickets) {
-      if (ticket['status'] == 'used') checkedIn++;
-      totalRevenueCents += ticket['price_paid_cents'] as int;
-    }
+    final totalSold = data?['total_sold'] as int? ?? 0;
+    final checkedIn = data?['checked_in'] as int? ?? 0;
+    final totalRevenueCents = data?['revenue_cents'] as int? ?? 0;
 
     AppLogger.debug(
       'Stats: $totalSold sold, $checkedIn checked in, \$${totalRevenueCents / 100} revenue',
@@ -199,14 +179,41 @@ class TicketRepository implements ITicketRepository {
   }
 
   @override
-  Future<List<Ticket>> getMyTickets() async {
+  Future<EventAnalytics> getEventAnalytics(String eventId) async {
+    AppLogger.debug('Fetching analytics for event: $eventId', tag: _tag);
+
+    final response = await _client.rpc(
+      'get_event_analytics',
+      params: {'p_event_id': eventId},
+    );
+
+    AppLogger.debug('Analytics response: $response', tag: _tag);
+
+    if (response == null) {
+      return EventAnalytics.empty;
+    }
+
+    return EventAnalytics.fromJson(response as Map<String, dynamic>);
+  }
+
+  @override
+  Future<PaginatedResult<Ticket>> getMyTickets({
+    int page = 0,
+    int pageSize = 20,
+  }) async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
       AppLogger.debug('No current user for my tickets', tag: _tag);
-      return [];
+      return PaginatedResult.empty(pageSize: pageSize);
     }
 
-    AppLogger.debug('Fetching tickets for user: $userId', tag: _tag);
+    AppLogger.debug(
+      'Fetching tickets for user: $userId (page: $page, pageSize: $pageSize)',
+      tag: _tag,
+    );
+
+    final from = page * pageSize;
+    final to = from + pageSize; // Fetch one extra to check hasMore
 
     // Query tickets where user is the buyer (sold_by = user purchasing for themselves)
     // The sold_by field is set by the webhook when payment succeeds
@@ -214,14 +221,27 @@ class TicketRepository implements ITicketRepository {
         .from('tickets')
         .select('*, events(*)')
         .eq('sold_by', userId)
-        .order('sold_at', ascending: false);
+        .order('sold_at', ascending: false)
+        .range(from, to);
 
-    final tickets = (response as List<dynamic>)
+    final allItems = (response as List<dynamic>)
         .map((json) => Ticket.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Found ${tickets.length} user tickets', tag: _tag);
-    return tickets;
+    final hasMore = allItems.length > pageSize;
+    final tickets = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Found ${tickets.length} user tickets (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: tickets,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
   }
 
   String _generateTicketNumber() {

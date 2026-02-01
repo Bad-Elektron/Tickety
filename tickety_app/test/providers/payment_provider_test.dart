@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:tickety/core/models/paginated_result.dart';
 import 'package:tickety/core/providers/payment_provider.dart';
-import 'package:tickety/features/payments/data/i_payment_repository.dart';
 import 'package:tickety/features/payments/models/payment.dart';
 
 import '../mocks/mock_repositories.dart';
@@ -203,7 +203,42 @@ void main() {
 
       expect(state.payments, isEmpty);
       expect(state.isLoading, isFalse);
+      expect(state.isLoadingMore, isFalse);
       expect(state.error, isNull);
+      expect(state.currentPage, 0);
+      expect(state.hasMore, isTrue);
+      expect(state.pageSize, kPaymentHistoryPageSize);
+    });
+
+    test('canLoadMore returns true when conditions are met', () {
+      const state = PaymentHistoryState(
+        hasMore: true,
+        isLoading: false,
+        isLoadingMore: false,
+      );
+      expect(state.canLoadMore, isTrue);
+    });
+
+    test('canLoadMore returns false when loading', () {
+      const loading = PaymentHistoryState(
+        hasMore: true,
+        isLoading: true,
+        isLoadingMore: false,
+      );
+      const loadingMore = PaymentHistoryState(
+        hasMore: true,
+        isLoading: false,
+        isLoadingMore: true,
+      );
+      const noMore = PaymentHistoryState(
+        hasMore: false,
+        isLoading: false,
+        isLoadingMore: false,
+      );
+
+      expect(loading.canLoadMore, isFalse);
+      expect(loadingMore.canLoadMore, isFalse);
+      expect(noMore.canLoadMore, isFalse);
     });
 
     test('completedPayments filters correctly', () {
@@ -264,6 +299,19 @@ void main() {
     late MockPaymentRepository mockRepository;
     late PaymentHistoryNotifier notifier;
 
+    PaginatedResult<Payment> _paginatedPayments(
+      List<Payment> items, {
+      int page = 0,
+      bool hasMore = false,
+    }) {
+      return PaginatedResult(
+        items: items,
+        page: page,
+        pageSize: kPaymentHistoryPageSize,
+        hasMore: hasMore,
+      );
+    }
+
     setUp(() {
       mockRepository = MockPaymentRepository();
       notifier = PaymentHistoryNotifier(mockRepository);
@@ -272,6 +320,7 @@ void main() {
     test('initial state is empty', () {
       expect(notifier.state.payments, isEmpty);
       expect(notifier.state.isLoading, isFalse);
+      expect(notifier.state.isLoadingMore, isFalse);
     });
 
     test('load fetches payments', () async {
@@ -280,28 +329,38 @@ void main() {
         _createMockPayment(id: '2'),
       ];
 
-      when(() => mockRepository.getMyPayments()).thenAnswer((_) async => payments);
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments(payments, hasMore: true));
 
       await notifier.load();
 
       expect(notifier.state.payments, payments);
       expect(notifier.state.isLoading, isFalse);
+      expect(notifier.state.hasMore, isTrue);
     });
 
     test('load handles errors', () async {
-      when(() => mockRepository.getMyPayments())
-          .thenThrow(Exception('Network error'));
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenThrow(Exception('Network error'));
 
       await notifier.load();
 
       expect(notifier.state.isLoading, isFalse);
       expect(notifier.state.error, isNotNull);
+      expect(notifier.state.hasMore, isFalse);
     });
 
     test('load does not reload when already loading', () async {
-      when(() => mockRepository.getMyPayments()).thenAnswer((_) async {
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async {
         await Future.delayed(const Duration(seconds: 10));
-        return [];
+        return _paginatedPayments([]);
       });
 
       // Start first load (don't await)
@@ -311,17 +370,86 @@ void main() {
       await notifier.load();
 
       // Should only call repository once
-      verify(() => mockRepository.getMyPayments()).called(1);
+      verify(() => mockRepository.getMyPayments(
+            page: 0,
+            pageSize: any(named: 'pageSize'),
+          )).called(1);
 
       future1.ignore();
     });
 
     test('refresh resets isLoading and loads', () async {
-      when(() => mockRepository.getMyPayments()).thenAnswer((_) async => []);
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments([]));
 
       await notifier.refresh();
 
-      verify(() => mockRepository.getMyPayments()).called(1);
+      verify(() => mockRepository.getMyPayments(
+            page: 0,
+            pageSize: any(named: 'pageSize'),
+          )).called(1);
+    });
+
+    test('loadMore appends items and increments page', () async {
+      final page1 = [_createMockPayment(id: '1'), _createMockPayment(id: '2')];
+      final page2 = [_createMockPayment(id: '3'), _createMockPayment(id: '4')];
+
+      when(() => mockRepository.getMyPayments(page: 0, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedPayments(page1, hasMore: true));
+      when(() => mockRepository.getMyPayments(page: 1, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedPayments(page2, page: 1, hasMore: false));
+
+      await notifier.load();
+      expect(notifier.state.payments.length, 2);
+      expect(notifier.state.currentPage, 0);
+
+      await notifier.loadMore();
+      expect(notifier.state.payments.length, 4);
+      expect(notifier.state.currentPage, 1);
+      expect(notifier.state.hasMore, isFalse);
+    });
+
+    test('loadMore does nothing when hasMore is false', () async {
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments([], hasMore: false));
+
+      await notifier.load();
+      expect(notifier.state.hasMore, isFalse);
+
+      // Reset mock to track further calls
+      reset(mockRepository);
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments([]));
+
+      await notifier.loadMore();
+
+      // Should not call repository again
+      verifyNever(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          ));
+    });
+
+    test('loadMore preserves existing data on error', () async {
+      final payments = [_createMockPayment(id: '1')];
+
+      when(() => mockRepository.getMyPayments(page: 0, pageSize: any(named: 'pageSize')))
+          .thenAnswer((_) async => _paginatedPayments(payments, hasMore: true));
+      when(() => mockRepository.getMyPayments(page: 1, pageSize: any(named: 'pageSize')))
+          .thenThrow(Exception('Network error'));
+
+      await notifier.load();
+      await notifier.loadMore();
+
+      expect(notifier.state.payments, payments);
+      expect(notifier.state.error, isNotNull);
+      expect(notifier.state.isLoadingMore, isFalse);
     });
 
     test('requestRefund updates payment in list', () async {
@@ -334,8 +462,10 @@ void main() {
         status: PaymentStatus.refunded,
       );
 
-      when(() => mockRepository.getMyPayments())
-          .thenAnswer((_) async => [originalPayment]);
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments([originalPayment]));
       when(() => mockRepository.requestRefund('pay_001'))
           .thenAnswer((_) async => refundedPayment);
 
@@ -347,7 +477,10 @@ void main() {
     });
 
     test('requestRefund handles errors', () async {
-      when(() => mockRepository.getMyPayments()).thenAnswer((_) async => []);
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenAnswer((_) async => _paginatedPayments([]));
       when(() => mockRepository.requestRefund('pay_001'))
           .thenThrow(Exception('Refund failed'));
 
@@ -359,8 +492,10 @@ void main() {
     });
 
     test('clearError removes error', () async {
-      when(() => mockRepository.getMyPayments())
-          .thenThrow(Exception('Error'));
+      when(() => mockRepository.getMyPayments(
+            page: any(named: 'page'),
+            pageSize: any(named: 'pageSize'),
+          )).thenThrow(Exception('Error'));
       await notifier.load();
 
       expect(notifier.state.error, isNotNull);
