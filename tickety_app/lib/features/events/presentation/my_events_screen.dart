@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,7 +16,7 @@ import 'vendor_event_screen.dart';
 
 /// Screen displaying events the user is involved with (created or ushering).
 ///
-/// Uses Riverpod for created events - cleaner state management!
+/// Uses Riverpod for created events with server-side filtering.
 class MyEventsScreen extends ConsumerStatefulWidget {
   const MyEventsScreen({super.key});
 
@@ -25,11 +27,16 @@ class MyEventsScreen extends ConsumerStatefulWidget {
 class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  Timer? _searchDebounce;
 
   final _staffRepository = StaffRepository();
 
   List<_StaffEventData> _usheringEvents = [];
   List<_StaffEventData> _sellingEvents = [];
+  List<_StaffEventData> _filteredUsheringEvents = [];
+  List<_StaffEventData> _filteredSellingEvents = [];
 
   bool _isLoadingStaff = true;
 
@@ -42,8 +49,91 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Handle search input with debounce for server-side search.
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      // Update server-side search for Created tab
+      ref.read(myEventsProvider.notifier).setSearchQuery(value);
+      // Update client-side filter for staff tabs
+      _filterStaffEvents();
+    });
+  }
+
+  /// Handle date filter change.
+  void _onDateFilterChanged(MyEventsDateFilter filter) {
+    // Update server-side filter for Created tab
+    ref.read(myEventsProvider.notifier).setDateFilter(filter);
+    // Update client-side filter for staff tabs
+    _filterStaffEvents();
+  }
+
+  /// Clear all filters.
+  void _clearFilters() {
+    _searchController.clear();
+    ref.read(myEventsProvider.notifier).clearFilters();
+    _filterStaffEvents();
+  }
+
+  /// Filter staff events client-side (ushering/selling tabs).
+  void _filterStaffEvents() {
+    final state = ref.read(myEventsProvider);
+    final searchQuery = _searchController.text.trim().toLowerCase();
+    final dateFilter = state.dateFilter;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final oneWeekAgo = today.subtract(const Duration(days: 7));
+
+    bool matchesFilters(_StaffEventData data) {
+      final event = data.event;
+
+      // Search filter
+      if (searchQuery.isNotEmpty) {
+        final matchesSearch = event.title.toLowerCase().contains(searchQuery) ||
+            event.subtitle.toLowerCase().contains(searchQuery) ||
+            (event.venue?.toLowerCase().contains(searchQuery) ?? false) ||
+            (event.city?.toLowerCase().contains(searchQuery) ?? false);
+        if (!matchesSearch) return false;
+      }
+
+      // Date filter
+      final eventDay = DateTime(event.date.year, event.date.month, event.date.day);
+      final isUpcoming = eventDay.compareTo(today) >= 0;
+      final isWithinPastWeek = eventDay.compareTo(oneWeekAgo) >= 0 && eventDay.compareTo(today) < 0;
+
+      return switch (dateFilter) {
+        MyEventsDateFilter.recent => isUpcoming || isWithinPastWeek,
+        MyEventsDateFilter.upcoming => isUpcoming,
+        MyEventsDateFilter.all => true,
+        MyEventsDateFilter.past => !isUpcoming,
+      };
+    }
+
+    // Sort function: upcoming first (soonest), then past (most recent)
+    int sortByDate(_StaffEventData a, _StaffEventData b) {
+      final aDay = DateTime(a.event.date.year, a.event.date.month, a.event.date.day);
+      final bDay = DateTime(b.event.date.year, b.event.date.month, b.event.date.day);
+      final aIsUpcoming = aDay.compareTo(today) >= 0;
+      final bIsUpcoming = bDay.compareTo(today) >= 0;
+
+      if (aIsUpcoming && !bIsUpcoming) return -1;
+      if (!aIsUpcoming && bIsUpcoming) return 1;
+
+      return aIsUpcoming ? aDay.compareTo(bDay) : bDay.compareTo(aDay);
+    }
+
+    setState(() {
+      _filteredUsheringEvents = _usheringEvents.where(matchesFilters).toList()..sort(sortByDate);
+      _filteredSellingEvents = _sellingEvents.where(matchesFilters).toList()..sort(sortByDate);
+    });
   }
 
   Future<void> _loadStaffEvents() async {
@@ -51,17 +141,19 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       setState(() {
         _usheringEvents = [];
         _sellingEvents = [];
+        _filteredUsheringEvents = [];
+        _filteredSellingEvents = [];
         _isLoadingStaff = false;
       });
       return;
     }
 
     try {
-      final staffAssignments = await _staffRepository.getMyStaffEvents();
+      final staffResult = await _staffRepository.getMyStaffEvents();
       final ushering = <_StaffEventData>[];
       final selling = <_StaffEventData>[];
 
-      for (final assignment in staffAssignments) {
+      for (final assignment in staffResult.items) {
         final eventData = assignment['events'] as Map<String, dynamic>?;
         if (eventData != null) {
           final event = EventMapper.fromJson(eventData);
@@ -88,6 +180,8 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
           _sellingEvents = selling;
           _isLoadingStaff = false;
         });
+        // Apply initial filters
+        _filterStaffEvents();
       }
     } catch (e) {
       if (mounted) {
@@ -102,7 +196,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // Watch my events state from Riverpod - auto rebuilds!
+    // Watch my events state from Riverpod - server-side filtering!
     final myEventsState = ref.watch(myEventsProvider);
 
     return Scaffold(
@@ -130,24 +224,24 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Created events tab - using Riverpod
-          myEventsState.isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : myEventsState.events.isEmpty
-                  ? _buildEmptyCreatedState(theme, colorScheme)
-                  : _buildCreatedEventsList(myEventsState.events),
-          // Ushering events tab
-          _isLoadingStaff
-              ? const Center(child: CircularProgressIndicator())
-              : _usheringEvents.isEmpty
-                  ? _buildEmptyUsheringState(theme, colorScheme)
-                  : _buildUsheringEventsList(),
-          // Selling events tab
-          _isLoadingStaff
-              ? const Center(child: CircularProgressIndicator())
-              : _sellingEvents.isEmpty
-                  ? _buildEmptySellingState(theme, colorScheme)
-                  : _buildSellingEventsList(),
+          // Created events tab - server-side filtering via Riverpod
+          _buildCreatedEventsTab(
+            theme: theme,
+            colorScheme: colorScheme,
+            state: myEventsState,
+          ),
+          // Ushering events tab - client-side filtering (small dataset)
+          _buildUsheringEventsTab(
+            theme: theme,
+            colorScheme: colorScheme,
+            state: myEventsState,
+          ),
+          // Selling events tab - client-side filtering (small dataset)
+          _buildSellingEventsTab(
+            theme: theme,
+            colorScheme: colorScheme,
+            state: myEventsState,
+          ),
         ],
       ),
       floatingActionButton: AnimatedBuilder(
@@ -181,6 +275,169 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildCreatedEventsTab({
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+    required MyEventsState state,
+  }) {
+    // Show empty state only if no filters are applied and no events
+    final hasFilters = state.searchQuery != null || state.dateFilter != MyEventsDateFilter.recent;
+
+    if (state.isLoading && state.events.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // No events at all (without filters)
+    if (state.events.isEmpty && !hasFilters && !state.isLoading) {
+      return _buildEmptyCreatedState(theme, colorScheme);
+    }
+
+    return Column(
+      children: [
+        // Search and filter header
+        _buildSearchAndFilters(theme, colorScheme, state),
+        // Events list or no results
+        Expanded(
+          child: state.events.isEmpty
+              ? _buildNoFilterResults(theme, colorScheme)
+              : _buildCreatedEventsList(state),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSearchAndFilters(ThemeData theme, ColorScheme colorScheme, MyEventsState state) {
+    final hasSearch = _searchController.text.isNotEmpty;
+    final filterLabels = {
+      MyEventsDateFilter.recent: 'Recent',
+      MyEventsDateFilter.upcoming: 'Upcoming',
+      MyEventsDateFilter.all: 'All',
+      MyEventsDateFilter.past: 'Past',
+    };
+
+    return Container(
+      color: colorScheme.surface,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Search bar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: 'Search events...',
+                prefixIcon: const Icon(Icons.search, size: 20),
+                suffixIcon: hasSearch
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          _searchController.clear();
+                          _searchFocusNode.unfocus();
+                          _onSearchChanged('');
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+                ),
+              ),
+            ),
+          ),
+          // Filter chips
+          SizedBox(
+            height: 44,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: MyEventsDateFilter.values.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final filter = MyEventsDateFilter.values[index];
+                final isSelected = state.dateFilter == filter;
+                return FilterChip(
+                  label: Text(filterLabels[filter]!),
+                  selected: isSelected,
+                  onSelected: (_) => _onDateFilterChanged(filter),
+                  showCheckmark: false,
+                  selectedColor: colorScheme.primaryContainer,
+                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  labelStyle: TextStyle(
+                    color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurfaceVariant,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  side: BorderSide(
+                    color: isSelected ? colorScheme.primary : Colors.transparent,
+                  ),
+                );
+              },
+            ),
+          ),
+          // Loading indicator for server-side filtering
+          if (state.isLoading)
+            const LinearProgressIndicator(),
+          const SizedBox(height: 8),
+          Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoFilterResults(ThemeData theme, ColorScheme colorScheme) {
+    final hasSearch = _searchController.text.isNotEmpty;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off_outlined,
+              size: 64,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No matching events',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              hasSearch
+                  ? 'Try a different search term or filter.'
+                  : 'No events match the selected filter.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: _clearFilters,
+              child: const Text('Clear filters'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -227,6 +484,62 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     );
   }
 
+  Widget _buildUsheringEventsTab({
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+    required MyEventsState state,
+  }) {
+    if (_isLoadingStaff) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // No events at all
+    if (_usheringEvents.isEmpty) {
+      return _buildEmptyUsheringState(theme, colorScheme);
+    }
+
+    return Column(
+      children: [
+        // Search and filter header (shared with created tab)
+        _buildSearchAndFilters(theme, colorScheme, state),
+        // Events list or no results
+        Expanded(
+          child: _filteredUsheringEvents.isEmpty
+              ? _buildNoFilterResults(theme, colorScheme)
+              : _buildUsheringEventsList(_filteredUsheringEvents),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSellingEventsTab({
+    required ThemeData theme,
+    required ColorScheme colorScheme,
+    required MyEventsState state,
+  }) {
+    if (_isLoadingStaff) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // No events at all
+    if (_sellingEvents.isEmpty) {
+      return _buildEmptySellingState(theme, colorScheme);
+    }
+
+    return Column(
+      children: [
+        // Search and filter header (shared with created tab)
+        _buildSearchAndFilters(theme, colorScheme, state),
+        // Events list or no results
+        Expanded(
+          child: _filteredSellingEvents.isEmpty
+              ? _buildNoFilterResults(theme, colorScheme)
+              : _buildSellingEventsList(_filteredSellingEvents),
+        ),
+      ],
+    );
+  }
+
   Widget _buildEmptyUsheringState(ThemeData theme, ColorScheme colorScheme) {
     return Center(
       child: Padding(
@@ -269,14 +582,22 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     );
   }
 
-  Widget _buildCreatedEventsList(List<EventModel> events) {
+  Widget _buildCreatedEventsList(MyEventsState state) {
     return RefreshIndicator(
       onRefresh: () => ref.read(myEventsProvider.notifier).refresh(),
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 8, bottom: 100),
-        itemCount: events.length,
+        itemCount: state.events.length + (state.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          final event = events[index];
+          // Show "Load more" button at the end
+          if (index == state.events.length) {
+            return _buildLoadMoreButton(
+              isLoading: state.isLoadingMore,
+              onPressed: () => ref.read(myEventsProvider.notifier).loadMore(),
+            );
+          }
+
+          final event = state.events[index];
           return _MyEventCard(
             event: event,
             badgeLabel: 'Admin',
@@ -294,12 +615,34 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     );
   }
 
-  Widget _buildUsheringEventsList() {
+  Widget _buildLoadMoreButton({required bool isLoading, required VoidCallback onPressed}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: isLoading
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          : OutlinedButton.icon(
+              onPressed: onPressed,
+              icon: const Icon(Icons.expand_more),
+              label: const Text('Load more'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildUsheringEventsList(List<_StaffEventData> events) {
+    // Staff events are typically small datasets, no pagination needed
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8, bottom: 24),
-      itemCount: _usheringEvents.length,
+      itemCount: events.length,
       itemBuilder: (context, index) {
-        final data = _usheringEvents[index];
+        final data = events[index];
         return _MyEventCard(
           event: data.event,
           badgeLabel: 'Usher',
@@ -363,12 +706,13 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     );
   }
 
-  Widget _buildSellingEventsList() {
+  Widget _buildSellingEventsList(List<_StaffEventData> events) {
+    // Staff events are typically small datasets, no pagination needed
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8, bottom: 24),
-      itemCount: _sellingEvents.length,
+      itemCount: events.length,
       itemBuilder: (context, index) {
-        final data = _sellingEvents[index];
+        final data = events[index];
         return _MyEventCard(
           event: data.event,
           badgeLabel: 'Vendor',
@@ -404,7 +748,7 @@ class _StaffEventData {
   });
 }
 
-class _MyEventCard extends StatelessWidget {
+class _MyEventCard extends ConsumerWidget {
   final EventModel event;
   final String badgeLabel;
   final IconData badgeIcon;
@@ -422,10 +766,11 @@ class _MyEventCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();
+    final soldCountAsync = ref.watch(ticketSoldCountProvider(event.id));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -548,14 +893,20 @@ class _MyEventCard extends StatelessWidget {
                       children: [
                         _StatChip(
                           icon: Icons.confirmation_number_outlined,
-                          label: '53 sold',
+                          label: soldCountAsync.when(
+                            data: (count) => '$count sold',
+                            loading: () => '... sold',
+                            error: (_, __) => '-- sold',
+                          ),
                           color: colorScheme.primary,
                         ),
                         const SizedBox(width: 12),
                         _StatChip(
                           icon: Icons.calendar_today_outlined,
                           label: _formatDate(event.date),
-                          color: badgeColor ?? colorScheme.tertiary,
+                          color: _isEventPast(event.date)
+                              ? colorScheme.error
+                              : (badgeColor ?? colorScheme.tertiary),
                         ),
                       ],
                     ),
@@ -569,12 +920,27 @@ class _MyEventCard extends StatelessWidget {
     );
   }
 
+  bool _isEventPast(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(date.year, date.month, date.day);
+    return eventDay.isBefore(today);
+  }
+
   String _formatDate(DateTime date) {
     final now = DateTime.now();
-    final diff = date.difference(now).inDays;
+    final today = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(date.year, date.month, date.day);
+    final diff = eventDay.difference(today).inDays;
 
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Tomorrow';
+    if (diff == -1) return 'Yesterday';
+    if (diff < -1) {
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return 'Ended · ${months[date.month - 1]} ${date.day}';
+    }
     if (diff < 7) return 'In $diff days';
 
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',

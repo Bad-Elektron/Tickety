@@ -1,19 +1,35 @@
+import '../../../core/models/models.dart';
 import '../models/event_model.dart';
+import '../models/ticket_availability.dart';
+
+/// Date filter options for my events query.
+enum MyEventsDateFilter {
+  /// Upcoming events + events ended within past week.
+  recent,
+  /// Only upcoming events.
+  upcoming,
+  /// All events regardless of date.
+  all,
+  /// Only past events.
+  past,
+}
 
 /// Abstract repository interface for event data operations.
 ///
 /// Defines the contract for fetching and managing events.
 /// Implementations can use different data sources (Supabase, mock, etc).
 abstract class EventRepository {
-  /// Fetches all upcoming events, optionally filtered.
+  /// Fetches upcoming events with pagination.
   ///
   /// [category] - Filter by event category.
   /// [city] - Filter by city name.
-  /// [limit] - Maximum number of events to return.
-  Future<List<EventModel>> getUpcomingEvents({
+  /// [page] - Page number (0-indexed).
+  /// [pageSize] - Number of items per page.
+  Future<PaginatedResult<EventModel>> getUpcomingEvents({
     String? category,
     String? city,
-    int? limit,
+    int page = 0,
+    int pageSize = 20,
   });
 
   /// Fetches a single event by its ID.
@@ -43,6 +59,24 @@ abstract class EventRepository {
   /// Requires the user to be the event organizer.
   Future<void> deleteEvent(String id);
 
-  /// Fetches events created by the current user.
-  Future<List<EventModel>> getMyEvents();
+  /// Fetches events created by the current user (paginated).
+  ///
+  /// [dateFilter] - Filter by date range (recent, upcoming, all, past).
+  /// [searchQuery] - Search by event title (case-insensitive).
+  /// [page] - Page number (0-indexed).
+  /// [pageSize] - Number of items per page.
+  ///
+  /// Results are sorted: upcoming events first (soonest first),
+  /// then past events (most recent first).
+  Future<PaginatedResult<EventModel>> getMyEvents({
+    MyEventsDateFilter dateFilter = MyEventsDateFilter.recent,
+    String? searchQuery,
+    int page = 0,
+    int pageSize = 20,
+  });
+
+  /// Gets ticket availability for an event using SQL aggregation.
+  ///
+  /// Returns counts without fetching individual ticket records.
+  Future<TicketAvailability> getTicketAvailability(String eventId);
 }

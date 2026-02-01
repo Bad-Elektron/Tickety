@@ -1,6 +1,8 @@
 import '../../../core/errors/errors.dart';
+import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
 import '../models/event_model.dart';
+import '../models/ticket_availability.dart';
 import 'event_mapper.dart';
 import 'event_repository.dart';
 
@@ -15,17 +17,18 @@ class SupabaseEventRepository implements EventRepository {
   final _client = SupabaseService.instance.client;
 
   @override
-  Future<List<EventModel>> getUpcomingEvents({
+  Future<PaginatedResult<EventModel>> getUpcomingEvents({
     String? category,
     String? city,
-    int? limit,
+    int page = 0,
+    int pageSize = 20,
   }) async {
     AppLogger.debug(
-      'Fetching upcoming events (category: $category, city: $city, limit: $limit)',
+      'Fetching upcoming events (category: $category, city: $city, page: $page, pageSize: $pageSize)',
       tag: _tag,
     );
 
-    // Build query with filters first, then ordering and limit
+    // Build query with filters first, then ordering
     var query = _client
         .from(_tableName)
         .select()
@@ -42,17 +45,31 @@ class SupabaseEventRepository implements EventRepository {
     // Apply ordering after all filters
     final orderedQuery = query.order('date', ascending: true);
 
-    // Apply limit if specified
-    final response = limit != null
-        ? await orderedQuery.limit(limit)
-        : await orderedQuery;
+    // Calculate range for pagination (fetch one extra to detect hasMore)
+    final from = page * pageSize;
+    final to = from + pageSize;
 
-    final events = (response as List<dynamic>)
+    final response = await orderedQuery.range(from, to);
+
+    final allItems = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Fetched ${events.length} upcoming events', tag: _tag);
-    return events;
+    // Check if we got more than pageSize (meaning there are more pages)
+    final hasMore = allItems.length > pageSize;
+    final events = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Fetched ${events.length} upcoming events (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: events,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
   }
 
   @override
@@ -184,27 +201,91 @@ class SupabaseEventRepository implements EventRepository {
   }
 
   @override
-  Future<List<EventModel>> getMyEvents() async {
+  Future<PaginatedResult<EventModel>> getMyEvents({
+    MyEventsDateFilter dateFilter = MyEventsDateFilter.recent,
+    String? searchQuery,
+    int page = 0,
+    int pageSize = 20,
+  }) async {
     final userId = SupabaseService.instance.currentUser?.id;
     if (userId == null) {
       AppLogger.warning('Attempted to get my events without authentication', tag: _tag);
       throw StateError('Must be authenticated to view your events');
     }
 
-    AppLogger.debug('Fetching events for user: $userId', tag: _tag);
+    // Convert enum to string for RPC
+    final dateFilterStr = switch (dateFilter) {
+      MyEventsDateFilter.recent => 'recent',
+      MyEventsDateFilter.upcoming => 'upcoming',
+      MyEventsDateFilter.all => 'all',
+      MyEventsDateFilter.past => 'past',
+    };
 
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .eq('organizer_id', userId)
-        .isFilter('deleted_at', null)
-        .order('date', ascending: true);
+    // Trim and normalize search query
+    final normalizedSearch = searchQuery?.trim().isNotEmpty == true
+        ? searchQuery!.trim()
+        : null;
 
-    final events = (response as List<dynamic>)
+    AppLogger.debug(
+      'Fetching events for user: $userId (filter: $dateFilterStr, search: $normalizedSearch, page: $page, pageSize: $pageSize)',
+      tag: _tag,
+    );
+
+    final offset = page * pageSize;
+
+    // Use RPC function for server-side filtering and sorting
+    final response = await _client.rpc(
+      'get_my_events',
+      params: {
+        'p_user_id': userId,
+        'p_date_filter': dateFilterStr,
+        'p_search_query': normalizedSearch,
+        'p_limit': pageSize + 1, // Fetch one extra to check hasMore
+        'p_offset': offset,
+      },
+    );
+
+    final allItems = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Fetched ${events.length} user events', tag: _tag);
-    return events;
+    final hasMore = allItems.length > pageSize;
+    final events = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    AppLogger.debug(
+      'Fetched ${events.length} user events (hasMore: $hasMore)',
+      tag: _tag,
+    );
+
+    return PaginatedResult(
+      items: events,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
+  }
+
+  @override
+  Future<TicketAvailability> getTicketAvailability(String eventId) async {
+    AppLogger.debug('Fetching ticket availability for event: $eventId', tag: _tag);
+
+    // Call the RPC function for SQL aggregation
+    final response = await _client.rpc(
+      'get_ticket_availability',
+      params: {'p_event_id': eventId},
+    );
+
+    if (response == null) {
+      AppLogger.debug('No availability data for event: $eventId', tag: _tag);
+      return const TicketAvailability(soldCount: 0);
+    }
+
+    final data = response as Map<String, dynamic>;
+    AppLogger.debug(
+      'Ticket availability: max=${data['max_tickets']}, sold=${data['sold_count']}, available=${data['available']}',
+      tag: _tag,
+    );
+
+    return TicketAvailability.fromJson(data);
   }
 }
