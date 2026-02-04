@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../staff/data/ticket_repository.dart';
 import '../../staff/data/staff_repository.dart';
 import '../../staff/models/staff_role.dart';
+import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../models/event_model.dart';
 import 'event_data_screen.dart';
 
@@ -182,6 +185,16 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                       );
                     },
                   ),
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.payments_outlined,
+                    title: 'Cash Sales',
+                    subtitle: event.cashSalesEnabled
+                        ? 'View cash transactions'
+                        : 'Enable cash payments at door',
+                    color: Colors.green,
+                    onTap: () => _showCashSalesSheet(context),
+                  ),
                   const SizedBox(height: 24),
                   // Event info
                   Text(
@@ -258,6 +271,28 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => _ManageUshersSheet(event: widget.event),
     );
+  }
+
+  void _showCashSalesSheet(BuildContext context) {
+    if (widget.event.cashSalesEnabled) {
+      // Navigate to cash reconciliation screen
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CashReconciliationScreen(
+            eventId: widget.event.id,
+            eventTitle: widget.event.title,
+          ),
+        ),
+      );
+    } else {
+      // Show setup sheet
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (context) => _CashSalesSetupSheet(event: widget.event),
+      );
+    }
   }
 }
 
@@ -1238,6 +1273,379 @@ class _StaffCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Bottom sheet for enabling cash sales - handles Stripe payment method setup.
+class _CashSalesSetupSheet extends StatefulWidget {
+  final EventModel event;
+
+  const _CashSalesSetupSheet({required this.event});
+
+  @override
+  State<_CashSalesSetupSheet> createState() => _CashSalesSetupSheetState();
+}
+
+class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
+  bool _isLoading = false;
+  bool _isSettingUpStripe = false;
+  String? _error;
+  String? _setupIntentId;
+
+  Future<void> _enableCashSales() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase.functions.invoke(
+        'enable-cash-sales',
+        body: {'event_id': widget.event.id},
+      );
+
+      if (response.status != 200) {
+        final error = response.data['error'] as String? ?? 'Failed to enable cash sales';
+        throw Exception(error);
+      }
+
+      final data = response.data as Map<String, dynamic>;
+
+      // Check if already enabled
+      if (data['already_enabled'] == true) {
+        if (mounted) {
+          Navigator.pop(context, true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cash sales are already enabled'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Check if cash sales were enabled using existing payment method
+      if (data['cash_sales_enabled'] == true && data['used_existing_payment_method'] == true) {
+        if (mounted) {
+          Navigator.pop(context, true);
+          final card = data['card'] as Map<String, dynamic>?;
+          final cardInfo = card != null
+              ? ' (${card['brand']} ****${card['last4']})'
+              : '';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Cash sales enabled!$cardInfo'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Need to add a payment method - set up Stripe payment sheet
+      if (data['needs_payment_method'] == true) {
+        final clientSecret = data['client_secret'] as String;
+        _setupIntentId = data['setup_intent_id'] as String;
+
+        setState(() {
+          _isLoading = false;
+          _isSettingUpStripe = true;
+        });
+
+        // Initialize payment sheet for SetupIntent
+        await Stripe.instance.initPaymentSheet(
+          paymentSheetParameters: SetupPaymentSheetParameters(
+            setupIntentClientSecret: clientSecret,
+            merchantDisplayName: 'Tickety',
+            customerId: data['customer_id'] as String?,
+            customerEphemeralKeySecret: data['ephemeral_key'] as String?,
+            style: ThemeMode.system,
+          ),
+        );
+
+        // Present payment sheet
+        await Stripe.instance.presentPaymentSheet();
+
+        // Confirm setup with our backend
+        await _confirmSetup();
+      }
+
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isSettingUpStripe = false;
+          if (e is StripeException) {
+            if (e.error.code == FailureCode.Canceled) {
+              _error = null; // User cancelled, not an error
+            } else {
+              _error = e.error.localizedMessage ?? 'Payment setup failed';
+            }
+          } else {
+            _error = e.toString().replaceFirst('Exception: ', '');
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _confirmSetup() async {
+    if (_setupIntentId == null) return;
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase.functions.invoke(
+        'confirm-cash-sales-setup',
+        body: {
+          'event_id': widget.event.id,
+          'setup_intent_id': _setupIntentId,
+        },
+      );
+
+      if (response.status != 200) {
+        final error = response.data['error'] as String? ?? 'Failed to confirm setup';
+        throw Exception(error);
+      }
+
+      if (mounted) {
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Cash sales enabled! Staff can now accept cash payments.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = e.toString().replaceFirst('Exception: ', '');
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 16,
+        bottom: MediaQuery.of(context).padding.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Icon(
+            Icons.payments_outlined,
+            size: 48,
+            color: Colors.green,
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Enable Cash Sales',
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Allow staff to sell tickets for cash at the door',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          // Info card about platform fee
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Colors.amber.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  color: Colors.amber,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '5% Platform Fee',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'A 5% fee will be charged to your card for each cash sale to cover platform costs.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Requirement info
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'How it works:',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  context,
+                  Icons.credit_card,
+                  'Add a payment method for platform fees',
+                ),
+                const SizedBox(height: 8),
+                _buildInfoRow(
+                  context,
+                  Icons.point_of_sale,
+                  'Staff can sell tickets for cash via POS',
+                ),
+                const SizedBox(height: 8),
+                _buildInfoRow(
+                  context,
+                  Icons.receipt_long,
+                  'Track all cash sales in reconciliation',
+                ),
+              ],
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: colorScheme.onErrorContainer,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _error!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _isLoading ? null : _enableCashSales,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(56),
+              backgroundColor: Colors.green,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    _isSettingUpStripe ? 'Complete Setup' : 'Add Payment Method',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _isLoading ? null : () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(BuildContext context, IconData icon, String text) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: colorScheme.primary,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

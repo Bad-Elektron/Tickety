@@ -47,6 +47,45 @@ class TicketNfcPayload {
   }
 }
 
+/// NDEF data format for customer identity (for cash sales).
+/// Encodes as URI: `https://tickety.app/customer#{"u":"userId","n":"name","e":"email"}`
+class CustomerNfcPayload {
+  const CustomerNfcPayload({
+    required this.userId,
+    required this.name,
+    required this.email,
+  });
+
+  final String userId;
+  final String name;
+  final String email;
+
+  /// Parse from NDEF URI record fragment.
+  static CustomerNfcPayload? fromUri(String uri) {
+    try {
+      final hashIndex = uri.indexOf('#');
+      if (hashIndex == -1) return null;
+
+      final fragment = uri.substring(hashIndex + 1);
+      final json = jsonDecode(fragment) as Map<String, dynamic>;
+
+      return CustomerNfcPayload(
+        userId: json['u'] as String,
+        name: json['n'] as String? ?? 'Unknown',
+        email: json['e'] as String,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Encode to NDEF URI format.
+  String toUri() {
+    final json = jsonEncode({'u': userId, 'n': name, 'e': email});
+    return 'https://tickety.app/customer#$json';
+  }
+}
+
 /// Service for NFC operations (reading tickets as usher, broadcasting as attendee).
 ///
 /// Platform behavior:
@@ -92,7 +131,7 @@ class NfcService {
   /// Whether broadcasting is currently active.
   bool get isBroadcasting => _isBroadcasting;
 
-  /// Start reading NFC tags.
+  /// Start reading NFC tags for ticket data.
   ///
   /// [onTagRead] is called with the parsed ticket payload when a valid ticket tag is scanned.
   /// [onError] is called if scanning fails or an invalid tag is detected.
@@ -141,6 +180,78 @@ class NfcService {
     } catch (e) {
       _isReading = false;
       onError?.call('Failed to start NFC scanning: $e');
+    }
+  }
+
+  /// Start reading NFC tags for customer identity (for cash sales).
+  ///
+  /// [onCustomerRead] is called with the parsed customer payload when a valid customer tag is scanned.
+  /// [onError] is called if scanning fails or an invalid tag is detected.
+  Future<void> startReadingCustomer({
+    required void Function(CustomerNfcPayload payload) onCustomerRead,
+    void Function(String error)? onError,
+  }) async {
+    if (_isReading) return;
+
+    if (!await isNfcAvailable()) {
+      onError?.call('NFC is not available on this device');
+      return;
+    }
+
+    _isReading = true;
+
+    try {
+      await NfcManager.instance.startSession(
+        pollingOptions: {NfcPollingOption.iso14443},
+        onDiscovered: (NfcTag tag) async {
+          final ndef = Ndef.from(tag);
+          if (ndef == null) {
+            onError?.call('Tag does not contain NDEF data');
+            return;
+          }
+
+          try {
+            final cachedMessage = ndef.cachedMessage;
+            if (cachedMessage == null) {
+              onError?.call('No NDEF message found');
+              return;
+            }
+
+            final payload = _parseCustomerNdefMessage(cachedMessage);
+
+            if (payload != null) {
+              onCustomerRead(payload);
+            } else {
+              onError?.call('Invalid customer data');
+            }
+          } catch (e) {
+            onError?.call('Error reading tag: $e');
+          }
+        },
+      );
+    } catch (e) {
+      _isReading = false;
+      onError?.call('Failed to start NFC scanning: $e');
+    }
+  }
+
+  /// Start broadcasting customer identity via NFC HCE (Android only).
+  ///
+  /// Returns true if broadcasting started successfully.
+  Future<bool> startBroadcastingCustomer(CustomerNfcPayload payload) async {
+    if (_isBroadcasting) return true;
+
+    if (!await isHceAvailable()) {
+      return false;
+    }
+
+    try {
+      await _hce.startNfcHce(payload.toUri());
+      _isBroadcasting = true;
+      return true;
+    } catch (e) {
+      debugPrint('Failed to start NFC broadcasting: $e');
+      return false;
     }
   }
 
@@ -197,6 +308,18 @@ class NfcService {
       final uri = _extractUriFromRecord(record);
       if (uri != null && uri.contains('tickety.app/scan')) {
         return TicketNfcPayload.fromUri(uri);
+      }
+    }
+    return null;
+  }
+
+  /// Parse NDEF message to extract customer payload.
+  CustomerNfcPayload? _parseCustomerNdefMessage(NdefMessage message) {
+    for (final record in message.records) {
+      // Try to extract URI from the record
+      final uri = _extractUriFromRecord(record);
+      if (uri != null && uri.contains('tickety.app/customer')) {
+        return CustomerNfcPayload.fromUri(uri);
       }
     }
     return null;

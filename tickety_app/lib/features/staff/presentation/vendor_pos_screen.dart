@@ -6,7 +6,10 @@ import '../../../core/providers/providers.dart';
 import '../../events/data/supabase_event_repository.dart';
 import '../../events/models/event_model.dart';
 import '../../events/models/ticket_type.dart';
+import '../data/cash_transaction_repository.dart';
+import '../models/cash_transaction.dart';
 import '../models/ticket.dart';
+import 'nfc_ticket_transfer_screen.dart';
 
 /// Payment method for POS sales.
 enum POSPaymentMethod { card, cash }
@@ -29,10 +32,15 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
 
   bool _isLoading = false;
   bool _isLoadingTicketTypes = true;
+  bool _isCheckingCashSales = true;
   Ticket? _lastSoldTicket;
   int _ticketsSoldThisSession = 0;
   POSPaymentMethod _paymentMethod = POSPaymentMethod.cash;
   bool _isProcessingPayment = false;
+
+  // Cash sales
+  bool _cashSalesEnabled = false;
+  CashDeliveryMethod _cashDeliveryMethod = CashDeliveryMethod.inPerson;
 
   // Ticket types
   List<TicketType> _ticketTypes = [];
@@ -50,6 +58,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
   void initState() {
     super.initState();
     _loadTicketTypes();
+    _checkCashSalesEnabled();
   }
 
   @override
@@ -60,11 +69,35 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
     super.dispose();
   }
 
+  Future<void> _checkCashSalesEnabled() async {
+    setState(() => _isCheckingCashSales = true);
+    try {
+      final repository = CashTransactionRepository();
+      final enabled = await repository.isCashSalesEnabled(widget.event.id);
+      if (mounted) {
+        setState(() {
+          _cashSalesEnabled = enabled;
+          _isCheckingCashSales = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error checking cash sales status: $e');
+      if (mounted) {
+        setState(() => _isCheckingCashSales = false);
+      }
+    }
+  }
+
   Future<void> _loadTicketTypes() async {
     setState(() => _isLoadingTicketTypes = true);
     try {
       final repository = SupabaseEventRepository();
+      debugPrint('Loading ticket types for event: ${widget.event.id}');
       final types = await repository.getEventTicketTypes(widget.event.id);
+      debugPrint('Loaded ${types.length} ticket types');
+      for (final t in types) {
+        debugPrint('  - ${t.name}: ${t.formattedPrice} (available: ${t.isAvailable})');
+      }
       if (mounted) {
         setState(() {
           _ticketTypes = types;
@@ -73,7 +106,9 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
           _isLoadingTicketTypes = false;
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Error loading ticket types: $e');
+      debugPrint('Stack: $stack');
       if (mounted) {
         setState(() => _isLoadingTicketTypes = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -111,6 +146,12 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+      return;
+    }
+
+    // For cash payments, use the new cash sale flow
+    if (_paymentMethod == POSPaymentMethod.cash) {
+      await _processCashSale();
       return;
     }
 
@@ -195,6 +236,221 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  /// Process cash sale using the edge function.
+  Future<void> _processCashSale() async {
+    // Validate email if delivery method is email
+    if (_cashDeliveryMethod == CashDeliveryMethod.email) {
+      final email = _emailController.text.trim();
+      if (email.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Email is required for email delivery'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+      // Basic email validation
+      if (!email.contains('@') || !email.contains('.')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter a valid email address'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final repository = CashTransactionRepository();
+      final result = await repository.createCashSale(
+        eventId: widget.event.id,
+        amountCents: _ticketPrice,
+        deliveryMethod: _cashDeliveryMethod,
+        ticketTypeId: _selectedTicketType?.id,
+        customerName: _nameController.text.trim().isNotEmpty
+            ? _nameController.text.trim()
+            : null,
+        customerEmail: _emailController.text.trim().isNotEmpty
+            ? _emailController.text.trim()
+            : null,
+      );
+
+      if (!result.success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.error ?? 'Failed to process cash sale'),
+              backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      // Sale successful
+      setState(() => _ticketsSoldThisSession++);
+
+      HapticFeedback.mediumImpact();
+
+      // Show warning if fee wasn't charged
+      if (result.warning != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.warning!),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+
+      // Handle delivery method
+      if (_cashDeliveryMethod == CashDeliveryMethod.nfc &&
+          result.transferToken != null) {
+        // Navigate to NFC transfer screen
+        if (mounted) {
+          final transferred = await Navigator.of(context).push<bool>(
+            MaterialPageRoute(
+              builder: (context) => NfcTicketTransferScreen(
+                ticketId: result.ticketId!,
+                ticketNumber: result.ticketNumber!,
+                transferToken: result.transferToken!,
+                transferTokenExpiresAt: result.transferTokenExpiresAt!,
+                eventTitle: widget.event.title,
+                amountCents: _ticketPrice,
+              ),
+            ),
+          );
+
+          if (transferred == true && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Colors.white),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text('Ticket ${result.ticketNumber} transferred!'),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
+      } else if (_cashDeliveryMethod == CashDeliveryMethod.email) {
+        // Email delivery - show confirmation
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.email, color: Colors.white),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Ticket ${result.ticketNumber} sent to ${_emailController.text.trim()}',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      } else {
+        // In-person delivery - show ticket number
+        if (mounted) {
+          _showInPersonTicketDialog(result.ticketNumber!);
+        }
+      }
+
+      // Clear form for next sale
+      _nameController.clear();
+      _emailController.clear();
+      _walletController.clear();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to process cash sale: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  /// Show dialog with ticket number for in-person delivery.
+  void _showInPersonTicketDialog(String ticketNumber) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              Icons.check_circle,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 12),
+            const Text('Ticket Sold!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Tell the customer their ticket number:',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                ticketNumber,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 4,
+                    ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'They can use this to check in at the event.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Process card payment using Stripe Payment Sheet.
@@ -426,11 +682,14 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       labelText: 'Email',
-                      hintText: 'For ticket delivery (optional)',
-                      prefixIcon: Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(),
+                      hintText: _paymentMethod == POSPaymentMethod.cash &&
+                              _cashDeliveryMethod == CashDeliveryMethod.email
+                          ? 'Required for email delivery'
+                          : 'For ticket delivery (optional)',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -473,18 +732,71 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                         child: _PaymentMethodCard(
                           icon: Icons.payments_outlined,
                           label: 'Cash',
-                          sublabel: 'Collect manually',
+                          sublabel: _cashSalesEnabled
+                              ? 'Collect manually'
+                              : 'Not enabled',
                           isSelected: _paymentMethod == POSPaymentMethod.cash,
-                          onTap: () => setState(() => _paymentMethod = POSPaymentMethod.cash),
+                          onTap: _cashSalesEnabled || _isCheckingCashSales
+                              ? () => setState(() => _paymentMethod = POSPaymentMethod.cash)
+                              : null,
+                          isDisabled: !_cashSalesEnabled && !_isCheckingCashSales,
                         ),
                       ),
                     ],
                   ),
+
+                  // Cash delivery method selector (only shown when cash is selected and enabled)
+                  if (_paymentMethod == POSPaymentMethod.cash && _cashSalesEnabled) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      'Ticket Delivery',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _DeliveryMethodSelector(
+                      selectedMethod: _cashDeliveryMethod,
+                      onChanged: (method) => setState(() => _cashDeliveryMethod = method),
+                    ),
+                  ],
+
+                  // Cash not enabled warning
+                  if (_paymentMethod == POSPaymentMethod.cash && !_cashSalesEnabled && !_isCheckingCashSales) ...[
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber, color: Colors.orange, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Cash sales are not enabled for this event. The organizer needs to set up a payment method first.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 32),
 
                   // Sell button
                   FilledButton.icon(
-                    onPressed: (_isLoading || _isProcessingPayment) ? null : _sellTicket,
+                    onPressed: (_isLoading || _isProcessingPayment ||
+                            (_paymentMethod == POSPaymentMethod.cash && !_cashSalesEnabled))
+                        ? null
+                        : _sellTicket,
                     icon: (_isLoading || _isProcessingPayment)
                         ? const SizedBox(
                             width: 20,
@@ -511,6 +823,18 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       ),
                     ),
                   ),
+
+                  // Platform fee info for cash sales
+                  if (_paymentMethod == POSPaymentMethod.cash && _cashSalesEnabled && _ticketPrice > 0) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      '5% platform fee (\$${(_ticketPrice * 0.05 / 100).toStringAsFixed(2)}) will be charged to the organizer',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -587,13 +911,15 @@ class _PaymentMethodCard extends StatelessWidget {
     required this.sublabel,
     required this.isSelected,
     required this.onTap,
+    this.isDisabled = false,
   });
 
   final IconData icon;
   final String label;
   final String sublabel;
   final bool isSelected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final bool isDisabled;
 
   @override
   Widget build(BuildContext context) {
@@ -601,7 +927,7 @@ class _PaymentMethodCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return InkWell(
-      onTap: onTap,
+      onTap: isDisabled ? null : onTap,
       borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -609,12 +935,16 @@ class _PaymentMethodCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? colorScheme.primaryContainer
-              : colorScheme.surfaceContainerLow,
+              : isDisabled
+                  ? colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
+                  : colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected
                 ? colorScheme.primary
-                : colorScheme.outline.withValues(alpha: 0.3),
+                : isDisabled
+                    ? colorScheme.outline.withValues(alpha: 0.2)
+                    : colorScheme.outline.withValues(alpha: 0.3),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -623,14 +953,22 @@ class _PaymentMethodCard extends StatelessWidget {
             Icon(
               icon,
               size: 28,
-              color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              color: isSelected
+                  ? colorScheme.primary
+                  : isDisabled
+                      ? colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+                      : colorScheme.onSurfaceVariant,
             ),
             const SizedBox(height: 8),
             Text(
               label,
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
-                color: isSelected ? colorScheme.primary : colorScheme.onSurface,
+                color: isSelected
+                    ? colorScheme.primary
+                    : isDisabled
+                        ? colorScheme.onSurface.withValues(alpha: 0.5)
+                        : colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 2),
@@ -639,10 +977,114 @@ class _PaymentMethodCard extends StatelessWidget {
               style: theme.textTheme.labelSmall?.copyWith(
                 color: isSelected
                     ? colorScheme.primary.withValues(alpha: 0.8)
-                    : colorScheme.onSurfaceVariant,
+                    : isDisabled
+                        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.5)
+                        : colorScheme.onSurfaceVariant,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Selector widget for cash delivery method.
+class _DeliveryMethodSelector extends StatelessWidget {
+  const _DeliveryMethodSelector({
+    required this.selectedMethod,
+    required this.onChanged,
+  });
+
+  final CashDeliveryMethod selectedMethod;
+  final ValueChanged<CashDeliveryMethod> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        _DeliveryMethodChip(
+          icon: Icons.nfc,
+          label: 'NFC',
+          isSelected: selectedMethod == CashDeliveryMethod.nfc,
+          onTap: () => onChanged(CashDeliveryMethod.nfc),
+        ),
+        const SizedBox(width: 8),
+        _DeliveryMethodChip(
+          icon: Icons.email_outlined,
+          label: 'Email',
+          isSelected: selectedMethod == CashDeliveryMethod.email,
+          onTap: () => onChanged(CashDeliveryMethod.email),
+        ),
+        const SizedBox(width: 8),
+        _DeliveryMethodChip(
+          icon: Icons.person_outline,
+          label: 'In-Person',
+          isSelected: selectedMethod == CashDeliveryMethod.inPerson,
+          onTap: () => onChanged(CashDeliveryMethod.inPerson),
+        ),
+      ],
+    );
+  }
+}
+
+class _DeliveryMethodChip extends StatelessWidget {
+  const _DeliveryMethodChip({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? colorScheme.primaryContainer
+                : colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? colorScheme.primary
+                  : colorScheme.outline.withValues(alpha: 0.3),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

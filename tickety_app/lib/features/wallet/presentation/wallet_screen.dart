@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/seller_balance_provider.dart';
 import '../../payments/models/seller_balance.dart';
+import '../../payments/presentation/ready_to_pay_screen.dart';
 import 'transactions_screen.dart';
 
 /// Screen displaying the user's wallet and seller balance.
@@ -88,6 +89,15 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                 : () => ref.read(sellerBalanceProvider.notifier).refresh(),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ReadyToPayScreen()),
+          );
+        },
+        icon: const Icon(Icons.contactless),
+        label: const Text('Ready to Pay'),
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(sellerBalanceProvider.notifier).refresh(),

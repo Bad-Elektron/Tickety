@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/ticket_provider.dart';
+import '../../staff/data/cash_transaction_repository.dart';
+import '../../staff/presentation/cash_sale_screen.dart';
+import '../../staff/presentation/tap_to_pay_screen.dart';
+import '../data/supabase_event_repository.dart';
 import '../models/event_model.dart';
+import '../models/ticket_type.dart';
 import 'usher_event_screen.dart';
 
 /// Screen for vendors to sell tickets at an event.
@@ -24,127 +28,194 @@ class VendorEventScreen extends ConsumerStatefulWidget {
 }
 
 class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _walletController = TextEditingController();
-
   bool _isLoading = false;
+  bool _isLoadingTicketTypes = true;
+  bool _isCheckingCashSales = true;
   int _ticketsSoldThisSession = 0;
   _SoldTicket? _lastSoldTicket;
 
-  int get _ticketPrice => widget.event.priceInCents ?? 0;
+  // Cash sales
+  bool _cashSalesEnabled = false;
+  final _cashRepo = CashTransactionRepository();
+
+  // Ticket types
+  List<TicketType> _ticketTypes = [];
+  TicketType? _selectedTicketType;
+
+  int get _ticketPrice => _selectedTicketType?.priceInCents ?? widget.event.priceInCents ?? 0;
+
+  String get _formattedPrice {
+    if (_ticketPrice == 0) return 'Free';
+    final dollars = _ticketPrice / 100;
+    return '\$${dollars.toStringAsFixed(dollars.truncateToDouble() == dollars ? 0 : 2)}';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTicketTypes();
+    _checkCashSalesEnabled();
+  }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _walletController.dispose();
     super.dispose();
   }
 
-  Future<void> _sellTicket() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _isLoading = true);
-
+  Future<void> _checkCashSalesEnabled() async {
+    setState(() => _isCheckingCashSales = true);
     try {
-      // Call the real ticket repository to create a ticket in the database
-      final ticket = await ref.read(ticketProvider.notifier).sellTicket(
-        eventId: widget.event.id,
-        ownerName: _nameController.text.trim().isNotEmpty
-            ? _nameController.text.trim()
-            : null,
-        ownerEmail: _emailController.text.trim().isNotEmpty
-            ? _emailController.text.trim()
-            : null,
-        priceCents: _ticketPrice,
-        walletAddress: _walletController.text.trim().isNotEmpty
-            ? _walletController.text.trim()
-            : null,
-      );
-
-      if (ticket != null) {
+      final enabled = await _cashRepo.isCashSalesEnabled(widget.event.id);
+      if (mounted) {
         setState(() {
-          _lastSoldTicket = _SoldTicket(
-            ticketNumber: ticket.ticketNumber,
-            customerName: ticket.ownerName,
-          );
-          _ticketsSoldThisSession++;
-          _isLoading = false;
+          _cashSalesEnabled = enabled;
+          _isCheckingCashSales = false;
         });
-
-        // Clear form for next sale
-        _nameController.clear();
-        _emailController.clear();
-        _walletController.clear();
-
-        HapticFeedback.mediumImpact();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text('Ticket ${ticket.ticketNumber} sold!'),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.green,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              margin: const EdgeInsets.all(16),
-            ),
-          );
-        }
-      } else {
-        // Sale failed
-        setState(() => _isLoading = false);
-        if (mounted) {
-          final error = ref.read(ticketProvider).error;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.error_outline, color: Colors.white),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(error ?? 'Failed to sell ticket'),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.red,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              margin: const EdgeInsets.all(16),
-            ),
-          );
-        }
       }
     } catch (e) {
-      setState(() => _isLoading = false);
+      debugPrint('Error checking cash sales status: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text('Error: $e'),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
+        setState(() => _isCheckingCashSales = false);
       }
+    }
+  }
+
+  Future<void> _loadTicketTypes() async {
+    setState(() => _isLoadingTicketTypes = true);
+    try {
+      final repository = SupabaseEventRepository();
+      debugPrint('VendorEventScreen: Loading ticket types for event: ${widget.event.id}');
+      final types = await repository.getEventTicketTypes(widget.event.id);
+      debugPrint('VendorEventScreen: Loaded ${types.length} ticket types');
+      if (mounted) {
+        setState(() {
+          _ticketTypes = types;
+          // Auto-select first available ticket type
+          _selectedTicketType = types.where((t) => t.isAvailable).firstOrNull;
+          _isLoadingTicketTypes = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('VendorEventScreen: Error loading ticket types: $e');
+      if (mounted) {
+        setState(() => _isLoadingTicketTypes = false);
+      }
+    }
+  }
+
+  Future<void> _sellTicket() async {
+    // Check if cash sales are enabled
+    if (!_cashSalesEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cash sales are not enabled for this event. Ask the organizer to enable them.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Validate ticket type selection if types exist
+    if (_ticketTypes.isNotEmpty && _selectedTicketType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a ticket type'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Check if selected ticket type is still available
+    if (_selectedTicketType != null && !_selectedTicketType!.isAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${_selectedTicketType!.name} is sold out'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // Navigate to Cash Sale screen with NFC flow
+    final result = await Navigator.of(context).push<CashSaleScreenResult>(
+      MaterialPageRoute(
+        builder: (_) => CashSaleScreen(
+          event: widget.event,
+          ticketType: _selectedTicketType!,
+        ),
+      ),
+    );
+
+    if (result != null && result.success && mounted) {
+      setState(() {
+        _lastSoldTicket = _SoldTicket(
+          ticketNumber: result.ticketNumber ?? 'Unknown',
+        );
+        _ticketsSoldThisSession++;
+      });
+
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('Ticket ${result.ticketNumber} sold!'),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openTapToPay() async {
+    if (_selectedTicketType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a ticket type first'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => TapToPayScreen(
+          event: widget.event,
+          ticketType: _selectedTicketType!,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      setState(() => _ticketsSoldThisSession++);
+      HapticFeedback.mediumImpact();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white),
+              SizedBox(width: 12),
+              Text('Tap-to-pay ticket sold successfully!'),
+            ],
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -302,8 +373,8 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   ),
                   _StatItem(
                     icon: Icons.attach_money,
-                    value: widget.event.formattedPrice,
-                    label: 'Per Ticket',
+                    value: _formattedPrice,
+                    label: _selectedTicketType?.name ?? 'Per Ticket',
                     color: colorScheme.primary,
                   ),
                   Container(
@@ -322,85 +393,62 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
             ),
           ),
 
-          // Sale form
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Form(
-                key: _formKey,
+          // Ticket type selector
+          if (_isLoadingTicketTypes)
+            const SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+            )
+          else if (_ticketTypes.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Customer Details',
+                      'Select Ticket Type',
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 12),
-
-                    // Name field
-                    TextFormField(
-                      controller: _nameController,
-                      textCapitalization: TextCapitalization.words,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Customer Name',
-                        hintText: 'Optional',
-                        prefixIcon: Icon(Icons.person_outline),
-                        border: OutlineInputBorder(),
+                    ..._ticketTypes.map((ticketType) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _TicketTypeCard(
+                        ticketType: ticketType,
+                        isSelected: _selectedTicketType?.id == ticketType.id,
+                        onTap: ticketType.isAvailable
+                            ? () => setState(() => _selectedTicketType = ticketType)
+                            : null,
                       ),
-                    ),
-                    const SizedBox(height: 16),
+                    )),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
 
-                    // Email field
-                    TextFormField(
-                      controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        hintText: 'For ticket delivery (optional)',
-                        prefixIcon: Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Wallet field
-                    TextFormField(
-                      controller: _walletController,
-                      textInputAction: TextInputAction.done,
-                      decoration: const InputDecoration(
-                        labelText: 'Cardano Wallet Address',
-                        hintText: 'For NFT ticket (optional)',
-                        prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Sell button
+          // Sale buttons
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Tap to Pay button (only if ticket type is selected)
+                  if (_selectedTicketType != null) ...[
                     FilledButton.icon(
-                      onPressed: _isLoading ? null : _sellTicket,
-                      icon: _isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.point_of_sale),
-                      label: Text(
-                        _isLoading
-                            ? 'Processing...'
-                            : 'Sell Ticket - ${widget.event.formattedPrice}',
-                      ),
+                      onPressed: _isLoading ? null : _openTapToPay,
+                      icon: const Icon(Icons.contactless),
+                      label: Text('Tap to Pay - $_formattedPrice'),
                       style: FilledButton.styleFrom(
-                        backgroundColor: Colors.green,
+                        backgroundColor: colorScheme.primary,
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         textStyle: const TextStyle(
                           fontSize: 16,
@@ -408,8 +456,63 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // Divider with "or"
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'or anonymous sale',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
                   ],
-                ),
+
+                  // Manual sell button (creates anonymous ticket)
+                  OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _sellTicket,
+                    icon: _isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.point_of_sale),
+                    label: Text(
+                      _isLoading
+                          ? 'Processing...'
+                          : 'Cash Sale - $_formattedPrice',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      foregroundColor: _cashSalesEnabled ? null : Colors.grey,
+                      textStyle: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _cashSalesEnabled
+                        ? 'Cash sale - collect payment and give ticket number'
+                        : 'Cash sales not enabled - ask organizer to enable',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -448,16 +551,6 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                                 ),
                               ],
                             ),
-                            if (_lastSoldTicket!.customerName != null) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Customer'),
-                                  Text(_lastSoldTicket!.customerName!),
-                                ],
-                              ),
-                            ],
                             const SizedBox(height: 8),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -538,10 +631,155 @@ class _StatItem extends StatelessWidget {
 
 class _SoldTicket {
   final String ticketNumber;
-  final String? customerName;
 
   _SoldTicket({
     required this.ticketNumber,
-    this.customerName,
   });
+}
+
+/// Card widget for selecting ticket type.
+class _TicketTypeCard extends StatelessWidget {
+  const _TicketTypeCard({
+    required this.ticketType,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final TicketType ticketType;
+  final bool isSelected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDisabled = onTap == null;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? colorScheme.primaryContainer
+              : isDisabled
+                  ? colorScheme.surfaceContainerLow.withValues(alpha: 0.5)
+                  : colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? colorScheme.primary
+                : isDisabled
+                    ? colorScheme.outline.withValues(alpha: 0.2)
+                    : colorScheme.outline.withValues(alpha: 0.3),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            // Radio indicator
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected ? colorScheme.primary : Colors.transparent,
+                border: Border.all(
+                  color: isSelected
+                      ? colorScheme.primary
+                      : isDisabled
+                          ? colorScheme.outline.withValues(alpha: 0.3)
+                          : colorScheme.outline,
+                  width: 2,
+                ),
+              ),
+              child: isSelected
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : null,
+            ),
+            const SizedBox(width: 16),
+            // Ticket type info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          ticketType.name,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isDisabled
+                                ? colorScheme.onSurface.withValues(alpha: 0.5)
+                                : colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      if (ticketType.isSoldOut)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Sold Out',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else if (ticketType.hasLimit && ticketType.remainingQuantity! <= 10)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '${ticketType.remainingQuantity} left',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.orange,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (ticketType.description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      ticketType.description!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Price
+            Text(
+              ticketType.formattedPrice,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: isSelected
+                    ? colorScheme.primary
+                    : isDisabled
+                        ? colorScheme.onSurface.withValues(alpha: 0.5)
+                        : colorScheme.onSurface,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

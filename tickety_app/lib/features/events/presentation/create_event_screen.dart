@@ -319,10 +319,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       );
 
       // Convert ticket types to TicketTypeInput list
+      debugPrint('Converting ${_ticketTypes.length} ticket types');
       final ticketTypeInputs = _ticketTypes.map((tt) {
         final priceDollars = double.tryParse(tt.priceController.text) ?? 0;
         final priceCents = (priceDollars * 100).round();
         final quantity = int.tryParse(tt.quantityController.text);
+        debugPrint('Ticket type: ${tt.nameController.text}, price: $priceCents cents, qty: $quantity');
         return TicketTypeInput(
           name: Validators.sanitize(tt.nameController.text).isNotEmpty
               ? Validators.sanitize(tt.nameController.text)
@@ -334,6 +336,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           maxQuantity: quantity,
         );
       }).toList();
+      debugPrint('Created ${ticketTypeInputs.length} TicketTypeInput objects');
 
       // Get all selected tag IDs
       final tagIds = _selectedTags.map((tag) => tag.id).toList();

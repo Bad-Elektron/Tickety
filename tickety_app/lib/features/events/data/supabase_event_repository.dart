@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../core/errors/errors.dart';
 import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
@@ -309,10 +311,16 @@ class SupabaseEventRepository implements EventRepository {
   Future<List<TicketType>> getEventTicketTypes(String eventId) async {
     AppLogger.debug('Fetching ticket types for event: $eventId', tag: _tag);
 
-    final response = await _client.rpc(
-      'get_event_ticket_types',
-      params: {'p_event_id': eventId},
-    );
+    // Use direct query instead of RPC for debugging
+    final response = await _client
+        .from('event_ticket_types')
+        .select()
+        .eq('event_id', eventId)
+        .eq('is_active', true)
+        .order('sort_order')
+        .order('price_cents');
+
+    AppLogger.debug('Raw response: $response', tag: _tag);
 
     final ticketTypes = (response as List<dynamic>)
         .map((json) => TicketType.fromJson(json as Map<String, dynamic>))
@@ -328,19 +336,16 @@ class SupabaseEventRepository implements EventRepository {
     List<TicketTypeInput> ticketTypes,
   ) async {
     if (ticketTypes.isEmpty) {
-      AppLogger.debug('No ticket types to create for event: $eventId', tag: _tag);
+      debugPrint('No ticket types to create for event: $eventId');
       return [];
     }
 
-    AppLogger.debug(
-      'Creating ${ticketTypes.length} ticket types for event: $eventId',
-      tag: _tag,
-    );
+    debugPrint('Creating ${ticketTypes.length} ticket types for event: $eventId');
 
     final data = ticketTypes.asMap().entries.map((entry) {
       final index = entry.key;
       final tt = entry.value;
-      return {
+      final item = {
         'event_id': eventId,
         'name': tt.name,
         'description': tt.description,
@@ -349,19 +354,30 @@ class SupabaseEventRepository implements EventRepository {
         'sort_order': index,
         'is_active': true,
       };
+      debugPrint('Ticket type data: $item');
+      return item;
     }).toList();
 
-    final response = await _client
-        .from('event_ticket_types')
-        .insert(data)
-        .select();
+    try {
+      debugPrint('Inserting ticket types into database...');
+      final response = await _client
+          .from('event_ticket_types')
+          .insert(data)
+          .select();
 
-    final created = (response as List<dynamic>)
-        .map((json) => TicketType.fromJson(json as Map<String, dynamic>))
-        .toList();
+      debugPrint('Insert response: $response');
 
-    AppLogger.info('Created ${created.length} ticket types for event: $eventId', tag: _tag);
-    return created;
+      final created = (response as List<dynamic>)
+          .map((json) => TicketType.fromJson(json as Map<String, dynamic>))
+          .toList();
+
+      debugPrint('Successfully created ${created.length} ticket types');
+      return created;
+    } catch (e, stack) {
+      debugPrint('ERROR creating ticket types: $e');
+      debugPrint('Stack: $stack');
+      rethrow;
+    }
   }
 
   /// Create an event with ticket types in a single operation.
@@ -381,10 +397,18 @@ class SupabaseEventRepository implements EventRepository {
     int? noiseSeed,
     bool hideLocation = false,
   }) async {
-    // Use the lowest ticket price as the event's display price
+    debugPrint('createEventWithTicketTypes called with ${ticketTypes.length} ticket types');
+
+    // Use the lowest NON-ZERO ticket price as the event's display price
+    // If all tickets are free, use 0
+    final nonZeroPrices = ticketTypes.where((t) => t.priceCents > 0).map((t) => t.priceCents);
     final lowestPrice = ticketTypes.isEmpty
         ? null
-        : ticketTypes.map((t) => t.priceCents).reduce((a, b) => a < b ? a : b);
+        : nonZeroPrices.isEmpty
+            ? 0
+            : nonZeroPrices.reduce((a, b) => a < b ? a : b);
+
+    debugPrint('Lowest non-zero price: $lowestPrice cents');
 
     // Create the event first
     final event = await createEventFromParams(
@@ -404,9 +428,15 @@ class SupabaseEventRepository implements EventRepository {
       hideLocation: hideLocation,
     );
 
+    debugPrint('Event created with id: ${event.id}');
+
     // Then create the ticket types
     if (ticketTypes.isNotEmpty) {
-      await createTicketTypes(event.id, ticketTypes);
+      debugPrint('About to create ticket types...');
+      final createdTypes = await createTicketTypes(event.id, ticketTypes);
+      debugPrint('Finished creating ticket types: ${createdTypes.length} created');
+    } else {
+      debugPrint('No ticket types to create');
     }
 
     return event;

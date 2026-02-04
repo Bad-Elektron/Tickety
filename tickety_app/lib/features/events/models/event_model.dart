@@ -71,6 +71,10 @@ class EventModel {
   /// Null means unlimited tickets.
   final int? maxTickets;
 
+  /// Whether cash sales are enabled for this event.
+  /// When true, staff can sell tickets for cash at the door.
+  final bool cashSalesEnabled;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -90,6 +94,7 @@ class EventModel {
     this.currency = 'USD',
     this.hideLocation = false,
     this.maxTickets,
+    this.cashSalesEnabled = false,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -181,6 +186,7 @@ class EventModel {
     String? currency,
     bool? hideLocation,
     int? maxTickets,
+    bool? cashSalesEnabled,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -201,6 +207,7 @@ class EventModel {
       currency: currency ?? this.currency,
       hideLocation: hideLocation ?? this.hideLocation,
       maxTickets: maxTickets ?? this.maxTickets,
+      cashSalesEnabled: cashSalesEnabled ?? this.cashSalesEnabled,
     );
   }
 

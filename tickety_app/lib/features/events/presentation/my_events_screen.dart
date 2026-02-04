@@ -493,9 +493,18 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    // No events at all
+    // No events at all - still allow pull-to-refresh
     if (_usheringEvents.isEmpty) {
-      return _buildEmptyUsheringState(theme, colorScheme);
+      return RefreshIndicator(
+        onRefresh: _loadStaffEvents,
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              child: _buildEmptyUsheringState(theme, colorScheme),
+            ),
+          ],
+        ),
+      );
     }
 
     return Column(
@@ -521,9 +530,18 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       return const Center(child: CircularProgressIndicator());
     }
 
-    // No events at all
+    // No events at all - still allow pull-to-refresh
     if (_sellingEvents.isEmpty) {
-      return _buildEmptySellingState(theme, colorScheme);
+      return RefreshIndicator(
+        onRefresh: _loadStaffEvents,
+        child: CustomScrollView(
+          slivers: [
+            SliverFillRemaining(
+              child: _buildEmptySellingState(theme, colorScheme),
+            ),
+          ],
+        ),
+      );
     }
 
     return Column(
@@ -638,29 +656,32 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
 
   Widget _buildUsheringEventsList(List<_StaffEventData> events) {
     // Staff events are typically small datasets, no pagination needed
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 24),
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final data = events[index];
-        return _MyEventCard(
-          event: data.event,
-          badgeLabel: 'Usher',
-          badgeIcon: Icons.badge_outlined,
-          badgeColor: Theme.of(context).colorScheme.tertiary,
-          showRoleSwitch: data.canSell,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => UsherEventScreen(
-                  event: data.event,
-                  canSwitchToSelling: data.canSell,
+    return RefreshIndicator(
+      onRefresh: _loadStaffEvents,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 8, bottom: 24),
+        itemCount: events.length,
+        itemBuilder: (context, index) {
+          final data = events[index];
+          return _MyEventCard(
+            event: data.event,
+            badgeLabel: 'Usher',
+            badgeIcon: Icons.badge_outlined,
+            badgeColor: Theme.of(context).colorScheme.tertiary,
+            showRoleSwitch: data.canSell,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => UsherEventScreen(
+                    event: data.event,
+                    canSwitchToSelling: data.canSell,
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -708,29 +729,32 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
 
   Widget _buildSellingEventsList(List<_StaffEventData> events) {
     // Staff events are typically small datasets, no pagination needed
-    return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 24),
-      itemCount: events.length,
-      itemBuilder: (context, index) {
-        final data = events[index];
-        return _MyEventCard(
-          event: data.event,
-          badgeLabel: 'Vendor',
-          badgeIcon: Icons.point_of_sale,
-          badgeColor: Colors.green,
-          showRoleSwitch: data.canUsher,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => VendorEventScreen(
-                  event: data.event,
-                  canSwitchToUsher: data.canUsher,
+    return RefreshIndicator(
+      onRefresh: _loadStaffEvents,
+      child: ListView.builder(
+        padding: const EdgeInsets.only(top: 8, bottom: 24),
+        itemCount: events.length,
+        itemBuilder: (context, index) {
+          final data = events[index];
+          return _MyEventCard(
+            event: data.event,
+            badgeLabel: 'Vendor',
+            badgeIcon: Icons.point_of_sale,
+            badgeColor: Colors.green,
+            showRoleSwitch: data.canUsher,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => VendorEventScreen(
+                    event: data.event,
+                    canSwitchToUsher: data.canUsher,
+                  ),
                 ),
-              ),
-            );
-          },
-        );
-      },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 }
