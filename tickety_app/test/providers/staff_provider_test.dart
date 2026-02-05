@@ -251,7 +251,7 @@ void main() {
       expect(notifier.state.isSearching, isFalse);
     });
 
-    test('search filters excluded users', () async {
+    test('search returns all users without filtering', () async {
       final results = [
         const UserSearchResult(id: '1', email: 'user1@example.com'),
         const UserSearchResult(id: '2', email: 'user2@example.com'),
@@ -261,10 +261,10 @@ void main() {
       when(() => mockRepository.searchUsersByEmail('user'))
           .thenAnswer((_) async => results);
 
-      await notifier.search('user', excludeUserIds: {'1', '3'});
+      await notifier.search('user');
 
-      expect(notifier.state.results.length, 1);
-      expect(notifier.state.results.first.id, '2');
+      // All results returned - filtering is now done at the UI level
+      expect(notifier.state.results.length, 3);
     });
 
     test('clear resets state', () async {

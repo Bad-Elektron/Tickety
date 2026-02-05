@@ -187,6 +187,42 @@ class StaffNotifier extends StateNotifier<StaffState> {
     }
   }
 
+  /// Update a staff member's role.
+  Future<bool> updateRole(String staffId, StaffRole newRole) async {
+    AppLogger.info(
+      'Updating staff role: $staffId -> ${newRole.value}',
+      tag: _tag,
+    );
+
+    // Optimistically update local state
+    final previousStaff = state.staff;
+    state = state.copyWith(
+      staff: state.staff
+          .map((s) => s.id == staffId ? s.copyWith(role: newRole) : s)
+          .toList(),
+    );
+
+    try {
+      await _repository.updateStaffRole(staffId, newRole);
+      AppLogger.info('Staff role updated: $staffId -> ${newRole.value}', tag: _tag);
+      return true;
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to update staff role $staffId',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      // Revert optimistic update
+      state = state.copyWith(
+        staff: previousStaff,
+        error: appError.userMessage,
+      );
+      return false;
+    }
+  }
+
   /// Clear error state.
   void clearError() {
     state = state.copyWith(clearError: true);
@@ -232,7 +268,7 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
   UserSearchNotifier(this._repository) : super(const UserSearchState());
 
   /// Search users by email.
-  Future<void> search(String query, {Set<String>? excludeUserIds}) async {
+  Future<void> search(String query) async {
     if (query.trim().length < 2) {
       state = state.copyWith(results: []);
       return;
@@ -244,15 +280,10 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
     try {
       final results = await _repository.searchUsersByEmail(query);
 
-      // Filter out excluded users (already on staff)
-      final filtered = excludeUserIds != null
-          ? results.where((r) => !excludeUserIds.contains(r.id)).toList()
-          : results;
-
-      AppLogger.debug('Found ${filtered.length} users matching query', tag: _tag);
+      AppLogger.debug('Found ${results.length} users matching query', tag: _tag);
 
       state = state.copyWith(
-        results: filtered,
+        results: results,
         isSearching: false,
       );
     } catch (e, s) {

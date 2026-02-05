@@ -2,7 +2,7 @@
 enum StaffRole {
   usher('usher', 'Usher', 'Can check tickets at entry'),
   seller('seller', 'Seller', 'Can sell tickets on the spot'),
-  manager('manager', 'Manager', 'Full access to event management');
+  manager('manager', 'Manager', 'Can check tickets, sell, and manage staff');
 
   const StaffRole(this.value, this.label, this.description);
 
@@ -82,4 +82,28 @@ class EventStaff {
   bool get canSellTickets => role == StaffRole.seller || role == StaffRole.manager;
   bool get canCheckTickets => true; // All staff can check tickets
   bool get canManageStaff => role == StaffRole.manager;
+
+  EventStaff copyWith({
+    String? id,
+    String? eventId,
+    String? userId,
+    StaffRole? role,
+    String? invitedEmail,
+    DateTime? acceptedAt,
+    DateTime? createdAt,
+    String? userName,
+    String? userEmail,
+  }) {
+    return EventStaff(
+      id: id ?? this.id,
+      eventId: eventId ?? this.eventId,
+      userId: userId ?? this.userId,
+      role: role ?? this.role,
+      invitedEmail: invitedEmail ?? this.invitedEmail,
+      acceptedAt: acceptedAt ?? this.acceptedAt,
+      createdAt: createdAt ?? this.createdAt,
+      userName: userName ?? this.userName,
+      userEmail: userEmail ?? this.userEmail,
+    );
+  }
 }
