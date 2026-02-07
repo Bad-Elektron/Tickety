@@ -30,6 +30,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
+  bool _isSearching = false;
 
   final _staffRepository = StaffRepository();
 
@@ -199,10 +200,74 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     // Watch my events state from Riverpod - server-side filtering!
     final myEventsState = ref.watch(myEventsProvider);
 
+    final filterLabels = {
+      MyEventsDateFilter.recent: 'Recent',
+      MyEventsDateFilter.upcoming: 'Upcoming',
+      MyEventsDateFilter.all: 'All',
+      MyEventsDateFilter.past: 'Past',
+    };
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Events'),
-        centerTitle: true,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                autofocus: true,
+                style: theme.textTheme.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: 'Search events...',
+                  hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text('My Events'),
+        centerTitle: !_isSearching,
+        actions: [
+          // Search toggle
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _searchController.clear();
+                  _searchFocusNode.unfocus();
+                  _onSearchChanged('');
+                }
+                _isSearching = !_isSearching;
+              });
+            },
+          ),
+          // Filter popup
+          PopupMenuButton<MyEventsDateFilter>(
+            icon: Icon(
+              Icons.filter_list,
+              color: myEventsState.dateFilter != MyEventsDateFilter.recent
+                  ? colorScheme.primary
+                  : null,
+            ),
+            onSelected: _onDateFilterChanged,
+            itemBuilder: (_) => MyEventsDateFilter.values.map((filter) {
+              final isSelected = myEventsState.dateFilter == filter;
+              return PopupMenuItem(
+                value: filter,
+                child: Row(
+                  children: [
+                    if (isSelected)
+                      Icon(Icons.check, size: 18, color: colorScheme.primary)
+                    else
+                      const SizedBox(width: 18),
+                    const SizedBox(width: 12),
+                    Text(filterLabels[filter]!),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -296,109 +361,11 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       return _buildEmptyCreatedState(theme, colorScheme);
     }
 
-    return Column(
-      children: [
-        // Search and filter header
-        _buildSearchAndFilters(theme, colorScheme, state),
-        // Events list or no results
-        Expanded(
-          child: state.events.isEmpty
-              ? _buildNoFilterResults(theme, colorScheme)
-              : _buildCreatedEventsList(state),
-        ),
-      ],
-    );
-  }
+    if (state.events.isEmpty) {
+      return _buildNoFilterResults(theme, colorScheme);
+    }
 
-  Widget _buildSearchAndFilters(ThemeData theme, ColorScheme colorScheme, MyEventsState state) {
-    final hasSearch = _searchController.text.isNotEmpty;
-    final filterLabels = {
-      MyEventsDateFilter.recent: 'Recent',
-      MyEventsDateFilter.upcoming: 'Upcoming',
-      MyEventsDateFilter.all: 'All',
-      MyEventsDateFilter.past: 'Past',
-    };
-
-    return Container(
-      color: colorScheme.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search events...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: hasSearch
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
-                        onPressed: () {
-                          _searchController.clear();
-                          _searchFocusNode.unfocus();
-                          _onSearchChanged('');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
-                ),
-              ),
-            ),
-          ),
-          // Filter chips
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: MyEventsDateFilter.values.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final filter = MyEventsDateFilter.values[index];
-                final isSelected = state.dateFilter == filter;
-                return FilterChip(
-                  label: Text(filterLabels[filter]!),
-                  selected: isSelected,
-                  onSelected: (_) => _onDateFilterChanged(filter),
-                  showCheckmark: false,
-                  selectedColor: colorScheme.primaryContainer,
-                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  labelStyle: TextStyle(
-                    color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurfaceVariant,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  side: BorderSide(
-                    color: isSelected ? colorScheme.primary : Colors.transparent,
-                  ),
-                );
-              },
-            ),
-          ),
-          // Loading indicator for server-side filtering
-          if (state.isLoading)
-            const LinearProgressIndicator(),
-          const SizedBox(height: 8),
-          Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-        ],
-      ),
-    );
+    return _buildCreatedEventsList(state);
   }
 
   Widget _buildNoFilterResults(ThemeData theme, ColorScheme colorScheme) {
@@ -507,18 +474,11 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       );
     }
 
-    return Column(
-      children: [
-        // Search and filter header (shared with created tab)
-        _buildSearchAndFilters(theme, colorScheme, state),
-        // Events list or no results
-        Expanded(
-          child: _filteredUsheringEvents.isEmpty
-              ? _buildNoFilterResults(theme, colorScheme)
-              : _buildUsheringEventsList(_filteredUsheringEvents),
-        ),
-      ],
-    );
+    if (_filteredUsheringEvents.isEmpty) {
+      return _buildNoFilterResults(theme, colorScheme);
+    }
+
+    return _buildUsheringEventsList(_filteredUsheringEvents);
   }
 
   Widget _buildSellingEventsTab({
@@ -544,18 +504,11 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
       );
     }
 
-    return Column(
-      children: [
-        // Search and filter header (shared with created tab)
-        _buildSearchAndFilters(theme, colorScheme, state),
-        // Events list or no results
-        Expanded(
-          child: _filteredSellingEvents.isEmpty
-              ? _buildNoFilterResults(theme, colorScheme)
-              : _buildSellingEventsList(_filteredSellingEvents),
-        ),
-      ],
-    );
+    if (_filteredSellingEvents.isEmpty) {
+      return _buildNoFilterResults(theme, colorScheme);
+    }
+
+    return _buildSellingEventsList(_filteredSellingEvents);
   }
 
   Widget _buildEmptyUsheringState(ThemeData theme, ColorScheme colorScheme) {

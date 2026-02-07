@@ -10,6 +10,7 @@ import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../../staff/presentation/manage_staff_screen.dart';
 import '../models/event_model.dart';
 import 'event_data_screen.dart';
+import 'manage_tickets_screen.dart';
 
 /// Admin screen for managing an event created by the user.
 class AdminEventScreen extends ConsumerStatefulWidget {
@@ -155,10 +156,16 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.confirmation_number,
-                    title: 'Mint Tickets',
-                    subtitle: 'Create more tickets for this event',
+                    title: 'Tickets',
+                    subtitle: 'View ticket types, mint more, or add discounts',
                     color: colorScheme.primary,
-                    onTap: () => _showMintTicketsSheet(context),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ManageTicketsScreen(event: event),
+                        ),
+                      );
+                    },
                   ),
                   const SizedBox(height: 12),
                   _AdminActionCard(
@@ -217,13 +224,6 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                       value: event.location!,
                       color: colorScheme.tertiary,
                     ),
-                  const SizedBox(height: 12),
-                  _InfoCard(
-                    icon: Icons.attach_money,
-                    title: 'Ticket Price',
-                    value: event.formattedPrice,
-                    color: colorScheme.secondary,
-                  ),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -252,15 +252,6 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
     final period = date.hour >= 12 ? 'PM' : 'AM';
 
     return '$weekday, $month $day at $hour:$minute $period';
-  }
-
-  void _showMintTicketsSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const _MintTicketsSheet(),
-    );
   }
 
   void _showManageUshersSheet(BuildContext context) {
@@ -651,145 +642,6 @@ class _TicketTearPainter extends CustomPainter {
   @override
   bool shouldRepaint(_TicketTearPainter oldDelegate) {
     return oldDelegate.color != color;
-  }
-}
-
-/// Bottom sheet for minting more tickets.
-class _MintTicketsSheet extends StatefulWidget {
-  const _MintTicketsSheet();
-
-  @override
-  State<_MintTicketsSheet> createState() => _MintTicketsSheetState();
-}
-
-class _MintTicketsSheetState extends State<_MintTicketsSheet> {
-  int _quantity = 10;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Icon(
-            Icons.confirmation_number,
-            size: 48,
-            color: colorScheme.primary,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Mint More Tickets',
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Current supply: 100 tickets',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 32),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _MintButton(
-                icon: Icons.remove,
-                onTap: _quantity > 1 ? () => setState(() => _quantity -= 10) : null,
-              ),
-              const SizedBox(width: 24),
-              Text(
-                '$_quantity',
-                style: theme.textTheme.displaySmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(width: 24),
-              _MintButton(
-                icon: Icons.add,
-                onTap: _quantity < 100 ? () => setState(() => _quantity += 10) : null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-          FilledButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Minted $_quantity new tickets'),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(56),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'Mint Tickets',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MintButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  const _MintButton({required this.icon, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isEnabled = onTap != null;
-
-    return Material(
-      color: isEnabled ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: 56,
-          height: 56,
-          child: Icon(
-            icon,
-            color: isEnabled ? colorScheme.onPrimaryContainer : colorScheme.onSurface.withValues(alpha: 0.3),
-            size: 28,
-          ),
-        ),
-      ),
-    );
   }
 }
 
