@@ -24,6 +24,9 @@ abstract class INotificationRepository {
   /// Delete a notification.
   Future<void> deleteNotification(String notificationId);
 
+  /// Delete all notifications for the current user.
+  Future<void> clearAll();
+
   /// Dispose resources (e.g., close streams).
   void dispose();
 }

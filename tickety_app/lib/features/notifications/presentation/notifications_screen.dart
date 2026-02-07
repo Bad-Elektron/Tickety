@@ -14,6 +14,11 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  bool _isSearching = false;
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -24,22 +29,117 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  List<NotificationModel> _filterNotifications(List<NotificationModel> notifications) {
+    if (_searchQuery.isEmpty) return notifications;
+    return notifications.where((n) {
+      return n.title.toLowerCase().contains(_searchQuery) ||
+          n.body.toLowerCase().contains(_searchQuery) ||
+          (n.eventTitle?.toLowerCase().contains(_searchQuery) ?? false);
+    }).toList();
+  }
+
+  void _confirmClearAll(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear all notifications?'),
+        content: const Text('This will permanently delete all your notifications.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ref.read(notificationProvider.notifier).clearAll();
+            },
+            child: const Text('Clear All'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final state = ref.watch(notificationProvider);
+    final filtered = _filterNotifications(state.notifications);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
-        centerTitle: true,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+                autofocus: true,
+                style: theme.textTheme.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: 'Search notifications...',
+                  hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text('Notifications'),
+        centerTitle: !_isSearching,
         actions: [
-          if (state.unreadCount > 0)
-            TextButton(
-              onPressed: () {
-                ref.read(notificationProvider.notifier).markAllAsRead();
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _searchController.clear();
+                  _searchFocusNode.unfocus();
+                  _searchQuery = '';
+                }
+                _isSearching = !_isSearching;
+              });
+            },
+          ),
+          if (state.notifications.isNotEmpty)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) {
+                if (value == 'mark_read') {
+                  ref.read(notificationProvider.notifier).markAllAsRead();
+                } else if (value == 'clear_all') {
+                  _confirmClearAll(context);
+                }
               },
-              child: const Text('Mark all read'),
+              itemBuilder: (_) => [
+                if (state.unreadCount > 0)
+                  const PopupMenuItem(
+                    value: 'mark_read',
+                    child: Row(
+                      children: [
+                        Icon(Icons.done_all, size: 18),
+                        SizedBox(width: 12),
+                        Text('Mark all as read'),
+                      ],
+                    ),
+                  ),
+                const PopupMenuItem(
+                  value: 'clear_all',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_sweep, size: 18),
+                      SizedBox(width: 12),
+                      Text('Clear all'),
+                    ],
+                  ),
+                ),
+              ],
             ),
         ],
       ),
@@ -49,10 +149,44 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               ? _buildErrorState(context, state.error!, theme, colorScheme)
               : state.notifications.isEmpty
                   ? _buildEmptyState(context, theme, colorScheme)
-                  : RefreshIndicator(
-                      onRefresh: () => ref.read(notificationProvider.notifier).refresh(),
-                      child: _buildNotificationList(context, state.notifications),
-                    ),
+                  : filtered.isEmpty
+                      ? _buildNoSearchResults(theme, colorScheme)
+                      : RefreshIndicator(
+                          onRefresh: () => ref.read(notificationProvider.notifier).refresh(),
+                          child: _buildNotificationList(context, filtered),
+                        ),
+    );
+  }
+
+  Widget _buildNoSearchResults(ThemeData theme, ColorScheme colorScheme) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.search_off_outlined,
+              size: 64,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No matching notifications',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try a different search term.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

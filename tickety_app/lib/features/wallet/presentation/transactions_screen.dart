@@ -44,6 +44,10 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   late TransactionCurrencyFilter _currencyFilter;
   TransactionTimeFilter _timeFilter = TransactionTimeFilter.all;
   final ScrollController _scrollController = ScrollController();
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  bool _isSearching = false;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -63,6 +67,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -83,9 +89,22 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       return []; // No crypto transactions yet
     }
 
+    // Filter by search query
+    var results = payments;
+    if (_searchQuery.isNotEmpty) {
+      results = results.where((payment) {
+        final typeLabel = _getTypeLabel(payment.type).toLowerCase();
+        final amount = payment.formattedAmount.toLowerCase();
+        final status = payment.status.value.toLowerCase();
+        return typeLabel.contains(_searchQuery) ||
+            amount.contains(_searchQuery) ||
+            status.contains(_searchQuery);
+      }).toList();
+    }
+
     // Filter by time period
     final now = DateTime.now();
-    final filtered = payments.where((payment) {
+    final filtered = results.where((payment) {
       switch (_timeFilter) {
         case TransactionTimeFilter.all:
           return true;
@@ -120,155 +139,153 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transactions'),
-        centerTitle: true,
-      ),
-      body: Column(
-        children: [
-          // Filters
-          _FiltersSection(
-            currencyFilter: _currencyFilter,
-            timeFilter: _timeFilter,
-            onCurrencyChanged: (filter) {
-              setState(() => _currencyFilter = filter);
-            },
-            onTimeChanged: (filter) {
-              setState(() => _timeFilter = filter);
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: (v) => setState(() => _searchQuery = v.trim().toLowerCase()),
+                autofocus: true,
+                style: theme.textTheme.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: 'Search transactions...',
+                  hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text('Transactions'),
+        centerTitle: !_isSearching,
+        actions: [
+          // Search toggle
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _searchController.clear();
+                  _searchFocusNode.unfocus();
+                  _searchQuery = '';
+                }
+                _isSearching = !_isSearching;
+              });
             },
           ),
-
-          // Transactions list
-          Expanded(
-            child: state.isLoading && state.payments.isEmpty
-                ? const Center(child: CircularProgressIndicator())
-                : state.error != null && state.payments.isEmpty
-                    ? _ErrorView(
-                        error: state.error!,
-                        onRetry: () =>
-                            ref.read(paymentHistoryProvider.notifier).load(),
-                      )
-                    : filteredPayments.isEmpty
-                        ? _EmptyView(currencyFilter: _currencyFilter)
-                        : RefreshIndicator(
-                            onRefresh: () => ref
-                                .read(paymentHistoryProvider.notifier)
-                                .refresh(),
-                            child: ListView.builder(
-                              controller: _scrollController,
-                              padding: const EdgeInsets.all(16),
-                              itemCount: filteredPayments.length +
-                                  (state.isLoadingMore ? 1 : 0),
-                              itemBuilder: (context, index) {
-                                if (index == filteredPayments.length) {
-                                  return const Padding(
-                                    padding: EdgeInsets.all(16),
-                                    child: Center(
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  );
-                                }
-                                final payment = filteredPayments[index];
-                                return _TransactionCard(
-                                  payment: payment,
-                                  showDate: index == 0 ||
-                                      !_isSameDay(
-                                        payment.createdAt,
-                                        filteredPayments[index - 1].createdAt,
-                                      ),
-                                );
-                              },
-                            ),
-                          ),
+          // Currency filter
+          PopupMenuButton<TransactionCurrencyFilter>(
+            icon: Icon(
+              _getCurrencyIcon(_currencyFilter),
+              color: _currencyFilter != TransactionCurrencyFilter.all
+                  ? colorScheme.primary
+                  : null,
+            ),
+            onSelected: (filter) => setState(() => _currencyFilter = filter),
+            itemBuilder: (_) => TransactionCurrencyFilter.values.map((filter) {
+              final isSelected = _currencyFilter == filter;
+              return PopupMenuItem(
+                value: filter,
+                child: Row(
+                  children: [
+                    Icon(
+                      _getCurrencyIcon(filter),
+                      size: 18,
+                      color: isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(filter.label),
+                    if (isSelected) ...[
+                      const Spacer(),
+                      Icon(Icons.check, size: 18, color: colorScheme.primary),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+          // Time filter
+          PopupMenuButton<TransactionTimeFilter>(
+            icon: Icon(
+              Icons.filter_list,
+              color: _timeFilter != TransactionTimeFilter.all
+                  ? colorScheme.primary
+                  : null,
+            ),
+            onSelected: (filter) => setState(() => _timeFilter = filter),
+            itemBuilder: (_) => TransactionTimeFilter.values.map((filter) {
+              final isSelected = _timeFilter == filter;
+              return PopupMenuItem(
+                value: filter,
+                child: Row(
+                  children: [
+                    if (isSelected)
+                      Icon(Icons.check, size: 18, color: colorScheme.primary)
+                    else
+                      const SizedBox(width: 18),
+                    const SizedBox(width: 12),
+                    Text(filter.label),
+                  ],
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
+      body: state.isLoading && state.payments.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : state.error != null && state.payments.isEmpty
+              ? _ErrorView(
+                  error: state.error!,
+                  onRetry: () =>
+                      ref.read(paymentHistoryProvider.notifier).load(),
+                )
+              : filteredPayments.isEmpty
+                  ? _EmptyView(currencyFilter: _currencyFilter)
+                  : RefreshIndicator(
+                      onRefresh: () => ref
+                          .read(paymentHistoryProvider.notifier)
+                          .refresh(),
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: filteredPayments.length +
+                            (state.isLoadingMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == filteredPayments.length) {
+                            return const Padding(
+                              padding: EdgeInsets.all(16),
+                              child: Center(
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+                          final payment = filteredPayments[index];
+                          return _TransactionCard(
+                            payment: payment,
+                            showDate: index == 0 ||
+                                !_isSameDay(
+                                  payment.createdAt,
+                                  filteredPayments[index - 1].createdAt,
+                                ),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 
   bool _isSameDay(DateTime a, DateTime b) {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
-}
 
-/// Filter chips section.
-class _FiltersSection extends StatelessWidget {
-  final TransactionCurrencyFilter currencyFilter;
-  final TransactionTimeFilter timeFilter;
-  final ValueChanged<TransactionCurrencyFilter> onCurrencyChanged;
-  final ValueChanged<TransactionTimeFilter> onTimeChanged;
-
-  const _FiltersSection({
-    required this.currencyFilter,
-    required this.timeFilter,
-    required this.onCurrencyChanged,
-    required this.onTimeChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Currency filter
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: TransactionCurrencyFilter.values.map((filter) {
-                final isSelected = currencyFilter == filter;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    selected: isSelected,
-                    label: Text(filter.label),
-                    onSelected: (_) => onCurrencyChanged(filter),
-                    showCheckmark: false,
-                    avatar: Icon(
-                      _getCurrencyIcon(filter),
-                      size: 18,
-                      color: isSelected
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Time filter
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: TransactionTimeFilter.values.map((filter) {
-                final isSelected = timeFilter == filter;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FilterChip(
-                    selected: isSelected,
-                    label: Text(filter.label),
-                    onSelected: (_) => onTimeChanged(filter),
-                    showCheckmark: false,
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
-    );
+  String _getTypeLabel(PaymentType type) {
+    switch (type) {
+      case PaymentType.primaryPurchase:
+        return 'Ticket Purchase';
+      case PaymentType.resalePurchase:
+        return 'Resale Purchase';
+      case PaymentType.vendorPos:
+        return 'Vendor Purchase';
+    }
   }
 
   IconData _getCurrencyIcon(TransactionCurrencyFilter filter) {

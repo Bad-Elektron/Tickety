@@ -29,6 +29,7 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   Timer? _searchDebounce;
+  bool _isSearching = false;
 
   TicketDateFilter _dateFilter = TicketDateFilter.recent;
   String _searchQuery = '';
@@ -162,10 +163,72 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
     // Check if filters are applied
     final hasFilters = _searchQuery.isNotEmpty || _dateFilter != TicketDateFilter.recent;
 
+    final filterLabels = {
+      TicketDateFilter.recent: 'Recent',
+      TicketDateFilter.upcoming: 'Upcoming',
+      TicketDateFilter.all: 'All',
+      TicketDateFilter.past: 'Past',
+    };
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Tickets'),
-        centerTitle: true,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                autofocus: true,
+                style: theme.textTheme.bodyLarge,
+                decoration: InputDecoration(
+                  hintText: 'Search events...',
+                  hintStyle: theme.textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  border: InputBorder.none,
+                ),
+              )
+            : const Text('My Tickets'),
+        centerTitle: !_isSearching,
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                if (_isSearching) {
+                  _searchController.clear();
+                  _searchFocusNode.unfocus();
+                  _onSearchChanged('');
+                }
+                _isSearching = !_isSearching;
+              });
+            },
+          ),
+          PopupMenuButton<TicketDateFilter>(
+            icon: Icon(
+              Icons.filter_list,
+              color: _dateFilter != TicketDateFilter.recent
+                  ? colorScheme.primary
+                  : null,
+            ),
+            onSelected: _onDateFilterChanged,
+            itemBuilder: (_) => TicketDateFilter.values.map((filter) {
+              final isSelected = _dateFilter == filter;
+              return PopupMenuItem(
+                value: filter,
+                child: Row(
+                  children: [
+                    if (isSelected)
+                      Icon(Icons.check, size: 18, color: colorScheme.primary)
+                    else
+                      const SizedBox(width: 18),
+                    const SizedBox(width: 12),
+                    Text(filterLabels[filter]!),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
       body: ticketsState.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -186,108 +249,13 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
     final colorScheme = theme.colorScheme;
     final groups = _groupTicketsByEvent(tickets);
 
-    return Column(
-      children: [
-        // Search and filter header
-        _buildSearchAndFilters(theme, colorScheme),
-        // Content
-        Expanded(
-          child: groups.isEmpty
-              ? _buildNoFilterResults(theme, colorScheme)
-              : RefreshIndicator(
-                  onRefresh: () => ref.read(myTicketsProvider.notifier).refresh(),
-                  child: _buildGroupedTicketList(context, groups),
-                ),
-        ),
-      ],
-    );
-  }
+    if (groups.isEmpty) {
+      return _buildNoFilterResults(theme, colorScheme);
+    }
 
-  Widget _buildSearchAndFilters(ThemeData theme, ColorScheme colorScheme) {
-    final hasSearch = _searchController.text.isNotEmpty;
-    final filterLabels = {
-      TicketDateFilter.recent: 'Recent',
-      TicketDateFilter.upcoming: 'Upcoming',
-      TicketDateFilter.all: 'All',
-      TicketDateFilter.past: 'Past',
-    };
-
-    return Container(
-      color: colorScheme.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Search bar
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _searchFocusNode,
-              onChanged: _onSearchChanged,
-              decoration: InputDecoration(
-                hintText: 'Search by event name...',
-                prefixIcon: const Icon(Icons.search, size: 20),
-                suffixIcon: hasSearch
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 20),
-                        onPressed: () {
-                          _searchController.clear();
-                          _searchFocusNode.unfocus();
-                          _onSearchChanged('');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
-                ),
-              ),
-            ),
-          ),
-          // Filter chips
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: TicketDateFilter.values.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final filter = TicketDateFilter.values[index];
-                final isSelected = _dateFilter == filter;
-                return FilterChip(
-                  label: Text(filterLabels[filter]!),
-                  selected: isSelected,
-                  onSelected: (_) => _onDateFilterChanged(filter),
-                  showCheckmark: false,
-                  selectedColor: colorScheme.primaryContainer,
-                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  labelStyle: TextStyle(
-                    color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurfaceVariant,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                  ),
-                  side: BorderSide(
-                    color: isSelected ? colorScheme.primary : Colors.transparent,
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 8),
-          Divider(height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
-        ],
-      ),
+    return RefreshIndicator(
+      onRefresh: () => ref.read(myTicketsProvider.notifier).refresh(),
+      child: _buildGroupedTicketList(context, groups),
     );
   }
 

@@ -75,7 +75,11 @@
       "WebFetch(domain:pub.dev)",
       "Bash(flutter pub:*)",
       "WebFetch(domain:github.com)",
-      "Bash(flutter emulators:*)"
+      "Bash(flutter emulators:*)",
+      "Bash(\"C:\\\\Users\\\\azori\\\\AppData\\\\Local\\\\Pub\\\\Cache\\\\bin\\\\flutter.bat\" attach --debug-port=53178)",
+      "Bash(ren:*)",
+      "Bash(grep:*)",
+      "Bash(^d \")"
     ]
   }
 }

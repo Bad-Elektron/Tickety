@@ -266,6 +266,22 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     }
   }
 
+  /// Clear all notifications.
+  Future<void> clearAll() async {
+    AppLogger.debug('Clearing all notifications', tag: _tag);
+
+    try {
+      await _repository?.clearAll();
+
+      state = state.copyWith(
+        notifications: [],
+        unreadCount: 0,
+      );
+    } catch (e, s) {
+      AppLogger.error('Failed to clear all notifications', error: e, stackTrace: s, tag: _tag);
+    }
+  }
+
   /// Re-initialize when user logs in.
   void onUserLoggedIn() {
     AppLogger.debug('User logged in, initializing notifications', tag: _tag);

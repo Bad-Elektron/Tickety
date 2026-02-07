@@ -211,6 +211,26 @@ class NotificationRepository implements INotificationRepository {
   }
 
   @override
+  Future<void> clearAll() async {
+    final userId = SupabaseService.instance.currentUser?.id;
+    if (userId == null) return;
+
+    AppLogger.debug('Clearing all notifications for user: $userId', tag: _tag);
+
+    try {
+      await _client
+          .from('notifications')
+          .delete()
+          .eq('user_id', userId);
+
+      AppLogger.info('All notifications cleared', tag: _tag);
+    } catch (e, s) {
+      AppLogger.error('Failed to clear all notifications', error: e, stackTrace: s, tag: _tag);
+      rethrow;
+    }
+  }
+
+  @override
   void dispose() {
     AppLogger.debug('Disposing notification repository', tag: _tag);
     _channel?.unsubscribe();
