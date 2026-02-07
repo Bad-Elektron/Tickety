@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../core/state/app_state.dart';
+import '../../../core/utils/feature_gate.dart';
 import '../../events/data/data.dart';
 import '../../events/models/event_model.dart';
 import '../data/ticket_repository.dart';
@@ -66,25 +68,29 @@ class _StaffDashboardScreenState extends ConsumerState<StaffDashboardScreen> {
         title: const Text('Staff Dashboard'),
         centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _staffEvents.isEmpty
-              ? _EmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadStaffEvents,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _staffEvents.length,
-                    itemBuilder: (context, index) {
-                      final data = _staffEvents[index];
-                      return _EventCard(
-                        data: data,
-                        onSellTickets: () => _navigateToSellTickets(data.event),
-                        onCheckTickets: () => _navigateToCheckTickets(data.event),
-                      );
-                    },
+      body: FeatureGate.gated(
+        ref: ref,
+        requiredTier: AccountTier.enterprise,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _staffEvents.isEmpty
+                ? _EmptyState()
+                : RefreshIndicator(
+                    onRefresh: _loadStaffEvents,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _staffEvents.length,
+                      itemBuilder: (context, index) {
+                        final data = _staffEvents[index];
+                        return _EventCard(
+                          data: data,
+                          onSellTickets: () => _navigateToSellTickets(data.event),
+                          onCheckTickets: () => _navigateToCheckTickets(data.event),
+                        );
+                      },
+                    ),
                   ),
-                ),
+      ),
     );
   }
 

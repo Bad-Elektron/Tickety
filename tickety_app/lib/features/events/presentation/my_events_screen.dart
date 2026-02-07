@@ -5,8 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
+import '../../../core/state/app_state.dart';
+import '../../../core/utils/feature_gate.dart';
 import '../../staff/data/staff_repository.dart';
 import '../../staff/models/staff_role.dart';
+import '../../staff/presentation/staff_dashboard_screen.dart';
+import '../../subscriptions/models/tier_benefits.dart';
+import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
 import '../models/event_model.dart';
 import 'admin_event_screen.dart';
@@ -137,6 +142,76 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     });
   }
 
+  void _onStaffDashboardTap() {
+    if (FeatureGate.hasAccess(ref, AccountTier.enterprise)) {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const StaffDashboardScreen()),
+      );
+    } else {
+      _showEnterpriseUpgradeSheet();
+    }
+  }
+
+  void _showEnterpriseUpgradeSheet() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final tierColor = TierBenefits.getColor(AccountTier.enterprise);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_outline,
+              size: 48,
+              color: tierColor.withValues(alpha: 0.7),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Enterprise Feature',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The cross-event Staff Dashboard is available on the Enterprise plan. '
+              'Get a unified view of all your staff assignments and analytics.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const SubscriptionScreen(),
+                  ),
+                );
+              },
+              icon: Icon(AccountTier.enterprise.icon),
+              label: const Text('Upgrade'),
+              style: FilledButton.styleFrom(
+                backgroundColor: tierColor,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _loadStaffEvents() async {
     if (!SupabaseService.instance.isAuthenticated) {
       setState(() {
@@ -227,6 +302,13 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             : const Text('My Events'),
         centerTitle: !_isSearching,
         actions: [
+          // Staff Dashboard - only show when user has staff events
+          if (_usheringEvents.isNotEmpty || _sellingEvents.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.dashboard_outlined),
+              tooltip: 'Staff Dashboard',
+              onPressed: () => _onStaffDashboardTap(),
+            ),
           // Search toggle
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),

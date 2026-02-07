@@ -8,7 +8,6 @@ import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../auth/auth.dart';
 import '../../settings/settings.dart';
-import '../../staff/staff.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
@@ -63,18 +62,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const ProfileSectionHeader(title: 'Account'),
             ProfileMenuCard(
               children: [
-                ProfileMenuItem(
-                  icon: Icons.badge_outlined,
-                  title: 'Staff Dashboard',
-                  subtitle: 'Manage events as staff',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const StaffDashboardScreen(),
-                      ),
-                    );
-                  },
-                ),
                 ProfileMenuItem(
                   icon: Icons.settings_outlined,
                   title: 'Settings',
