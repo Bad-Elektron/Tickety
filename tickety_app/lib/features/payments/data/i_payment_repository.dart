@@ -1,5 +1,6 @@
 import '../../../core/models/models.dart';
 import '../models/payment.dart';
+import '../models/payment_method.dart';
 
 /// Interface for payment data operations.
 ///
@@ -56,4 +57,16 @@ abstract class IPaymentRepository {
     String? stripeChargeId,
     String? ticketId,
   });
+
+  /// Get saved payment methods (cards) for the current user.
+  Future<List<PaymentMethodCard>> getPaymentMethods();
+
+  /// Create a setup intent for adding a new card.
+  Future<SetupIntentResponse> createSetupIntent();
+
+  /// Delete (detach) a saved payment method.
+  Future<void> deletePaymentMethod(String paymentMethodId);
+
+  /// Set a payment method as the default for the customer.
+  Future<void> setDefaultPaymentMethod(String paymentMethodId);
 }

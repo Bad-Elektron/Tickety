@@ -10,6 +10,7 @@ import '../../auth/auth.dart';
 import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
+import '../../payments/payments.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
 
@@ -113,6 +114,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.credit_card_outlined,
                   title: 'Payment Methods',
                   subtitle: 'Cards and wallets',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const PaymentMethodsScreen(),
+                      ),
+                    );
+                  },
                 ),
                 ProfileMenuItem(
                   icon: Icons.history_outlined,

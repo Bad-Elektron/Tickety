@@ -159,14 +159,14 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     // Get user info for ticket
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email, full_name')
+      .select('email, display_name')
       .eq('id', user_id)
       .single()
 
     // Get user's auth email as fallback
     const { data: authData } = await supabase.auth.admin.getUserById(user_id)
     const ownerEmail = profile?.email || authData?.user?.email || null
-    const ownerName = profile?.full_name || null
+    const ownerName = profile?.display_name || null
 
     // Calculate price per ticket
     const pricePerTicket = Math.round(paymentIntent.amount / quantity)

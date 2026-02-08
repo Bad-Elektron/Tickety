@@ -110,7 +110,7 @@ serve(async (req) => {
     console.log('Step 1: Fetching profile...')
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_customer_id, email, full_name')
+      .select('stripe_customer_id, email, display_name')
       .eq('id', user.id)
       .single()
 
@@ -126,7 +126,7 @@ serve(async (req) => {
       try {
         const customer = await stripe.customers.create({
           email: user.email,
-          name: profile?.full_name || undefined,
+          name: profile?.display_name || undefined,
           metadata: {
             supabase_user_id: user.id,
           },

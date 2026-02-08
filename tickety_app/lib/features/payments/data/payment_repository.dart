@@ -2,6 +2,7 @@ import '../../../core/errors/errors.dart';
 import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
 import '../models/payment.dart';
+import '../models/payment_method.dart';
 import 'i_payment_repository.dart';
 
 const _tag = 'PaymentRepository';
@@ -48,6 +49,7 @@ class PaymentRepository implements IPaymentRepository {
     }
 
     final data = response.data as Map<String, dynamic>;
+    print('>>> CREATE-PAYMENT-INTENT RESPONSE: $data');
     AppLogger.info('Payment intent created: ${data['payment_intent_id']}', tag: _tag);
     return PaymentIntentResponse.fromJson(data);
   }
@@ -279,5 +281,113 @@ class PaymentRepository implements IPaymentRepository {
       tag: _tag,
     );
     return payment;
+  }
+
+  @override
+  Future<List<PaymentMethodCard>> getPaymentMethods() async {
+    AppLogger.debug('Fetching saved payment methods', tag: _tag);
+
+    // Debug: check Stripe state
+    final debugResponse = await _client.functions.invoke(
+      'manage-payment-methods',
+      body: {'action': 'debug'},
+    );
+    if (debugResponse.status == 200) {
+      print('>>> PAYMENT METHODS DEBUG: ${debugResponse.data}');
+    }
+
+    final response = await _client.functions.invoke(
+      'manage-payment-methods',
+      body: {'action': 'list'},
+    );
+
+    if (response.status != 200) {
+      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      AppLogger.error('Failed to list payment methods: $error', tag: _tag);
+      throw PaymentException(
+        'Failed to load payment methods',
+        technicalDetails: 'Edge function error (${response.status}): $error',
+      );
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    print('>>> PAYMENT METHODS LIST RESPONSE: $data');
+    final cards = (data['cards'] as List<dynamic>)
+        .map((json) => PaymentMethodCard.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    AppLogger.info('Found ${cards.length} saved payment methods', tag: _tag);
+    return cards;
+  }
+
+  @override
+  Future<SetupIntentResponse> createSetupIntent() async {
+    AppLogger.info('Creating setup intent for new card', tag: _tag);
+
+    final response = await _client.functions.invoke(
+      'manage-payment-methods',
+      body: {'action': 'create_setup_intent'},
+    );
+
+    if (response.status != 200) {
+      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      AppLogger.error('Failed to create setup intent: $error', tag: _tag);
+      throw PaymentException(
+        'Failed to set up card addition',
+        technicalDetails: 'Edge function error (${response.status}): $error',
+      );
+    }
+
+    final data = response.data as Map<String, dynamic>;
+    AppLogger.info('Setup intent created: ${data['setup_intent_id']}', tag: _tag);
+    return SetupIntentResponse.fromJson(data);
+  }
+
+  @override
+  Future<void> deletePaymentMethod(String paymentMethodId) async {
+    AppLogger.info('Deleting payment method: $paymentMethodId', tag: _tag);
+
+    final response = await _client.functions.invoke(
+      'manage-payment-methods',
+      body: {
+        'action': 'delete',
+        'payment_method_id': paymentMethodId,
+      },
+    );
+
+    if (response.status != 200) {
+      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      AppLogger.error('Failed to delete payment method: $error', tag: _tag);
+      throw PaymentException(
+        'Failed to remove card',
+        technicalDetails: 'Edge function error (${response.status}): $error',
+      );
+    }
+
+    AppLogger.info('Payment method deleted: $paymentMethodId', tag: _tag);
+  }
+
+  @override
+  Future<void> setDefaultPaymentMethod(String paymentMethodId) async {
+    AppLogger.info('Setting default payment method: $paymentMethodId', tag: _tag);
+
+    final response = await _client.functions.invoke(
+      'manage-payment-methods',
+      body: {
+        'action': 'set_default',
+        'payment_method_id': paymentMethodId,
+      },
+    );
+
+    if (response.status != 200) {
+      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      AppLogger.error('Failed to set default payment method: $error', tag: _tag);
+      throw PaymentException(
+        'Failed to set default card',
+        technicalDetails: 'Edge function error (${response.status}): $error',
+      );
+    }
+
+    AppLogger.info('Default payment method updated: $paymentMethodId', tag: _tag);
   }
 }

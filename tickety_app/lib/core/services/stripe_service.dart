@@ -129,6 +129,45 @@ class StripeService {
     );
   }
 
+  /// Initialize the Payment Sheet in setup mode for saving a card.
+  ///
+  /// [setupIntentClientSecret] - The client secret from the SetupIntent created server-side.
+  /// [customerId] - Stripe customer ID.
+  /// [customerEphemeralKeySecret] - Ephemeral key for customer operations.
+  /// [merchantDisplayName] - Name shown in the payment sheet.
+  ///
+  /// Throws [PaymentException] if called on an unsupported platform.
+  Future<void> initSetupSheet({
+    required String setupIntentClientSecret,
+    String? customerId,
+    String? customerEphemeralKeySecret,
+    String merchantDisplayName = 'Tickety',
+  }) async {
+    if (!isSupported) {
+      throw PaymentException.platformNotSupported();
+    }
+
+    AppLogger.debug(
+      'Initializing payment sheet in setup mode',
+      tag: 'StripeService',
+    );
+
+    await Stripe.instance.initPaymentSheet(
+      paymentSheetParameters: SetupPaymentSheetParameters(
+        setupIntentClientSecret: setupIntentClientSecret,
+        customerId: customerId,
+        customerEphemeralKeySecret: customerEphemeralKeySecret,
+        merchantDisplayName: merchantDisplayName,
+        style: ThemeMode.system,
+      ),
+    );
+
+    AppLogger.debug(
+      'Payment sheet (setup mode) initialized successfully',
+      tag: 'StripeService',
+    );
+  }
+
   /// Present the Payment Sheet to the user.
   ///
   /// Returns true if payment was successful, false if cancelled.

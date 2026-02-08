@@ -79,7 +79,7 @@ serve(async (req) => {
     // Also check the legacy field in profiles (from old flow)
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_connect_account_id, email, full_name')
+      .select('stripe_connect_account_id, email, display_name')
       .eq('id', user.id)
       .single()
 

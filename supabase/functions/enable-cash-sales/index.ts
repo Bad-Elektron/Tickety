@@ -113,7 +113,7 @@ serve(async (req) => {
       // Check if organizer has a customer ID in their profile
       const { data: profile } = await supabaseAdmin
         .from('profiles')
-        .select('stripe_customer_id, email, full_name')
+        .select('stripe_customer_id, email, display_name')
         .eq('id', user.id)
         .single()
 
@@ -124,7 +124,7 @@ serve(async (req) => {
         console.log('Creating Stripe customer for organizer')
         const customer = await stripe.customers.create({
           email: user.email,
-          name: profile?.full_name || undefined,
+          name: profile?.display_name || undefined,
           metadata: {
             supabase_user_id: user.id,
             type: 'organizer',

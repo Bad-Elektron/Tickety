@@ -22,9 +22,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    // Refresh notifications when screen opens
+    // Refresh notifications and reset badge when screen opens
     Future.microtask(() {
-      ref.read(notificationProvider.notifier).refresh();
+      ref.read(notificationProvider.notifier)
+        ..refresh()
+        ..resetBadgeCount();
     });
   }
 

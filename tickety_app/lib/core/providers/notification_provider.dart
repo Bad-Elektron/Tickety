@@ -13,12 +13,17 @@ const _tag = 'NotificationProvider';
 class NotificationState {
   final List<NotificationModel> notifications;
   final int unreadCount;
+  /// Badge count shown on the notification icon.
+  /// Resets to 0 when the user opens the notifications screen.
+  /// Only increments when new notifications arrive after the screen was viewed.
+  final int badgeCount;
   final bool isLoading;
   final String? error;
 
   const NotificationState({
     this.notifications = const [],
     this.unreadCount = 0,
+    this.badgeCount = 0,
     this.isLoading = false,
     this.error,
   });
@@ -26,6 +31,7 @@ class NotificationState {
   NotificationState copyWith({
     List<NotificationModel>? notifications,
     int? unreadCount,
+    int? badgeCount,
     bool? isLoading,
     String? error,
     bool clearError = false,
@@ -33,6 +39,7 @@ class NotificationState {
     return NotificationState(
       notifications: notifications ?? this.notifications,
       unreadCount: unreadCount ?? this.unreadCount,
+      badgeCount: badgeCount ?? this.badgeCount,
       isLoading: isLoading ?? this.isLoading,
       error: clearError ? null : (error ?? this.error),
     );
@@ -97,20 +104,26 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
         final unreadCount = notifications.where((n) => !n.read).length;
 
-        // Check for new notifications to show local notification
+        // Check for new notifications to show local notification and bump badge
+        var newCount = 0;
         if (state.notifications.isNotEmpty && notifications.isNotEmpty) {
           final newNotifications = notifications.where(
             (n) => !state.notifications.any((old) => old.id == n.id),
           );
+          newCount = newNotifications.length;
 
           for (final notification in newNotifications) {
             _showLocalNotification(notification);
           }
+        } else if (state.notifications.isEmpty && notifications.isNotEmpty) {
+          // First load — badge = unread count
+          newCount = unreadCount;
         }
 
         state = state.copyWith(
           notifications: notifications,
           unreadCount: unreadCount,
+          badgeCount: state.badgeCount + newCount,
           isLoading: false,
           clearError: true,
         );
@@ -184,6 +197,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       state = state.copyWith(
         notifications: notifications,
         unreadCount: unreadCount,
+        // Don't touch badgeCount on refresh — it's managed separately
         isLoading: false,
       );
     } catch (e, s) {
@@ -266,6 +280,13 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     }
   }
 
+  /// Reset the badge counter to zero without marking notifications as read.
+  void resetBadgeCount() {
+    if (state.badgeCount > 0) {
+      state = state.copyWith(badgeCount: 0);
+    }
+  }
+
   /// Clear all notifications.
   Future<void> clearAll() async {
     AppLogger.debug('Clearing all notifications', tag: _tag);
@@ -324,6 +345,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
     state = state.copyWith(
       notifications: updatedNotifications,
       unreadCount: state.unreadCount + 1,
+      badgeCount: state.badgeCount + 1,
     );
 
     // Show local notification
@@ -351,12 +373,13 @@ final notificationProvider =
   return NotificationNotifier();
 });
 
-/// Convenience provider for unread notification count.
+/// Convenience provider for the badge count shown on the notification icon.
+/// Resets when the user opens the notifications screen.
 final unreadNotificationCountProvider = Provider<int>((ref) {
-  return ref.watch(notificationProvider).unreadCount;
+  return ref.watch(notificationProvider).badgeCount;
 });
 
-/// Convenience provider for checking if there are unread notifications.
+/// Convenience provider for checking if the badge should be shown.
 final hasUnreadNotificationsProvider = Provider<bool>((ref) {
   return ref.watch(unreadNotificationCountProvider) > 0;
 });

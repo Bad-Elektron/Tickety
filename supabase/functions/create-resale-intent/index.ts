@@ -160,7 +160,7 @@ serve(async (req) => {
     // Get or create Stripe customer for buyer
     const { data: buyerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_customer_id, email, full_name')
+      .select('stripe_customer_id, email, display_name')
       .eq('id', user.id)
       .single()
 
@@ -169,7 +169,7 @@ serve(async (req) => {
     if (!customerId) {
       const customer = await stripe.customers.create({
         email: user.email,
-        name: buyerProfile?.full_name || undefined,
+        name: buyerProfile?.display_name || undefined,
         metadata: { supabase_user_id: user.id },
       })
       customerId = customer.id

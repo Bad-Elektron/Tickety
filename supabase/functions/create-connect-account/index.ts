@@ -48,7 +48,7 @@ serve(async (req) => {
     // Check if user already has a Connect account
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_connect_account_id, email, full_name')
+      .select('stripe_connect_account_id, email, display_name')
       .eq('id', user.id)
       .single()
 

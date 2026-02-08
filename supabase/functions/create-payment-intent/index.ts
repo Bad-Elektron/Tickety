@@ -116,38 +116,56 @@ serve(async (req) => {
       }
     }
 
-    // Get or create Stripe customer
-    const { data: profile } = await supabaseClient
+    // Get or create Stripe customer (use admin client to bypass RLS)
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_customer_id, email, full_name')
+      .select('stripe_customer_id, email, display_name')
       .eq('id', user.id)
       .single()
+
+    console.log('Profile lookup:', {
+      userId: user.id,
+      stripeCustomerId: profile?.stripe_customer_id || 'NULL',
+      profileError: profileError?.message || 'none'
+    })
 
     let customerId = profile?.stripe_customer_id
 
     if (!customerId) {
       // Create new Stripe customer
+      console.log('No existing Stripe customer, creating new one')
       const customer = await stripe.customers.create({
         email: user.email,
-        name: profile?.full_name || undefined,
+        name: profile?.display_name || undefined,
         metadata: {
           supabase_user_id: user.id,
         },
       })
       customerId = customer.id
+      console.log('Created new Stripe customer:', customerId)
 
-      // Save customer ID to profile (use admin client to bypass RLS)
+      // Save customer ID to profile
       await supabaseAdmin
         .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id)
+    } else {
+      console.log('Using existing Stripe customer:', customerId)
     }
+
+    // Check how many saved payment methods the customer has
+    const savedMethods = await stripe.paymentMethods.list({
+      customer: customerId,
+      type: 'card',
+    })
+    console.log(`Customer ${customerId} has ${savedMethods.data.length} saved cards`)
 
     // Create ephemeral key for the customer
     const ephemeralKey = await stripe.ephemeralKeys.create(
       { customer: customerId },
       { apiVersion: '2023-10-16' }
     )
+    console.log('Ephemeral key created, secret length:', ephemeralKey.secret?.length || 0)
 
     // Generate idempotency key
     const idempotencyKey = `pi_${user.id}_${event_id}_${Date.now()}`
@@ -203,6 +221,13 @@ serve(async (req) => {
         customer_id: customerId,
         ephemeral_key: ephemeralKey.secret,
         payment_id: payment?.id,
+        _debug: {
+          profile_customer_id: profile?.stripe_customer_id || 'NULL',
+          profile_error: profileError?.message || 'none',
+          used_customer: customerId,
+          created_new: !profile?.stripe_customer_id,
+          saved_cards: savedMethods.data.length,
+        },
       }),
       {
         status: 200,

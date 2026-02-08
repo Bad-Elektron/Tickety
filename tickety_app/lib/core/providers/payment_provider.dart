@@ -90,7 +90,10 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
       );
 
       final paymentIntent = await _repository.createPaymentIntent(request);
-      AppLogger.debug('Got payment intent: ${paymentIntent.paymentIntentId}', tag: _tag);
+      print('>>> CHECKOUT: paymentIntentId=${paymentIntent.paymentIntentId}, '
+          'customerId=${paymentIntent.customerId}, '
+          'hasEphemeralKey=${paymentIntent.ephemeralKey != null}, '
+          'ephemeralKeyLength=${paymentIntent.ephemeralKey?.length ?? 0}');
 
       // Initialize the Stripe Payment Sheet
       await StripeService.instance.initPaymentSheet(
@@ -99,7 +102,7 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
         customerEphemeralKeySecret: paymentIntent.ephemeralKey,
       );
 
-      AppLogger.info('Payment sheet ready for primary purchase', tag: _tag);
+      print('>>> CHECKOUT: Payment sheet initialized successfully');
 
       state = state.copyWith(
         isLoading: false,
