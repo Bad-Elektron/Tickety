@@ -3,21 +3,25 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/graphics/graphics.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../../../core/utils/utils.dart';
+import '../../../shared/widgets/limit_reached_banner.dart';
 import '../../auth/auth.dart';
+import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
 import '../data/supabase_event_repository.dart' show TicketTypeInput;
 import '../models/event_tag.dart';
 
 /// Screen for creating a new event.
-class CreateEventScreen extends StatefulWidget {
+class CreateEventScreen extends ConsumerStatefulWidget {
   const CreateEventScreen({super.key});
 
   @override
-  State<CreateEventScreen> createState() => _CreateEventScreenState();
+  ConsumerState<CreateEventScreen> createState() => _CreateEventScreenState();
 }
 
 /// Predefined ticket type names in order of suggestion.
@@ -127,7 +131,7 @@ class _TicketType {
   }
 }
 
-class _CreateEventScreenState extends State<CreateEventScreen> {
+class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _subtitleController = TextEditingController();
@@ -717,6 +721,24 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   void _addTicketType() {
+    final limitCheck = ref.read(canAddTicketTypeProvider(_ticketTypes.length));
+    if (!limitCheck.allowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(limitCheck.message ?? 'Ticket type limit reached'),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Upgrade',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const SubscriptionScreen(),
+              ),
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     setState(() {
       _ticketTypes.add(_TicketType(name: _getNextTicketName()));
     });
@@ -731,6 +753,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   }
 
   Widget _buildTicketsStep(ThemeData theme, ColorScheme colorScheme) {
+    final limitCheck = ref.watch(canAddTicketTypeProvider(_ticketTypes.length));
+
     return Column(
       key: const ValueKey('tickets'),
       children: [
@@ -751,12 +775,20 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             ),
           );
         }),
+        // Limit banner
+        if (limitCheck.isAtLimit) ...[
+          const SizedBox(height: 4),
+          LimitReachedBanner(
+            message: 'Ticket type limit reached (${limitCheck.limitText})',
+          ),
+          const SizedBox(height: 8),
+        ],
         // Add ticket type button
         const SizedBox(height: 8),
         OutlinedButton.icon(
-          onPressed: _addTicketType,
+          onPressed: limitCheck.isAtLimit ? null : _addTicketType,
           icon: const Icon(Icons.add, size: 20),
-          label: const Text('Add Ticket Type'),
+          label: Text('Add Ticket Type (${limitCheck.limitText})'),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
             shape: RoundedRectangleBorder(

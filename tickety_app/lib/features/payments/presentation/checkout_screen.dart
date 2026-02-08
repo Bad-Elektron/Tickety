@@ -92,6 +92,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           amountCents: widget.amountCents,
           metadata: widget.metadata,
         );
+      case PaymentType.subscription:
+        // Subscriptions are handled separately via SubscriptionScreen
+        success = false;
     }
 
     if (mounted) {

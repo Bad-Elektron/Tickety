@@ -10,3 +10,4 @@ export 'staff_provider.dart';
 export 'subscription_provider.dart';
 export 'theme_provider.dart';
 export 'ticket_provider.dart';
+export 'tier_limits_provider.dart';

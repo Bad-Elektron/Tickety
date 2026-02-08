@@ -21,27 +21,26 @@ class TierBenefits {
   /// List of features for each tier.
   static const Map<AccountTier, List<String>> features = {
     AccountTier.base: [
-      'Browse and discover events',
-      'Purchase tickets',
+      'Up to 3 active events',
       'Basic ticket management',
-      'Email support',
+      'Up to 3 ushers per event',
+      'Up to 3 sellers per event',
+      'Up to 3 ticket types',
+      'Basic event analytics',
     ],
     AccountTier.pro: [
       'Everything in Base',
-      'Create unlimited events',
-      'Advanced analytics dashboard',
-      'Custom event branding',
-      'Priority support',
-      'Early access to new features',
+      'Up to 10 active events',
+      'Up to 15 staff per role',
+      'Up to 10 ticket types',
+      'Advanced analytics',
     ],
     AccountTier.enterprise: [
       'Everything in Pro',
+      'Unlimited active events',
       'Unlimited staff members',
-      'API access',
-      'Custom integrations',
-      'Dedicated account manager',
-      'White-label options',
-      'SLA guarantee',
+      'Unlimited ticket types',
+      'Full analytics suite',
     ],
   };
 

@@ -83,11 +83,18 @@ class TransactionDetailSheet extends StatelessWidget {
 
               const SizedBox(height: 24),
 
-              // Event name (from metadata)
+              // Event name or subscription description (from metadata)
               if (payment.metadata?['event_title'] != null) ...[
                 _DetailRow(
                   label: 'Event',
                   value: payment.metadata!['event_title'] as String,
+                ),
+                const SizedBox(height: 12),
+              ] else if (payment.type == PaymentType.subscription &&
+                  payment.metadata?['description'] != null) ...[
+                _DetailRow(
+                  label: 'Plan',
+                  value: payment.metadata!['description'] as String,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -179,6 +186,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Resale Purchase';
       case PaymentType.vendorPos:
         return 'Vendor Purchase';
+      case PaymentType.subscription:
+        return 'Subscription';
     }
   }
 
@@ -190,6 +199,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.swap_horiz;
       case PaymentType.vendorPos:
         return Icons.storefront;
+      case PaymentType.subscription:
+        return Icons.workspace_premium;
     }
   }
 

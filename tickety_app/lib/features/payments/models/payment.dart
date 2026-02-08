@@ -26,7 +26,8 @@ enum PaymentStatus {
 enum PaymentType {
   primaryPurchase('primary_purchase'),
   resalePurchase('resale_purchase'),
-  vendorPos('vendor_pos');
+  vendorPos('vendor_pos'),
+  subscription('subscription');
 
   final String value;
   const PaymentType(this.value);
@@ -44,7 +45,7 @@ class Payment {
   final String id;
   final String userId;
   final String? ticketId;
-  final String eventId;
+  final String? eventId;
   final int amountCents;
   final int platformFeeCents;
   final String currency;
@@ -63,7 +64,7 @@ class Payment {
     required this.id,
     required this.userId,
     this.ticketId,
-    required this.eventId,
+    this.eventId,
     required this.amountCents,
     this.platformFeeCents = 0,
     this.currency = 'usd',
@@ -83,7 +84,7 @@ class Payment {
       id: json['id'] as String,
       userId: json['user_id'] as String,
       ticketId: json['ticket_id'] as String?,
-      eventId: json['event_id'] as String,
+      eventId: json['event_id'] as String?,
       amountCents: json['amount_cents'] as int,
       platformFeeCents: json['platform_fee_cents'] as int? ?? 0,
       currency: json['currency'] as String? ?? 'usd',

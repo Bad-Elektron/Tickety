@@ -46,6 +46,11 @@ serve(async (req) => {
         await handleChargeRefunded(event.data.object as Stripe.Charge)
         break
 
+      // Invoice events (for subscription payment tracking)
+      case 'invoice.paid':
+        await handleInvoicePaid(event.data.object as Stripe.Invoice)
+        break
+
       // Subscription events
       case 'customer.subscription.created':
         await handleSubscriptionCreated(event.data.object as Stripe.Subscription)
@@ -296,6 +301,101 @@ function mapSubscriptionStatus(stripeStatus: string): string {
     case 'unpaid':
     default:
       return 'canceled'
+  }
+}
+
+async function handleInvoicePaid(invoice: Stripe.Invoice) {
+  // Extract subscription ID — handle both old and new Stripe API versions
+  // Old: invoice.subscription (string)
+  // New (2025+): invoice.parent.subscription_details.subscription
+  const subscriptionId: string | null =
+    (invoice as any).subscription as string ||
+    (invoice as any).parent?.subscription_details?.subscription as string ||
+    null
+
+  // Only track subscription invoices
+  if (!subscriptionId) {
+    console.log('Invoice is not for a subscription, skipping payment record')
+    return
+  }
+
+  const customerId = invoice.customer as string
+
+  console.log(`Subscription invoice paid: ${invoice.id}, amount: ${invoice.amount_paid}, subscription: ${subscriptionId}`)
+
+  // Find user by subscription ID
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('user_id, tier')
+    .eq('stripe_subscription_id', subscriptionId)
+    .single()
+
+  if (!sub) {
+    console.error('No subscription found for:', subscriptionId)
+    return
+  }
+
+  // Skip $0 invoices (e.g., trial starts)
+  if (invoice.amount_paid <= 0) {
+    console.log('Skipping $0 invoice')
+    return
+  }
+
+  // Check if we already recorded this invoice
+  const { data: existing } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('stripe_invoice_id', invoice.id)
+    .maybeSingle()
+
+  if (existing) {
+    console.log('Payment already recorded for invoice:', invoice.id)
+    return
+  }
+
+  // Get receipt URL from the charge
+  let receiptUrl: string | null = null
+  const chargeId = invoice.charge as string
+  if (chargeId) {
+    try {
+      const charge = await stripe.charges.retrieve(chargeId)
+      receiptUrl = charge.receipt_url || null
+    } catch (err) {
+      console.error('Failed to fetch charge for receipt URL:', err.message)
+    }
+  }
+
+  // Determine description based on invoice lines
+  const lineItem = invoice.lines?.data?.[0]
+  const description = lineItem?.description || `${sub.tier} plan`
+
+  // Create payment record
+  const { error } = await supabase
+    .from('payments')
+    .insert({
+      user_id: sub.user_id,
+      event_id: null,
+      amount_cents: invoice.amount_paid,
+      platform_fee_cents: 0,
+      currency: invoice.currency,
+      status: 'completed',
+      type: 'subscription',
+      stripe_payment_intent_id: invoice.payment_intent as string || null,
+      stripe_charge_id: chargeId || null,
+      stripe_invoice_id: invoice.id,
+      receipt_url: receiptUrl,
+      metadata: {
+        tier: sub.tier,
+        description: description,
+        period_start: lineItem?.period?.start ? new Date(lineItem.period.start * 1000).toISOString() : null,
+        period_end: lineItem?.period?.end ? new Date(lineItem.period.end * 1000).toISOString() : null,
+      },
+    })
+
+  if (error) {
+    console.error('Failed to create subscription payment record:', error)
+  } else {
+    console.log(`Subscription payment recorded: $${(invoice.amount_paid / 100).toFixed(2)} for ${sub.tier} plan`)
   }
 }
 

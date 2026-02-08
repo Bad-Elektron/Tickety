@@ -77,6 +77,22 @@ class ErrorHandler {
       return _handlePostgrestError(error);
     }
 
+    // Supabase Edge Function errors
+    if (error is supabase.FunctionException) {
+      final details = error.details;
+      String? message;
+      if (details is Map) {
+        message = details['error']?.toString();
+      } else if (details is String && details.isNotEmpty) {
+        message = details;
+      }
+      return BusinessException(
+        message ?? 'Service temporarily unavailable. Please try again.',
+        technicalDetails: 'Edge function error (${error.status}): ${error.reasonPhrase ?? message}',
+        cause: error,
+      );
+    }
+
     // Stripe errors
     if (error is stripe.StripeException) {
       return PaymentException.fromStripeError(error);

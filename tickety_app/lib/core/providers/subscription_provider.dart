@@ -239,6 +239,40 @@ class SubscriptionNotifier extends StateNotifier<SubscriptionState> {
     await load();
   }
 
+  /// [Dev only] Override subscription tier directly via edge function.
+  ///
+  /// Returns true if successful, false otherwise.
+  Future<bool> devOverrideTier(AccountTier tier) async {
+    AppLogger.info('[DEV] Overriding tier to ${tier.name}', tag: _tag);
+    state = state.copyWith(isLoading: true, clearError: true);
+
+    try {
+      final updatedSubscription = await _repository.devOverrideTier(tier);
+
+      AppLogger.info('[DEV] Tier overridden to ${updatedSubscription.tier.name}', tag: _tag);
+      state = state.copyWith(
+        subscription: updatedSubscription,
+        isLoading: false,
+      );
+
+      _syncWithAppState(updatedSubscription.tier);
+      return true;
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        '[DEV] Failed to override tier',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isLoading: false,
+        error: appError.userMessage,
+      );
+      return false;
+    }
+  }
+
   /// Clear any error state.
   void clearError() {
     state = state.copyWith(clearError: true);

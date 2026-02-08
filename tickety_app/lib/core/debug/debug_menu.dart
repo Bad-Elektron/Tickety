@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/payments/payments.dart';
 import '../providers/notification_provider.dart';
+import '../providers/subscription_provider.dart';
 import '../services/notification_service.dart';
 import '../state/app_state.dart';
 
@@ -75,7 +76,11 @@ class DebugMenu extends ConsumerWidget {
           ),
         ],
       ),
-      child: Column(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Header
@@ -127,19 +132,24 @@ class DebugMenu extends ConsumerWidget {
             ),
           ),
 
-          // Menu items
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                ..._menuItems.map((item) => _DebugMenuTile(item: item)),
-                const Divider(height: 24),
-                // Notification testing
-                _NotificationTestSection(ref: ref),
-                const Divider(height: 24),
-                // Quick toggles
-                _DebugToggleRow(),
-              ],
+          // Menu items (scrollable)
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  ..._menuItems.map((item) => _DebugMenuTile(item: item)),
+                  const Divider(height: 24),
+                  // Notification testing
+                  _NotificationTestSection(ref: ref),
+                  const Divider(height: 24),
+                  // Subscription dev tools
+                  const _SubscriptionDevSection(),
+                  const Divider(height: 24),
+                  // Quick toggles
+                  _DebugToggleRow(),
+                ],
+              ),
             ),
           ),
 
@@ -168,6 +178,7 @@ class DebugMenu extends ConsumerWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -447,6 +458,168 @@ class _NotificationTestSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Section for overriding subscription tier in the debug menu.
+class _SubscriptionDevSection extends ConsumerWidget {
+  const _SubscriptionDevSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final subState = ref.watch(subscriptionProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Subscription Dev Tools',
+          style: theme.textTheme.labelMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Current tier info
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                subState.effectiveTier.icon,
+                size: 16,
+                color: Color(subState.effectiveTier.color),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Current: ${subState.effectiveTier.label}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (subState.subscription != null) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '(${subState.subscription!.status.label})',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Tier buttons
+        Row(
+          children: AccountTier.values.map((tier) {
+            final isCurrentTier = subState.effectiveTier == tier;
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: tier != AccountTier.enterprise ? 6 : 0,
+                ),
+                child: _TierButton(
+                  tier: tier,
+                  isActive: isCurrentTier,
+                  isLoading: subState.isLoading,
+                  onTap: isCurrentTier || subState.isLoading
+                      ? null
+                      : () => _overrideTier(context, ref, tier),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _overrideTier(
+    BuildContext context,
+    WidgetRef ref,
+    AccountTier tier,
+  ) async {
+    // Close the debug menu first so the snackbar is visible
+    Navigator.of(context).pop();
+
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(subscriptionProvider.notifier);
+
+    final success = await notifier.devOverrideTier(tier);
+    final error = ref.read(subscriptionProvider).error;
+
+    scaffoldMessenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Switched to ${tier.label}'
+              : 'Failed: ${error ?? "Unknown error"}',
+        ),
+        duration: const Duration(seconds: 4),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
+  }
+}
+
+class _TierButton extends StatelessWidget {
+  final AccountTier tier;
+  final bool isActive;
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  const _TierButton({
+    required this.tier,
+    required this.isActive,
+    required this.isLoading,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tierColor = Color(tier.color);
+
+    return Material(
+      color: isActive
+          ? tierColor.withValues(alpha: 0.2)
+          : theme.colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive
+                  ? tierColor.withValues(alpha: 0.5)
+                  : theme.colorScheme.outline.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Column(
+            children: [
+              Icon(tier.icon, size: 18, color: tierColor),
+              const SizedBox(height: 4),
+              Text(
+                tier.label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: isActive ? tierColor : theme.colorScheme.onSurfaceVariant,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

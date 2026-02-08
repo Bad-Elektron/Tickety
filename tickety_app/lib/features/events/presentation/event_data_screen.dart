@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/ticket_provider.dart';
+import '../../../core/providers/providers.dart';
+import '../../../shared/widgets/limit_reached_banner.dart';
+import '../../subscriptions/models/tier_limits.dart';
 import '../models/event_analytics.dart';
 import '../models/event_model.dart';
 
@@ -88,39 +90,51 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Summary cards row
+                // Summary cards row (always visible)
                 _SummaryCardsSection(analytics: analytics),
                 const SizedBox(height: 24),
 
-                // Check-in progress
-                _CheckInProgressCard(analytics: analytics),
+                // Check-in progress (Pro+)
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.checkInProgress)))
+                  _CheckInProgressCard(analytics: analytics)
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.checkInProgress),
                 const SizedBox(height: 24),
 
-                // Hourly chart
+                // Hourly chart (Enterprise)
                 _SectionHeader(
                   title: 'Check-ins by Hour',
                   icon: Icons.bar_chart,
                 ),
                 const SizedBox(height: 12),
-                _HourlyCheckInChart(analytics: analytics),
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.hourlyCheckins)))
+                  _HourlyCheckInChart(analytics: analytics)
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.hourlyCheckins),
                 const SizedBox(height: 24),
 
-                // Usher performance
+                // Usher performance (Enterprise)
                 _SectionHeader(
                   title: 'Usher Performance',
                   icon: Icons.people_outline,
                 ),
                 const SizedBox(height: 12),
-                _UsherPerformanceCard(analytics: analytics),
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.usherPerformance)))
+                  _UsherPerformanceCard(analytics: analytics)
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.usherPerformance),
                 const SizedBox(height: 24),
 
-                // Ticket type breakdown
+                // Ticket type breakdown (Pro+)
                 _SectionHeader(
                   title: 'Ticket Types',
                   icon: Icons.confirmation_number_outlined,
                 ),
                 const SizedBox(height: 12),
-                _TicketTypeBreakdownCard(analytics: analytics),
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.ticketTypeBreakdown)))
+                  _TicketTypeBreakdownCard(analytics: analytics)
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.ticketTypeBreakdown),
                 const SizedBox(height: 32),
               ]),
             ),

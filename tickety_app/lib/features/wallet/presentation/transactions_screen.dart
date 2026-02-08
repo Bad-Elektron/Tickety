@@ -240,13 +240,27 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       ref.read(paymentHistoryProvider.notifier).load(),
                 )
               : filteredPayments.isEmpty
-                  ? _EmptyView(currencyFilter: _currencyFilter)
+                  ? RefreshIndicator(
+                      onRefresh: () => ref
+                          .read(paymentHistoryProvider.notifier)
+                          .refresh(),
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.6,
+                            child: _EmptyView(currencyFilter: _currencyFilter),
+                          ),
+                        ],
+                      ),
+                    )
                   : RefreshIndicator(
                       onRefresh: () => ref
                           .read(paymentHistoryProvider.notifier)
                           .refresh(),
                       child: ListView.builder(
                         controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.all(16),
                         itemCount: filteredPayments.length +
                             (state.isLoadingMore ? 1 : 0),
@@ -286,6 +300,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         return 'Resale Purchase';
       case PaymentType.vendorPos:
         return 'Vendor Purchase';
+      case PaymentType.subscription:
+        return 'Subscription';
     }
   }
 
@@ -452,6 +468,8 @@ class _TransactionCard extends StatelessWidget {
         return Icons.swap_horiz;
       case PaymentType.vendorPos:
         return Icons.storefront;
+      case PaymentType.subscription:
+        return Icons.workspace_premium;
     }
   }
 
@@ -463,6 +481,8 @@ class _TransactionCard extends StatelessWidget {
         return 'Resale Purchase';
       case PaymentType.vendorPos:
         return 'Vendor Purchase';
+      case PaymentType.subscription:
+        return 'Subscription';
     }
   }
 

@@ -6,4 +6,5 @@ library;
 
 export 'error_display.dart';
 export 'filter_chip.dart';
+export 'limit_reached_banner.dart';
 export 'noise_background.dart';

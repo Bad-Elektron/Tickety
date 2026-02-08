@@ -36,4 +36,9 @@ abstract class ISubscriptionRepository {
   /// Called after payment to ensure the database reflects the actual
   /// Stripe subscription status.
   Future<void> verifySubscription(String subscriptionId);
+
+  /// [Dev only] Override the subscription tier directly via edge function.
+  ///
+  /// Requires DEV_MODE=true on the server. Returns the updated subscription.
+  Future<Subscription> devOverrideTier(AccountTier tier);
 }

@@ -280,12 +280,27 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         return;
       }
 
+      if (checkoutResponse.isDirectUpdate) {
+        // Tier was changed directly (no payment sheet needed)
+        await ref.read(subscriptionProvider.notifier).load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Plan changed to ${tier.label}!'),
+              behavior: SnackBarBehavior.floating,
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+        return;
+      }
+
       if (mounted) {
         // Initialize and present payment sheet
         await StripeService.instance.initPaymentSheet(
-          paymentIntentClientSecret: checkoutResponse.clientSecret,
-          customerId: checkoutResponse.customerId,
-          customerEphemeralKeySecret: checkoutResponse.ephemeralKey,
+          paymentIntentClientSecret: checkoutResponse.clientSecret!,
+          customerId: checkoutResponse.customerId!,
+          customerEphemeralKeySecret: checkoutResponse.ephemeralKey!,
         );
 
         final success = await StripeService.instance.presentPaymentSheet();
@@ -336,18 +351,18 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Keep Subscription'),
-          ),
-          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _handleCancel();
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Cancel'),
+            child: const Text('Cancel Plan'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Keep Plan'),
           ),
         ],
       ),
@@ -357,13 +372,28 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
   Future<void> _handleCancel() async {
     final success = await ref.read(subscriptionProvider.notifier).cancel();
 
-    if (mounted && success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Subscription will cancel at end of billing period'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    if (mounted) {
+      if (success) {
+        final sub = ref.read(subscriptionProvider).subscription;
+        final endDate = sub?.currentPeriodEnd != null
+            ? _formatDate(sub!.currentPeriodEnd!)
+            : 'end of billing period';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Plan canceled. Access continues until $endDate.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        final error = ref.read(subscriptionProvider).error;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error ?? 'Failed to cancel. Please try again.'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      }
     }
   }
 

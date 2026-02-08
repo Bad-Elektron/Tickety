@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../shared/widgets/limit_reached_banner.dart';
 import '../../events/models/event_model.dart';
+import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/staff_repository.dart';
 import '../models/staff_role.dart';
 
@@ -55,7 +57,52 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
     );
     if (result == null || !mounted) return;
 
+    // Check tier limit for the target role
+    final limitCheck = ref.read(canAddStaffProvider(result.role));
+    // For role updates, only block if it's a *new* addition to that role
+    final isNewToRole = !result.isRoleUpdate;
+    if (isNewToRole && !limitCheck.allowed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(limitCheck.message ?? 'Staff limit reached'),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Upgrade',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SubscriptionScreen(),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     if (result.isRoleUpdate && result.staffId != null) {
+      // For role changes, check if the *target* role is at limit
+      if (!limitCheck.allowed) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(limitCheck.message ?? 'Role limit reached'),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Upgrade',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const SubscriptionScreen(),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
       final success = await ref.read(staffProvider.notifier).updateRole(
             result.staffId!,
             result.role,
@@ -104,6 +151,29 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
 
   Future<void> _updateRole(EventStaff staff, StaffRole newRole) async {
     if (staff.role == newRole) return;
+
+    // Check if the target role is at its limit
+    final limitCheck = ref.read(canAddStaffProvider(newRole));
+    if (!limitCheck.allowed) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(limitCheck.message ?? 'Role limit reached'),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Upgrade',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SubscriptionScreen(),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     final success =
         await ref.read(staffProvider.notifier).updateRole(staff.id, newRole);
     if (mounted) {
@@ -270,6 +340,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
     final colorScheme = theme.colorScheme;
     final color = _roleColor(role, colorScheme);
     final isExpanded = _expanded[role] ?? false;
+    final limitCheck = ref.watch(canAddStaffProvider(role));
 
     return Container(
       decoration: BoxDecoration(
@@ -318,13 +389,17 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
+                          color: limitCheck.isAtLimit
+                              ? colorScheme.error.withValues(alpha: 0.1)
+                              : color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
-                          '${staff.length}',
+                          limitCheck.limitText,
                           style: theme.textTheme.labelMedium?.copyWith(
-                            color: color,
+                            color: limitCheck.isAtLimit
+                                ? colorScheme.error
+                                : color,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -355,6 +430,13 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
               height: 1,
               color: colorScheme.outlineVariant.withValues(alpha: 0.5),
             ),
+            if (limitCheck.isAtLimit)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: LimitReachedBanner(
+                  message: '${role.label} limit reached (${limitCheck.limitText})',
+                ),
+              ),
             if (staff.isEmpty)
               Padding(
                 padding: const EdgeInsets.all(24),

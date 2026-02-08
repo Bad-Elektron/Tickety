@@ -117,31 +117,46 @@ class SubscriptionRepository implements ISubscriptionRepository {
       throw AuthException.notAuthenticated();
     }
 
-    AppLogger.info('Canceling subscription', tag: _tag);
+    AppLogger.info('Canceling subscription for user: $userId', tag: _tag);
 
-    final response = await _client.functions.invoke(
-      'manage-subscription',
-      body: {
-        'action': 'cancel',
-        'user_id': userId,
-      },
-    );
+    try {
+      final response = await _client.functions.invoke(
+        'manage-subscription',
+        body: {
+          'action': 'cancel',
+          'user_id': userId,
+        },
+      );
 
-    if (response.status != 200) {
-      final error = response.data is Map ? response.data['error'] : 'Unknown error';
-      AppLogger.error(
-        'Failed to cancel subscription: $error',
+      AppLogger.info(
+        'Cancel response: status=${response.status}, data=${response.data}',
         tag: _tag,
       );
-      throw SubscriptionException(
-        'Failed to cancel subscription: $error',
-        technicalDetails: 'Edge function error: $error',
+
+      if (response.status != 200) {
+        final error = response.data is Map ? response.data['error'] : 'Unknown error';
+        AppLogger.error(
+          'Failed to cancel subscription: $error',
+          tag: _tag,
+        );
+        throw SubscriptionException.cancelFailed(error.toString());
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      AppLogger.info('Subscription canceled successfully', tag: _tag);
+      return Subscription.fromJson(data['subscription'] as Map<String, dynamic>);
+    } catch (e, stackTrace) {
+      if (e is SubscriptionException) rethrow;
+      AppLogger.error(
+        'Cancel subscription failed',
+        error: e,
+        stackTrace: stackTrace,
+        tag: _tag,
+      );
+      throw SubscriptionException.cancelFailed(
+        e.toString().length > 150 ? e.toString().substring(0, 150) : e.toString(),
       );
     }
-
-    final data = response.data as Map<String, dynamic>;
-    AppLogger.info('Subscription canceled successfully', tag: _tag);
-    return Subscription.fromJson(data['subscription'] as Map<String, dynamic>);
   }
 
   @override
@@ -153,29 +168,39 @@ class SubscriptionRepository implements ISubscriptionRepository {
 
     AppLogger.info('Resuming subscription', tag: _tag);
 
-    final response = await _client.functions.invoke(
-      'manage-subscription',
-      body: {
-        'action': 'resume',
-        'user_id': userId,
-      },
-    );
+    try {
+      final response = await _client.functions.invoke(
+        'manage-subscription',
+        body: {
+          'action': 'resume',
+          'user_id': userId,
+        },
+      );
 
-    if (response.status != 200) {
-      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      if (response.status != 200) {
+        final error = response.data is Map ? response.data['error'] : 'Unknown error';
+        AppLogger.error(
+          'Failed to resume subscription: $error',
+          tag: _tag,
+        );
+        throw SubscriptionException.resumeFailed(error.toString());
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      AppLogger.info('Subscription resumed successfully', tag: _tag);
+      return Subscription.fromJson(data['subscription'] as Map<String, dynamic>);
+    } catch (e, stackTrace) {
+      if (e is SubscriptionException) rethrow;
       AppLogger.error(
-        'Failed to resume subscription: $error',
+        'Resume subscription failed',
+        error: e,
+        stackTrace: stackTrace,
         tag: _tag,
       );
-      throw SubscriptionException(
-        'Failed to resume subscription: $error',
-        technicalDetails: 'Edge function error: $error',
+      throw SubscriptionException.resumeFailed(
+        e.toString().length > 150 ? e.toString().substring(0, 150) : e.toString(),
       );
     }
-
-    final data = response.data as Map<String, dynamic>;
-    AppLogger.info('Subscription resumed successfully', tag: _tag);
-    return Subscription.fromJson(data['subscription'] as Map<String, dynamic>);
   }
 
   @override
@@ -187,28 +212,42 @@ class SubscriptionRepository implements ISubscriptionRepository {
 
     AppLogger.info('Getting customer portal URL', tag: _tag);
 
-    final response = await _client.functions.invoke(
-      'create-customer-portal',
-      body: {
-        'user_id': userId,
-      },
-    );
+    try {
+      final response = await _client.functions.invoke(
+        'create-customer-portal',
+        body: {
+          'user_id': userId,
+        },
+      );
 
-    if (response.status != 200) {
-      final error = response.data is Map ? response.data['error'] : 'Unknown error';
+      if (response.status != 200) {
+        final error = response.data is Map ? response.data['error'] : 'Unknown error';
+        AppLogger.error(
+          'Failed to get customer portal URL: $error',
+          tag: _tag,
+        );
+        throw SubscriptionException(
+          'Failed to open billing portal: $error',
+          technicalDetails: 'Edge function error: $error',
+        );
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      AppLogger.info('Customer portal URL retrieved', tag: _tag);
+      return CustomerPortalResponse.fromJson(data);
+    } catch (e, stackTrace) {
+      if (e is SubscriptionException) rethrow;
       AppLogger.error(
-        'Failed to get customer portal URL: $error',
+        'Get customer portal URL failed',
+        error: e,
+        stackTrace: stackTrace,
         tag: _tag,
       );
       throw SubscriptionException(
-        'Failed to open billing portal: $error',
-        technicalDetails: 'Edge function error: $error',
+        'Failed to open billing portal. Please try again.',
+        technicalDetails: 'Edge function error: $e',
       );
     }
-
-    final data = response.data as Map<String, dynamic>;
-    AppLogger.info('Customer portal URL retrieved', tag: _tag);
-    return CustomerPortalResponse.fromJson(data);
   }
 
   @override
@@ -253,6 +292,50 @@ class SubscriptionRepository implements ISubscriptionRepository {
         tag: _tag,
       );
       // Don't throw - verification is best-effort
+    }
+  }
+
+  @override
+  Future<Subscription> devOverrideTier(AccountTier tier) async {
+    final userId = SupabaseService.instance.currentUser?.id;
+    if (userId == null) {
+      throw AuthException.notAuthenticated();
+    }
+
+    AppLogger.info('[DEV] Overriding subscription to ${tier.name}', tag: _tag);
+
+    try {
+      final response = await _client.functions.invoke(
+        'dev-override-subscription',
+        body: {
+          'tier': tier.name,
+        },
+      );
+
+      if (response.status != 200) {
+        final error = response.data is Map ? response.data['error'] : 'Unknown error';
+        AppLogger.error('[DEV] Override failed: $error', tag: _tag);
+        throw SubscriptionException(
+          'Dev override failed: $error',
+          technicalDetails: 'Edge function error (${response.status}): $error',
+        );
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      AppLogger.info('[DEV] Subscription overridden successfully', tag: _tag);
+      return Subscription.fromJson(data['subscription'] as Map<String, dynamic>);
+    } catch (e, stackTrace) {
+      if (e is SubscriptionException) rethrow;
+      AppLogger.error(
+        '[DEV] Override failed',
+        error: e,
+        stackTrace: stackTrace,
+        tag: _tag,
+      );
+      throw SubscriptionException(
+        'Dev override failed: ${e.toString().length > 150 ? e.toString().substring(0, 150) : e}',
+        technicalDetails: 'Edge function error: $e',
+      );
     }
   }
 }

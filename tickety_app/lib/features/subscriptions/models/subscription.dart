@@ -226,20 +226,32 @@ class Subscription {
 }
 
 /// Response from creating a subscription checkout session.
+///
+/// When [isDirectUpdate] is true, the subscription was changed directly
+/// (no payment sheet needed). The client should just refresh.
 class SubscriptionCheckoutResponse {
-  final String clientSecret;
-  final String customerId;
-  final String ephemeralKey;
+  /// Whether this was a direct tier change (no payment needed).
+  final bool isDirectUpdate;
+  final String? clientSecret;
+  final String? customerId;
+  final String? ephemeralKey;
   final String? subscriptionId;
 
   const SubscriptionCheckoutResponse({
-    required this.clientSecret,
-    required this.customerId,
-    required this.ephemeralKey,
+    this.isDirectUpdate = false,
+    this.clientSecret,
+    this.customerId,
+    this.ephemeralKey,
     this.subscriptionId,
   });
 
   factory SubscriptionCheckoutResponse.fromJson(Map<String, dynamic> json) {
+    final type = json['type'] as String?;
+
+    if (type == 'updated') {
+      return const SubscriptionCheckoutResponse(isDirectUpdate: true);
+    }
+
     return SubscriptionCheckoutResponse(
       clientSecret: json['client_secret'] as String,
       customerId: json['customer_id'] as String,

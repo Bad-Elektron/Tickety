@@ -162,13 +162,83 @@ serve(async (req) => {
     console.log('Existing subscription:', existingSub)
 
     if (existingSub?.stripe_subscription_id && existingSub.status === 'active') {
-      console.log('User already has active subscription')
-      return new Response(
-        JSON.stringify({
-          error: 'You already have an active subscription. Please use the billing portal to change plans.'
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+      // If same tier, reject
+      if (existingSub.tier === tier) {
+        console.log('User already on this tier')
+        return new Response(
+          JSON.stringify({ error: 'You are already on this plan.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Different tier: update the existing subscription directly
+      console.log(`Changing tier from ${existingSub.tier} to ${tier}`)
+      try {
+        // Get current subscription from Stripe to find the item ID
+        const stripeSub = await stripe.subscriptions.retrieve(existingSub.stripe_subscription_id)
+        const itemId = stripeSub.items.data[0]?.id
+
+        if (!itemId) {
+          throw new Error('No subscription item found')
+        }
+
+        // Update the subscription's price
+        const updatedSub = await stripe.subscriptions.update(
+          existingSub.stripe_subscription_id,
+          {
+            items: [{
+              id: itemId,
+              price: priceId,
+            }],
+            proration_behavior: 'always_invoice',
+            // If subscription was set to cancel, resume it
+            cancel_at_period_end: false,
+            metadata: {
+              tier: tier,
+            },
+          }
+        )
+
+        console.log('Subscription updated to tier:', tier)
+
+        // Update database
+        const { error: updateError } = await supabaseAdmin
+          .from('subscriptions')
+          .update({
+            tier: tier,
+            stripe_price_id: priceId,
+            cancel_at_period_end: false,
+            current_period_start: new Date(updatedSub.current_period_start * 1000).toISOString(),
+            current_period_end: new Date(updatedSub.current_period_end * 1000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('user_id', user.id)
+
+        if (updateError) {
+          console.error('Failed to update subscription in DB:', updateError)
+        }
+
+        // Return updated subscription (no payment sheet needed)
+        const { data: updatedRecord } = await supabaseAdmin
+          .from('subscriptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .single()
+
+        return new Response(
+          JSON.stringify({
+            type: 'updated',
+            subscription: updatedRecord,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } catch (updateError) {
+        console.error('Failed to update subscription tier:', updateError)
+        return new Response(
+          JSON.stringify({ error: updateError.message || 'Failed to change plan' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
     }
 
     // Create ephemeral key for the customer
