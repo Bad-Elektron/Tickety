@@ -79,7 +79,9 @@
       "Bash(\"C:\\\\Users\\\\azori\\\\AppData\\\\Local\\\\Pub\\\\Cache\\\\bin\\\\flutter.bat\" attach --debug-port=53178)",
       "Bash(ren:*)",
       "Bash(grep:*)",
-      "Bash(^d \")"
+      "Bash(^d \")",
+      "Bash(xargs cat:*)",
+      "Bash(Write-Output)"
     ]
   }
 }

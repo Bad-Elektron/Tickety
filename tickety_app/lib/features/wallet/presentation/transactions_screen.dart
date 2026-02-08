@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/payment_provider.dart';
 import '../../payments/models/payment.dart';
+import 'transaction_detail_sheet.dart';
 
 /// Filter for transaction currency type.
 enum TransactionCurrencyFilter {
@@ -330,70 +331,86 @@ class _TransactionCard extends StatelessWidget {
             ),
           ),
         ],
-        Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Material(
             color: colorScheme.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
-            children: [
-              // Icon
-              Container(
-                padding: const EdgeInsets.all(10),
+            child: InkWell(
+              onTap: () => showTransactionDetailSheet(context, payment),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: _getStatusColor(payment.status, colorScheme)
-                      .withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
                 ),
-                child: Icon(
-                  _getTypeIcon(payment.type),
-                  color: _getStatusColor(payment.status, colorScheme),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 14),
-              // Details
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
-                    Text(
-                      _getTypeLabel(payment.type),
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
+                    // Icon
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _getStatusColor(payment.status, colorScheme)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        _getTypeIcon(payment.type),
+                        color: _getStatusColor(payment.status, colorScheme),
+                        size: 20,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _formatTime(payment.createdAt),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                    const SizedBox(width: 14),
+                    // Details
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getTypeLabel(payment.type),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _formatTime(payment.createdAt),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    // Amount and status
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          payment.formattedAmount,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: _getAmountColor(payment.type, payment.status, colorScheme),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        _StatusChip(status: payment.status),
+                      ],
+                    ),
+                    const SizedBox(width: 8),
+                    // Chevron hint
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                     ),
                   ],
                 ),
               ),
-              // Amount and status
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    payment.formattedAmount,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: _getAmountColor(payment.type, payment.status, colorScheme),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  _StatusChip(status: payment.status),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ],

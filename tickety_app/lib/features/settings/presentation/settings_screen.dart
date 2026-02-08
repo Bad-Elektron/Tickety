@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/theme_provider.dart';
+import '../../notifications/notifications.dart';
 import '../widgets/theme_toggle.dart';
 
 /// Settings screen with app preferences.
@@ -35,37 +36,16 @@ class SettingsScreen extends ConsumerWidget {
           _SettingsCard(
             children: [
               _SettingsTile(
-                icon: Icons.notifications_active_outlined,
-                title: 'Push Notifications',
-                subtitle: 'Receive alerts for events and updates',
-                trailing: Switch.adaptive(
-                  value: true,
-                  onChanged: (value) {
-                    // TODO: Implement notification settings
-                  },
-                ),
-              ),
-              _SettingsTile(
-                icon: Icons.email_outlined,
-                title: 'Email Notifications',
-                subtitle: 'Get event reminders via email',
-                trailing: Switch.adaptive(
-                  value: true,
-                  onChanged: (value) {
-                    // TODO: Implement email settings
-                  },
-                ),
-              ),
-              _SettingsTile(
-                icon: Icons.campaign_outlined,
-                title: 'Marketing',
-                subtitle: 'Receive promotional content',
-                trailing: Switch.adaptive(
-                  value: false,
-                  onChanged: (value) {
-                    // TODO: Implement marketing settings
-                  },
-                ),
+                icon: Icons.notifications_outlined,
+                title: 'Notification Preferences',
+                subtitle: 'Manage push, email, and alert settings',
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationSettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ],
           ),

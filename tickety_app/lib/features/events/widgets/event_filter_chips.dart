@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../search/search.dart';
 import '../models/event_category.dart';
 import 'event_filter_bottom_sheet.dart';
 
-/// Filter bar for events with search, sort, and filter options.
-class EventFilterChips extends StatelessWidget {
+/// Filter bar for events with inline search and filter options.
+class EventFilterChips extends StatefulWidget {
   const EventFilterChips({
     super.key,
     required this.selectedCategories,
@@ -13,6 +12,11 @@ class EventFilterChips extends StatelessWidget {
     required this.availableCities,
     required this.onCategoriesChanged,
     required this.onCityChanged,
+    required this.isSearching,
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.onSearchChanged,
+    required this.onSearchToggled,
   });
 
   final Set<EventCategory> selectedCategories;
@@ -20,21 +24,66 @@ class EventFilterChips extends StatelessWidget {
   final List<String> availableCities;
   final ValueChanged<Set<EventCategory>> onCategoriesChanged;
   final ValueChanged<String?> onCityChanged;
+  final bool isSearching;
+  final TextEditingController searchController;
+  final FocusNode searchFocusNode;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onSearchToggled;
+
+  @override
+  State<EventFilterChips> createState() => _EventFilterChipsState();
+}
+
+class _EventFilterChipsState extends State<EventFilterChips>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _expandAnimation;
 
   bool get _hasActiveFilters =>
-      selectedCity != null || selectedCategories.isNotEmpty;
+      widget.selectedCity != null || widget.selectedCategories.isNotEmpty;
 
-  void _openFilterSheet(BuildContext context) {
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      duration: const Duration(milliseconds: 200),
+      vsync: this,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    );
+    if (widget.isSearching) _animController.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(EventFilterChips old) {
+    super.didUpdateWidget(old);
+    if (widget.isSearching && !old.isSearching) {
+      _animController.forward();
+    } else if (!widget.isSearching && old.isSearching) {
+      _animController.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  void _openFilterSheet() {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => EventFilterBottomSheet(
-        selectedCategories: selectedCategories,
-        selectedCity: selectedCity,
-        availableCities: availableCities,
-        onCategoriesChanged: onCategoriesChanged,
-        onCityChanged: onCityChanged,
+        selectedCategories: widget.selectedCategories,
+        selectedCity: widget.selectedCity,
+        availableCities: widget.availableCities,
+        onCategoriesChanged: widget.onCategoriesChanged,
+        onCityChanged: widget.onCityChanged,
       ),
     );
   }
@@ -48,185 +97,118 @@ class EventFilterChips extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
         children: [
-          // Search button
-          _SearchButton(
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
-              );
-            },
-          ),
-          const SizedBox(width: 12),
-          // Relevant sort chip
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: colorScheme.outline.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.sort,
-                  size: 16,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Relevant',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+          // Filter — just icon + text, no container
+          GestureDetector(
+            onTap: _openFilterSheet,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.tune_rounded,
+                    size: 18,
+                    color: _hasActiveFilters
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-          // Filter button
-          _FilterButton(
-            hasActiveFilters: _hasActiveFilters,
-            onTap: () => _openFilterSheet(context),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SearchButton extends StatelessWidget {
-  const _SearchButton({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                colorScheme.primaryContainer.withValues(alpha: 0.8),
-                colorScheme.secondaryContainer.withValues(alpha: 0.6),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: colorScheme.primary.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Icon(
-            Icons.search,
-            size: 20,
-            color: colorScheme.primary,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _FilterButton extends StatelessWidget {
-  const _FilterButton({
-    required this.hasActiveFilters,
-    required this.onTap,
-  });
-
-  final bool hasActiveFilters;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final theme = Theme.of(context);
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: hasActiveFilters
-                ? LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.primary.withValues(alpha: 0.9),
-                      colorScheme.tertiary.withValues(alpha: 0.7),
-                    ],
-                  )
-                : LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.surfaceContainerHighest,
-                      colorScheme.surfaceContainerHigh,
-                    ],
-                  ),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: hasActiveFilters
-                  ? colorScheme.primary.withValues(alpha: 0.5)
-                  : colorScheme.outline.withValues(alpha: 0.2),
-            ),
-            boxShadow: hasActiveFilters
-                ? [
-                    BoxShadow(
-                      color: colorScheme.primary.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Filters',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: _hasActiveFilters
+                          ? colorScheme.primary
+                          : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                      fontWeight: _hasActiveFilters
+                          ? FontWeight.w600
+                          : FontWeight.w400,
                     ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.tune_rounded,
-                size: 18,
-                color: hasActiveFilters
-                    ? colorScheme.onPrimary
-                    : colorScheme.onSurfaceVariant,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Filters',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: hasActiveFilters
-                      ? colorScheme.onPrimary
-                      : colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              if (hasActiveFilters) ...[
-                const SizedBox(width: 6),
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: colorScheme.onPrimary,
-                    shape: BoxShape.circle,
                   ),
-                ),
-              ],
-            ],
+                  if (_hasActiveFilters) ...[
+                    const SizedBox(width: 5),
+                    Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
+
+          // Search area — right side
+          Expanded(
+            child: widget.isSearching
+                ? FadeTransition(
+                    opacity: _expandAnimation,
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        Icon(
+                          Icons.search_rounded,
+                          size: 18,
+                          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: widget.searchController,
+                            focusNode: widget.searchFocusNode,
+                            onChanged: widget.onSearchChanged,
+                            autofocus: true,
+                            style: theme.textTheme.bodyMedium,
+                            decoration: InputDecoration(
+                              hintText: 'Search events...',
+                              hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.35),
+                              ),
+                              border: InputBorder.none,
+                              isDense: true,
+                              contentPadding:
+                                  const EdgeInsets.symmetric(vertical: 10),
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: widget.onSearchToggled,
+                          behavior: HitTestBehavior.opaque,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.6),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+
+          // Search icon — only when collapsed
+          if (!widget.isSearching)
+            GestureDetector(
+              onTap: widget.onSearchToggled,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  Icons.search_rounded,
+                  size: 22,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

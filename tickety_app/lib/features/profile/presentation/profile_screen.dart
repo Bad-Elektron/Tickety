@@ -7,6 +7,7 @@ import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../auth/auth.dart';
+import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../wallet/wallet.dart';
@@ -78,6 +79,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.notifications_outlined,
                   title: 'Notifications',
                   subtitle: 'Manage alerts',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationSettingsScreen(),
+                      ),
+                    );
+                  },
                 ),
                 ProfileMenuItem(
                   icon: Icons.lock_outline,
@@ -102,11 +110,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   },
                 ),
                 ProfileMenuItem(
-                  icon: Icons.receipt_long_outlined,
-                  title: 'Billing',
-                  subtitle: 'Invoices and receipts',
-                ),
-                ProfileMenuItem(
                   icon: Icons.credit_card_outlined,
                   title: 'Payment Methods',
                   subtitle: 'Cards and wallets',
@@ -114,7 +117,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                 ProfileMenuItem(
                   icon: Icons.history_outlined,
                   title: 'Transactions',
-                  subtitle: 'Purchase history',
+                  subtitle: 'Purchases and receipts',
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(

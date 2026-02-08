@@ -83,17 +83,63 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
 
   console.log(`Payment succeeded: ${paymentIntent.id} for event ${event_id}, quantity: ${quantity}`)
 
-  // Update payment record
-  const { error: updateError } = await supabase
-    .from('payments')
-    .update({
-      status: 'completed',
-      stripe_charge_id: paymentIntent.latest_charge as string,
-    })
-    .eq('stripe_payment_intent_id', paymentIntent.id)
+  // Try to fetch receipt URL from the charge
+  let receiptUrl: string | null = null
+  const chargeId = paymentIntent.latest_charge as string
+  if (chargeId) {
+    try {
+      const charge = await stripe.charges.retrieve(chargeId)
+      receiptUrl = charge.receipt_url || null
+    } catch (err) {
+      console.error('Failed to fetch charge for receipt URL:', err.message)
+    }
+  }
 
-  if (updateError) {
-    console.error('Failed to update payment record:', updateError)
+  // Update payment record (or create if it doesn't exist)
+  const { data: existingPayment } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+    .maybeSingle()
+
+  if (existingPayment) {
+    // Update existing record
+    const { error: updateError } = await supabase
+      .from('payments')
+      .update({
+        status: 'completed',
+        stripe_charge_id: chargeId,
+        ...(receiptUrl && { receipt_url: receiptUrl }),
+      })
+      .eq('id', existingPayment.id)
+
+    if (updateError) {
+      console.error('Failed to update payment record:', updateError)
+    }
+  } else {
+    // Payment record was never created — insert it now
+    console.log('No existing payment record found, creating one from webhook')
+    const { error: insertError } = await supabase
+      .from('payments')
+      .insert({
+        user_id,
+        event_id,
+        amount_cents: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        status: 'completed',
+        type: type || 'primary_purchase',
+        stripe_payment_intent_id: paymentIntent.id,
+        stripe_charge_id: chargeId,
+        ...(receiptUrl && { receipt_url: receiptUrl }),
+        metadata: {
+          event_title: paymentIntent.metadata.event_title || null,
+          created_by_webhook: true,
+        },
+      })
+
+    if (insertError) {
+      console.error('Failed to insert payment record from webhook:', insertError)
+    }
   }
 
   // Skip ticket creation for test events (non-UUID event IDs)

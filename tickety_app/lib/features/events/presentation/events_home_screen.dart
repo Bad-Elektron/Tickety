@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,11 +21,50 @@ final _selectedCityProvider = StateProvider<String?>((ref) => null);
 /// The main home screen displaying featured events.
 ///
 /// Now uses Riverpod - no more manual listeners or setState for data loading!
-class EventsHomeScreen extends ConsumerWidget {
+class EventsHomeScreen extends ConsumerStatefulWidget {
   const EventsHomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<EventsHomeScreen> createState() => _EventsHomeScreenState();
+}
+
+class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
+  final _searchController = TextEditingController();
+  final _searchFocusNode = FocusNode();
+  Timer? _searchDebounce;
+  bool _isSearching = false;
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      setState(() {
+        _searchQuery = value.trim().toLowerCase();
+      });
+    });
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      if (_isSearching) {
+        _searchController.clear();
+        _searchFocusNode.unfocus();
+        _searchQuery = '';
+      }
+      _isSearching = !_isSearching;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Watch the events state - automatically rebuilds when it changes
     final eventsState = ref.watch(eventsProvider);
     final selectedCategories = ref.watch(_selectedCategoriesProvider);
@@ -34,6 +75,7 @@ class EventsHomeScreen extends ConsumerWidget {
       eventsState.events,
       selectedCategories,
       selectedCity,
+      _searchQuery,
     );
 
     // Compute available cities
@@ -95,6 +137,11 @@ class EventsHomeScreen extends ConsumerWidget {
                     selectedCategories: selectedCategories,
                     selectedCity: selectedCity,
                     availableCities: availableCities,
+                    isSearching: _isSearching,
+                    searchController: _searchController,
+                    searchFocusNode: _searchFocusNode,
+                    onSearchChanged: _onSearchChanged,
+                    onSearchToggled: _toggleSearch,
                     onCategoriesChanged: (categories) {
                       ref.read(_selectedCategoriesProvider.notifier).state = categories;
                     },
@@ -105,9 +152,11 @@ class EventsHomeScreen extends ConsumerWidget {
                 ),
                 if (filteredEvents.isEmpty)
                   _EmptyFilterState(
+                    searchQuery: _searchQuery,
                     onClearFilters: () {
                       ref.read(_selectedCategoriesProvider.notifier).state = {};
                       ref.read(_selectedCityProvider.notifier).state = null;
+                      if (_isSearching) _toggleSearch();
                     },
                   )
                 else
@@ -120,11 +169,12 @@ class EventsHomeScreen extends ConsumerWidget {
     );
   }
 
-  /// Filter events by category and city.
+  /// Filter events by category, city, and search query.
   List<EventModel> _filterEvents(
     List<EventModel> events,
     Set<EventCategory> categories,
     String? city,
+    String searchQuery,
   ) {
     return events.where((event) {
       // Category filter
@@ -137,6 +187,15 @@ class EventsHomeScreen extends ConsumerWidget {
       // City filter
       if (city != null && event.city != city) {
         return false;
+      }
+      // Search filter
+      if (searchQuery.isNotEmpty) {
+        final matchesSearch =
+            event.title.toLowerCase().contains(searchQuery) ||
+            event.subtitle.toLowerCase().contains(searchQuery) ||
+            (event.venue?.toLowerCase().contains(searchQuery) ?? false) ||
+            (event.city?.toLowerCase().contains(searchQuery) ?? false);
+        if (!matchesSearch) return false;
       }
       return true;
     }).toList();
@@ -305,14 +364,20 @@ class _EventListState extends ConsumerState<_EventList> {
 }
 
 class _EmptyFilterState extends StatelessWidget {
+  final String searchQuery;
   final VoidCallback onClearFilters;
 
-  const _EmptyFilterState({required this.onClearFilters});
+  const _EmptyFilterState({
+    required this.searchQuery,
+    required this.onClearFilters,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    final hasSearch = searchQuery.isNotEmpty;
 
     return SliverFillRemaining(
       hasScrollBody: false,
@@ -336,7 +401,9 @@ class _EmptyFilterState extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Try adjusting your filters to find more events',
+                hasSearch
+                    ? 'No events match your search'
+                    : 'Try adjusting your filters to find more events',
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -346,7 +413,7 @@ class _EmptyFilterState extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onClearFilters,
                 icon: const Icon(Icons.filter_alt_off, size: 18),
-                label: const Text('Clear Filters'),
+                label: Text(hasSearch ? 'Clear Search & Filters' : 'Clear Filters'),
               ),
             ],
           ),

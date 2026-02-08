@@ -52,6 +52,7 @@ class Payment {
   final PaymentType type;
   final String? stripePaymentIntentId;
   final String? stripeChargeId;
+  final String? receiptUrl;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -70,6 +71,7 @@ class Payment {
     required this.type,
     this.stripePaymentIntentId,
     this.stripeChargeId,
+    this.receiptUrl,
     required this.createdAt,
     required this.updatedAt,
     this.metadata,
@@ -89,6 +91,7 @@ class Payment {
       type: PaymentType.fromString(json['type'] as String? ?? 'primary_purchase'),
       stripePaymentIntentId: json['stripe_payment_intent_id'] as String?,
       stripeChargeId: json['stripe_charge_id'] as String?,
+      receiptUrl: json['receipt_url'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
       metadata: json['metadata'] as Map<String, dynamic>?,
@@ -109,6 +112,7 @@ class Payment {
       'type': type.value,
       'stripe_payment_intent_id': stripePaymentIntentId,
       'stripe_charge_id': stripeChargeId,
+      'receipt_url': receiptUrl,
       'metadata': metadata,
     };
   }
@@ -126,6 +130,7 @@ class Payment {
     PaymentType? type,
     String? stripePaymentIntentId,
     String? stripeChargeId,
+    String? receiptUrl,
     DateTime? createdAt,
     DateTime? updatedAt,
     Map<String, dynamic>? metadata,
@@ -142,6 +147,7 @@ class Payment {
       type: type ?? this.type,
       stripePaymentIntentId: stripePaymentIntentId ?? this.stripePaymentIntentId,
       stripeChargeId: stripeChargeId ?? this.stripeChargeId,
+      receiptUrl: receiptUrl ?? this.receiptUrl,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       metadata: metadata ?? this.metadata,

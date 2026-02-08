@@ -25,6 +25,9 @@ interface PaymentIntentRequest {
   metadata?: Record<string, unknown>
 }
 
+// Admin client for operations that need to bypass RLS (e.g. inserting payments)
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -41,7 +44,7 @@ serve(async (req) => {
       )
     }
 
-    // Create Supabase client with user's JWT
+    // Create Supabase client with user's JWT (for auth verification and RLS-respecting reads)
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey, {
       global: { headers: { Authorization: authHeader } }
     })
@@ -133,8 +136,8 @@ serve(async (req) => {
       })
       customerId = customer.id
 
-      // Save customer ID to profile
-      await supabaseClient
+      // Save customer ID to profile (use admin client to bypass RLS)
+      await supabaseAdmin
         .from('profiles')
         .update({ stripe_customer_id: customerId })
         .eq('id', user.id)
@@ -169,8 +172,8 @@ serve(async (req) => {
       idempotencyKey,
     })
 
-    // Create pending payment record
-    const { data: payment, error: paymentError } = await supabaseClient
+    // Create pending payment record (use admin client to bypass RLS)
+    const { data: payment, error: paymentError } = await supabaseAdmin
       .from('payments')
       .insert({
         user_id: user.id,
