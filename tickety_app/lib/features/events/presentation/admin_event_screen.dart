@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
 import '../../staff/data/ticket_repository.dart';
 import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../../staff/presentation/manage_staff_screen.dart';
@@ -163,6 +164,21 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => ManageTicketsScreen(event: event),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.card_giftcard,
+                    title: 'Favor Tickets',
+                    subtitle: 'Send comp or gift tickets',
+                    color: Colors.teal,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CreateFavorTicketScreen(event: event),
                         ),
                       );
                     },

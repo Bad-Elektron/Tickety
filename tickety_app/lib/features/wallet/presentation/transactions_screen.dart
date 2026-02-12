@@ -302,6 +302,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         return 'Vendor Purchase';
       case PaymentType.subscription:
         return 'Subscription';
+      case PaymentType.favorTicketPurchase:
+        return 'Favor Ticket';
     }
   }
 
@@ -470,6 +472,8 @@ class _TransactionCard extends StatelessWidget {
         return Icons.storefront;
       case PaymentType.subscription:
         return Icons.workspace_premium;
+      case PaymentType.favorTicketPurchase:
+        return Icons.card_giftcard;
     }
   }
 
@@ -483,6 +487,8 @@ class _TransactionCard extends StatelessWidget {
         return 'Vendor Purchase';
       case PaymentType.subscription:
         return 'Subscription';
+      case PaymentType.favorTicketPurchase:
+        return 'Favor Ticket';
     }
   }
 

@@ -404,7 +404,7 @@ class _TicketScreenState extends State<TicketScreen> {
                   // Wallet Status Card
                   _WalletStatusCard(
                     ticket: widget.ticket,
-                    onSellPressed: widget.ticket.isValid && !widget.ticket.isListedForSale
+                    onSellPressed: widget.ticket.canBeResold
                         ? _showSellConfirmation
                         : null,
                   ),

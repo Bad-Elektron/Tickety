@@ -92,6 +92,17 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           amountCents: widget.amountCents,
           metadata: widget.metadata,
         );
+      case PaymentType.favorTicketPurchase:
+        final offerId = widget.metadata?['offer_id'] as String?;
+        if (offerId == null) {
+          setState(() => _isInitializing = false);
+          return;
+        }
+        success = await notifier.initializeFavorTicketPurchase(
+          offerId: offerId,
+          eventId: widget.event.id,
+          amountCents: widget.amountCents,
+        );
       case PaymentType.subscription:
         // Subscriptions are handled separately via SubscriptionScreen
         success = false;

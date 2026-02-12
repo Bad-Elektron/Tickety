@@ -215,6 +215,85 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   }
 
   // For resale purchases, transfer ticket ownership is handled by create-resale-intent
+
+  // For favor ticket purchases, create ticket and update the offer
+  if (type === 'favor_ticket_purchase') {
+    const offer_id = paymentIntent.metadata.offer_id
+    if (!offer_id) {
+      console.error('No offer_id in favor_ticket_purchase metadata')
+      return
+    }
+
+    // Fetch the offer
+    const { data: offer, error: offerError } = await supabase
+      .from('ticket_offers')
+      .select('*')
+      .eq('id', offer_id)
+      .single()
+
+    if (offerError || !offer) {
+      console.error('Offer not found for favor ticket purchase:', offer_id)
+      return
+    }
+
+    // Get user info
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email, display_name')
+      .eq('id', user_id)
+      .single()
+
+    const { data: authData } = await supabase.auth.admin.getUserById(user_id)
+    const ownerEmail = profile?.email || authData?.user?.email || null
+    const ownerName = profile?.display_name || null
+
+    // Generate ticket number
+    const timestamp = Date.now().toString().substring(7)
+    const random = Math.floor(Math.random() * 9999).toString().padLeft(4, '0')
+    const ticketNumber = `TKT-${timestamp}-${random}`
+
+    // Create ticket with the correct mode
+    const { data: ticket, error: ticketError } = await supabase
+      .from('tickets')
+      .insert({
+        event_id: offer.event_id,
+        ticket_number: ticketNumber,
+        owner_email: ownerEmail,
+        owner_name: ownerName,
+        owner_user_id: user_id,
+        price_paid_cents: paymentIntent.amount,
+        currency: paymentIntent.currency.toUpperCase(),
+        status: 'valid',
+        sold_by: offer.organizer_id,
+        ticket_mode: offer.ticket_mode,
+        offer_id: offer.id,
+      })
+      .select()
+      .single()
+
+    if (ticketError) {
+      console.error('Failed to create favor ticket:', ticketError)
+      return
+    }
+
+    // Update offer status
+    await supabase
+      .from('ticket_offers')
+      .update({
+        status: 'accepted',
+        ticket_id: ticket.id,
+        recipient_user_id: user_id,
+      })
+      .eq('id', offer_id)
+
+    // Link ticket to payment
+    await supabase
+      .from('payments')
+      .update({ ticket_id: ticket.id })
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+
+    console.log(`Favor ticket created: ${ticketNumber} for offer ${offer_id}`)
+  }
 }
 
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {

@@ -4,6 +4,7 @@ enum NotificationType {
   ticketPurchased('ticket_purchased'),
   ticketUsed('ticket_used'),
   eventReminder('event_reminder'),
+  favorTicketOffer('favor_ticket_offer'),
   unknown('unknown');
 
   const NotificationType(this.value);
@@ -97,6 +98,9 @@ class NotificationModel {
 
   /// Get role from notification data (for staff_added type).
   String? get role => data['role'] as String?;
+
+  /// Get offer ID from notification data (for favor_ticket_offer type).
+  String? get offerId => data['offer_id'] as String?;
 
   @override
   bool operator ==(Object other) {

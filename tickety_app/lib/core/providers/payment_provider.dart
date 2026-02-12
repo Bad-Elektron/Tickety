@@ -193,6 +193,69 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
     }
   }
 
+  /// Initialize a payment for a favor ticket purchase.
+  Future<bool> initializeFavorTicketPurchase({
+    required String offerId,
+    required String eventId,
+    required int amountCents,
+    String currency = 'usd',
+  }) async {
+    if (state.isLoading) return false;
+
+    AppLogger.info(
+      'Initializing favor ticket purchase: offer=$offerId, amount=$amountCents cents',
+      tag: _tag,
+    );
+
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      clearPaymentIntent: true,
+      isPaymentSheetReady: false,
+    );
+
+    try {
+      final request = CreatePaymentIntentRequest(
+        eventId: eventId,
+        amountCents: amountCents,
+        currency: currency,
+        type: PaymentType.favorTicketPurchase,
+        metadata: {
+          'offer_id': offerId,
+        },
+      );
+
+      final paymentIntent = await _repository.createPaymentIntent(request);
+
+      await StripeService.instance.initPaymentSheet(
+        paymentIntentClientSecret: paymentIntent.clientSecret,
+        customerId: paymentIntent.customerId,
+        customerEphemeralKeySecret: paymentIntent.ephemeralKey,
+      );
+
+      state = state.copyWith(
+        isLoading: false,
+        paymentIntent: paymentIntent,
+        isPaymentSheetReady: true,
+      );
+
+      return true;
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to initialize favor ticket purchase',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isLoading: false,
+        error: appError.userMessage,
+      );
+      return false;
+    }
+  }
+
   /// Initialize a payment for vendor POS.
   Future<bool> initializeVendorPOS({
     required String eventId,

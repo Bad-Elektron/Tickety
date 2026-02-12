@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../events/presentation/event_details_screen.dart';
+import '../../favor_tickets/presentation/favor_ticket_offer_screen.dart';
 import '../models/notification_model.dart';
 
 /// Screen displaying the user's notifications.
@@ -226,6 +227,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         break;
       case NotificationType.eventReminder:
         _navigateToEvent(notification.eventId);
+        break;
+      case NotificationType.favorTicketOffer:
+        if (notification.offerId != null) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => FavorTicketOfferScreen(
+                offerId: notification.offerId!,
+              ),
+            ),
+          );
+        }
         break;
       case NotificationType.unknown:
         break;
@@ -466,6 +478,8 @@ class _NotificationTile extends StatelessWidget {
         return Icons.check_circle_outline;
       case NotificationType.eventReminder:
         return Icons.event_outlined;
+      case NotificationType.favorTicketOffer:
+        return Icons.card_giftcard;
       case NotificationType.unknown:
         return Icons.notifications_outlined;
     }
@@ -481,6 +495,8 @@ class _NotificationTile extends StatelessWidget {
         return Colors.purple.withValues(alpha: 0.15);
       case NotificationType.eventReminder:
         return Colors.orange.withValues(alpha: 0.15);
+      case NotificationType.favorTicketOffer:
+        return Colors.teal.withValues(alpha: 0.15);
       case NotificationType.unknown:
         return colorScheme.surfaceContainerHighest;
     }
@@ -496,6 +512,8 @@ class _NotificationTile extends StatelessWidget {
         return Colors.purple;
       case NotificationType.eventReminder:
         return Colors.orange;
+      case NotificationType.favorTicketOffer:
+        return Colors.teal;
       case NotificationType.unknown:
         return colorScheme.onSurfaceVariant;
     }

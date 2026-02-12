@@ -27,7 +27,8 @@ enum PaymentType {
   primaryPurchase('primary_purchase'),
   resalePurchase('resale_purchase'),
   vendorPos('vendor_pos'),
-  subscription('subscription');
+  subscription('subscription'),
+  favorTicketPurchase('favor_ticket_purchase');
 
   final String value;
   const PaymentType(this.value);

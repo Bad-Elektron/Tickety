@@ -161,6 +161,52 @@ Sellers can now list tickets for resale without requiring full Stripe onboarding
 
 **Important:** Uses `https://esm.sh/stripe@14.21.0` import (not `@13.10.0?target=deno`) for Supabase Edge Runtime compatibility.
 
+### Favor Ticket System (Completed)
+
+Organizers can send comp/gift tickets to anyone by email. Uses a two-phase lifecycle: offer is created (pending), then recipient accepts/pays to claim.
+
+**Ticket Modes:**
+- `private` - Off-chain, database only, cannot be resold. Best for personal comps.
+- `public` - On-chain NFT (future), tradeable/resaleable on marketplace.
+- `standard` - Existing tickets (unchanged, resale allowed).
+
+**Pricing Rules:**
+- Private free ($0): Recipient just accepts, no cost.
+- Private paid ($X): Recipient must pay $X to claim.
+- Public free ($0): Suggest ~$1 minting fee. Recipient can pay (stays public) or skip (downgraded to private).
+- Public paid ($X): Recipient pays $X.
+
+**Database:**
+- `ticket_offers` table: offers with status lifecycle (pending → accepted/declined/cancelled/expired)
+- `ticket_mode` column added to `tickets` table (standard/private/public)
+- `offer_id` FK on `tickets` linking back to the offer
+- Trigger `block_private_ticket_resale` prevents private tickets from being listed on `resale_listings`
+- Trigger `notify_ticket_offer_created` creates notification for registered recipients on offer insert
+- Trigger `check_pending_offers_on_signup` links pending offers and notifies when new users register
+- Migrations: `20260213000001` through `20260213000006`
+
+**RLS Notes:**
+- Recipient policies use `auth.jwt() ->> 'email'` (not `SELECT FROM auth.users`) since the `authenticated` role cannot query `auth.users` directly.
+- Trigger functions use `profiles` table for email lookups (same reason). `SECURITY DEFINER` alone is not enough for `auth.users` access in Supabase hosted.
+
+**Edge Functions:**
+- `claim-favor-offer` - Claims free offers, handles public→private downgrade when skipping minting fee
+- `stripe-webhook` - Extended to handle `favor_ticket_purchase` payment type
+- `create-payment-intent` - Extended to accept `favor_ticket_purchase` type
+
+**Flutter:**
+- `favor_tickets/models/ticket_offer.dart` - TicketOffer model, TicketOfferStatus enum, TicketMode enum
+- `favor_tickets/data/favor_ticket_repository.dart` - CRUD for offers, claim/decline/cancel
+- `favor_tickets/presentation/create_favor_ticket_screen.dart` - Organizer form (email, price, mode, message)
+- `favor_tickets/presentation/favor_ticket_offer_screen.dart` - Recipient view with accept/pay/decline
+- `core/providers/favor_ticket_provider.dart` - PendingOffersNotifier, repository provider
+- `ticket.dart` - Added `ticketMode` field and `canBeResold` computed property
+- `notification_model.dart` - Added `favorTicketOffer` type with `offerId` getter
+- `payment.dart` - Added `favorTicketPurchase` payment type
+- `admin_event_screen.dart` - Added "Favor Tickets" action card
+- `resale_repository.dart` - Blocks private ticket resale listings
+- `ticket_screen.dart` - Uses `canBeResold` for sell button visibility
+
 ### Stripe Webhooks Setup (Production)
 
 Set up Stripe webhooks to handle subscription lifecycle events:

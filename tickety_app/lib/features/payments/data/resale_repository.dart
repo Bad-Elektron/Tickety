@@ -149,6 +149,20 @@ class ResaleRepository implements IResaleRepository {
       tag: _tag,
     );
 
+    // Check if the ticket is private (cannot be resold)
+    final ticketData = await _client
+        .from('tickets')
+        .select('ticket_mode')
+        .eq('id', ticketId)
+        .single();
+
+    if (ticketData['ticket_mode'] == 'private') {
+      throw PaymentException(
+        'Private tickets cannot be listed for resale.',
+        technicalDetails: 'Ticket $ticketId has ticket_mode=private',
+      );
+    }
+
     // Check if user has a seller account (NOT full onboarding required!)
     // This allows sellers to list immediately; they complete bank setup when withdrawing
     final hasSeller = await hasSellerAccount();
@@ -167,6 +181,15 @@ class ResaleRepository implements IResaleRepository {
         })
         .select('*, tickets(*, events(*))')
         .single();
+
+    // Update the ticket's listing status so the UI reflects it
+    await _client
+        .from('tickets')
+        .update({
+          'listing_status': 'listed',
+          'listing_price_cents': priceCents,
+        })
+        .eq('id', ticketId);
 
     final listing = ResaleListing.fromJson(response);
     AppLogger.info('Resale listing created: ${listing.id}', tag: _tag);
@@ -196,10 +219,28 @@ class ResaleRepository implements IResaleRepository {
   Future<void> cancelListing(String listingId) async {
     AppLogger.info('Cancelling listing: $listingId', tag: _tag);
 
+    // Fetch the listing first to get the ticket_id
+    final listing = await _client
+        .from('resale_listings')
+        .select('ticket_id')
+        .eq('id', listingId)
+        .single();
+
+    final ticketId = listing['ticket_id'] as String;
+
     await _client
         .from('resale_listings')
         .update({'status': 'cancelled'})
         .eq('id', listingId);
+
+    // Revert the ticket's listing status
+    await _client
+        .from('tickets')
+        .update({
+          'listing_status': 'none',
+          'listing_price_cents': null,
+        })
+        .eq('id', ticketId);
 
     AppLogger.info('Listing cancelled: $listingId', tag: _tag);
   }

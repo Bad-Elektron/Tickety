@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../favor_tickets/models/ticket_offer.dart';
+
 /// Core ticket status - mutually exclusive states.
 enum TicketStatus {
   valid('valid'),
@@ -126,6 +128,11 @@ class Ticket {
   final DateTime? nftMintedAt;
 
   // ─────────────────────────────────────────────────────────────────
+  // Ticket mode (standard/private/public)
+  // ─────────────────────────────────────────────────────────────────
+  final TicketMode ticketMode;
+
+  // ─────────────────────────────────────────────────────────────────
   // Resale listing (enum-based)
   // ─────────────────────────────────────────────────────────────────
   final ListingStatus listingStatus;
@@ -155,6 +162,7 @@ class Ticket {
     required this.nftMinted,
     this.nftAssetId,
     this.nftMintedAt,
+    this.ticketMode = TicketMode.standard,
     this.listingStatus = ListingStatus.none,
     this.listingPriceCents,
     this.eventData,
@@ -188,6 +196,7 @@ class Ticket {
       nftMintedAt: json['nft_minted_at'] != null
           ? DateTime.parse(json['nft_minted_at'] as String)
           : null,
+      ticketMode: TicketMode.fromString(json['ticket_mode'] as String?),
       listingStatus: ListingStatus.fromString(json['listing_status'] as String?),
       listingPriceCents: json['listing_price_cents'] as int?,
       eventData: json['events'] as Map<String, dynamic>?,
@@ -206,6 +215,7 @@ class Ticket {
       'currency': currency,
       'sold_by': soldBy,
       'status': status.value,
+      'ticket_mode': ticketMode.value,
       'listing_status': listingStatus.value,
       if (listingPriceCents != null) 'listing_price_cents': listingPriceCents,
     };
@@ -229,6 +239,9 @@ class Ticket {
 
   /// Whether ticket is currently listed for resale.
   bool get isListedForSale => listingStatus == ListingStatus.listed;
+
+  /// Whether ticket can be listed for resale.
+  bool get canBeResold => ticketMode.canResale && isValid && !isListedForSale;
 
   // ─────────────────────────────────────────────────────────────────
   // Validation for check-in (computed, not stored)
@@ -345,6 +358,7 @@ class Ticket {
     bool? nftMinted,
     String? nftAssetId,
     DateTime? nftMintedAt,
+    TicketMode? ticketMode,
     ListingStatus? listingStatus,
     int? listingPriceCents,
     Map<String, dynamic>? eventData,
@@ -368,6 +382,7 @@ class Ticket {
       nftMinted: nftMinted ?? this.nftMinted,
       nftAssetId: nftAssetId ?? this.nftAssetId,
       nftMintedAt: nftMintedAt ?? this.nftMintedAt,
+      ticketMode: ticketMode ?? this.ticketMode,
       listingStatus: listingStatus ?? this.listingStatus,
       listingPriceCents: listingPriceCents ?? this.listingPriceCents,
       eventData: eventData ?? this.eventData,

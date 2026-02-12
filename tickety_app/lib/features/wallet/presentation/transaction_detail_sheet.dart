@@ -188,6 +188,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Vendor Purchase';
       case PaymentType.subscription:
         return 'Subscription';
+      case PaymentType.favorTicketPurchase:
+        return 'Favor Ticket';
     }
   }
 
@@ -201,6 +203,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.storefront;
       case PaymentType.subscription:
         return Icons.workspace_premium;
+      case PaymentType.favorTicketPurchase:
+        return Icons.card_giftcard;
     }
   }
 

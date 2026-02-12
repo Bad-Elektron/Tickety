@@ -18,7 +18,7 @@ interface PaymentIntentRequest {
   event_id: string
   amount_cents: number
   currency: string
-  type: 'primary_purchase' | 'resale_purchase' | 'vendor_pos'
+  type: 'primary_purchase' | 'resale_purchase' | 'vendor_pos' | 'favor_ticket_purchase'
   user_id: string
   ticket_id?: string
   quantity?: number
