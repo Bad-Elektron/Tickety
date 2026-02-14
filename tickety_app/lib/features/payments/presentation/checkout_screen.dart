@@ -16,6 +16,7 @@ class CheckoutScreen extends ConsumerStatefulWidget {
     required this.amountCents,
     required this.paymentType,
     this.quantity = 1,
+    this.baseUnitPriceCents,
     this.resaleListingId,
     this.sellerId,
     this.metadata,
@@ -25,6 +26,7 @@ class CheckoutScreen extends ConsumerStatefulWidget {
   final int amountCents;
   final PaymentType paymentType;
   final int quantity;
+  final int? baseUnitPriceCents;
   final String? resaleListingId;
   final String? sellerId;
   final Map<String, dynamic>? metadata;
@@ -178,7 +180,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
                     _OrderSummaryCard(
                       quantity: widget.quantity,
-                      unitPriceCents: widget.amountCents ~/ widget.quantity,
+                      unitPriceCents: widget.baseUnitPriceCents ??
+                          widget.event.priceInCents ??
+                          (widget.amountCents ~/ widget.quantity),
                       totalCents: widget.amountCents,
                       paymentType: widget.paymentType,
                     ),
@@ -539,10 +543,19 @@ class _OrderSummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // Calculate platform fee for resale (5%)
     final isResale = paymentType == PaymentType.resalePurchase;
-    final platformFeeCents = isResale ? (totalCents * 0.05).round() : 0;
-    final subtotalCents = isResale ? totalCents - platformFeeCents : totalCents;
+    final isPrimaryOrFavor = paymentType == PaymentType.primaryPurchase ||
+        paymentType == PaymentType.favorTicketPurchase;
+
+    // Resale fee (5%) — unchanged
+    final resaleFeeCents = isResale ? (totalCents * 0.05).round() : 0;
+    final resaleSubtotalCents = isResale ? totalCents - resaleFeeCents : totalCents;
+
+    // Primary/favor fee calculation
+    final baseCents = isPrimaryOrFavor ? unitPriceCents * quantity : 0;
+    final fees = isPrimaryOrFavor && baseCents > 0
+        ? ServiceFeeCalculator.calculate(baseCents)
+        : null;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -552,7 +565,7 @@ class _OrderSummaryCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Line items
+          // Ticket line
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -561,13 +574,50 @@ class _OrderSummaryCard extends StatelessWidget {
                 style: theme.textTheme.bodyMedium,
               ),
               Text(
-                _formatAmount(isResale ? subtotalCents : unitPriceCents * quantity),
+                _formatAmount(isResale
+                    ? resaleSubtotalCents
+                    : (isPrimaryOrFavor ? baseCents : unitPriceCents * quantity)),
                 style: theme.textTheme.bodyMedium,
               ),
             ],
           ),
 
-          // Platform fee for resale
+          // Service fee for primary/favor purchases
+          if (fees != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Service fee',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Tooltip(
+                      message: 'Includes payment processing and platform fees',
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 14,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  _formatAmount(fees.serviceFeeCents),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          // Platform fee for resale (unchanged)
           if (isResale) ...[
             const SizedBox(height: 8),
             Row(
@@ -593,7 +643,7 @@ class _OrderSummaryCard extends StatelessWidget {
                   ],
                 ),
                 Text(
-                  _formatAmount(platformFeeCents),
+                  _formatAmount(resaleFeeCents),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),

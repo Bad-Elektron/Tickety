@@ -193,6 +193,61 @@ class Payment {
   }
 }
 
+/// Fee breakdown for a ticket purchase.
+typedef FeeBreakdown = ({
+  int baseCents,
+  int platformFeeCents,
+  int mintFeeCents,
+  int stripeFeeCents,
+  int serviceFeeCents,
+  int totalCents,
+});
+
+/// Calculates service fees for ticket purchases.
+///
+/// The service fee covers: 5% platform fee, Stripe processing (2.9% + $0.30),
+/// and a future mint fee (currently $0). The formula passes all costs to the buyer.
+///
+/// Example: $10 ticket -> base=1000, service_fee=113, total=1113
+class ServiceFeeCalculator {
+  ServiceFeeCalculator._();
+
+  static const double _platformFeeRate = 0.05;
+  static const double _stripeFeeRate = 0.029;
+  static const int _stripeFeeFixedCents = 30;
+  static const int _mintFeeCents = 0;
+
+  static FeeBreakdown calculate(int baseCents) {
+    if (baseCents <= 0) {
+      return (
+        baseCents: 0,
+        platformFeeCents: 0,
+        mintFeeCents: 0,
+        stripeFeeCents: 0,
+        serviceFeeCents: 0,
+        totalCents: 0,
+      );
+    }
+
+    final platformFeeCents = (baseCents * _platformFeeRate).ceil();
+    const mintFeeCents = _mintFeeCents;
+    final subtotal = baseCents + platformFeeCents + mintFeeCents;
+    final totalCents =
+        ((subtotal + _stripeFeeFixedCents) / (1 - _stripeFeeRate)).ceil();
+    final stripeFeeCents = totalCents - subtotal;
+    final serviceFeeCents = platformFeeCents + stripeFeeCents + mintFeeCents;
+
+    return (
+      baseCents: baseCents,
+      platformFeeCents: platformFeeCents,
+      mintFeeCents: mintFeeCents,
+      stripeFeeCents: stripeFeeCents,
+      serviceFeeCents: serviceFeeCents,
+      totalCents: totalCents,
+    );
+  }
+}
+
 /// Data needed to create a payment intent.
 class CreatePaymentIntentRequest {
   final String eventId;

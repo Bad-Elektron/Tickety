@@ -148,12 +148,14 @@ class _FavorTicketOfferScreenState
   }
 
   void _navigateToCheckout(EventModel event) {
+    final fees = ServiceFeeCalculator.calculate(_offer!.priceCents);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CheckoutScreen(
           event: event,
-          amountCents: _offer!.priceCents,
+          amountCents: fees.totalCents,
           paymentType: PaymentType.favorTicketPurchase,
+          baseUnitPriceCents: _offer!.priceCents,
           metadata: {'offer_id': _offer!.id},
         ),
       ),

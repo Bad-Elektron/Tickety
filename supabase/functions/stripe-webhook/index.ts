@@ -107,6 +107,9 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     .eq('stripe_payment_intent_id', paymentIntent.id)
     .maybeSingle()
 
+  // Extract fee metadata (present when service fees were applied)
+  const serviceFeeCents = parseInt(paymentIntent.metadata.service_fee_cents || '0', 10)
+
   if (existingPayment) {
     // Update existing record
     const { error: updateError } = await supabase
@@ -135,6 +138,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
         type: type || 'primary_purchase',
         stripe_payment_intent_id: paymentIntent.id,
         stripe_charge_id: chargeId,
+        platform_fee_cents: serviceFeeCents,
         ...(receiptUrl && { receipt_url: receiptUrl }),
         metadata: {
           event_title: paymentIntent.metadata.event_title || null,
@@ -168,8 +172,11 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     const ownerEmail = profile?.email || authData?.user?.email || null
     const ownerName = profile?.display_name || null
 
-    // Calculate price per ticket
-    const pricePerTicket = Math.round(paymentIntent.amount / quantity)
+    // Calculate price per ticket (use base amount from metadata when fees were applied)
+    const baseAmountCents = parseInt(paymentIntent.metadata.base_amount_cents || '0', 10)
+    const pricePerTicket = baseAmountCents
+      ? Math.round(baseAmountCents / quantity)
+      : Math.round(paymentIntent.amount / quantity)
 
     // Create tickets for each quantity
     const ticketIds: string[] = []
@@ -252,6 +259,9 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     const random = Math.floor(Math.random() * 9999).toString().padLeft(4, '0')
     const ticketNumber = `TKT-${timestamp}-${random}`
 
+    // Use base amount (before fees) for ticket price, fall back to total for backward compat
+    const favorBaseAmount = parseInt(paymentIntent.metadata.base_amount_cents || '0', 10)
+
     // Create ticket with the correct mode
     const { data: ticket, error: ticketError } = await supabase
       .from('tickets')
@@ -261,7 +271,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
         owner_email: ownerEmail,
         owner_name: ownerName,
         owner_user_id: user_id,
-        price_paid_cents: paymentIntent.amount,
+        price_paid_cents: favorBaseAmount || paymentIntent.amount,
         currency: paymentIntent.currency.toUpperCase(),
         status: 'valid',
         sold_by: offer.organizer_id,
@@ -299,6 +309,13 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   console.log(`Payment failed: ${paymentIntent.id}`)
 
+  // Find the payment first so we can cancel referral earnings
+  const { data: failedPayment } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+    .maybeSingle()
+
   const { error } = await supabase
     .from('payments')
     .update({ status: 'failed' })
@@ -306,6 +323,19 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
 
   if (error) {
     console.error('Failed to update payment status:', error)
+  }
+
+  // Cancel any referral earnings for this payment
+  if (failedPayment?.id) {
+    const { error: earningsError } = await supabase
+      .from('referral_earnings')
+      .update({ status: 'cancelled' })
+      .eq('payment_id', failedPayment.id)
+      .eq('status', 'pending')
+
+    if (earningsError) {
+      console.error('Failed to cancel referral earnings:', earningsError)
+    }
   }
 }
 
@@ -344,6 +374,17 @@ async function handleChargeRefunded(charge: Stripe.Charge) {
     if (ticketError) {
       console.error('Failed to update ticket status:', ticketError)
     }
+  }
+
+  // Cancel any referral earnings for this payment
+  const { error: earningsError } = await supabase
+    .from('referral_earnings')
+    .update({ status: 'cancelled' })
+    .eq('payment_id', payment.id)
+    .eq('status', 'pending')
+
+  if (earningsError) {
+    console.error('Failed to cancel referral earnings on refund:', earningsError)
   }
 
   console.log(`Refund processed for payment: ${payment.id}`)

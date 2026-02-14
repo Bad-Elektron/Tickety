@@ -508,14 +508,19 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
           // Buy Official Button
           FilledButton(
             onPressed: () {
+              final baseTotalCents = _totalPriceCents;
+              final checkoutAmountCents = baseTotalCents > 0
+                  ? ServiceFeeCalculator.calculate(baseTotalCents).totalCents
+                  : 0;
               Navigator.pop(context);
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => CheckoutScreen(
                     event: widget.event,
-                    amountCents: _totalPriceCents,
+                    amountCents: checkoutAmountCents,
                     paymentType: PaymentType.primaryPurchase,
                     quantity: _quantity,
+                    baseUnitPriceCents: _pricePerTicketCents,
                   ),
                 ),
               );

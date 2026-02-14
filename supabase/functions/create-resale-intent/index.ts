@@ -155,7 +155,25 @@ serve(async (req) => {
     }
 
     // Calculate platform fee (5%)
-    const platformFeeCents = Math.round(amount_cents * PLATFORM_FEE_PERCENT)
+    let platformFeeCents = Math.round(amount_cents * PLATFORM_FEE_PERCENT)
+
+    // Check for referral discount on buyer
+    let discountCents = 0
+    let referrerEarningCents = 0
+    let referralInfo: any = null
+
+    const { data: refInfo } = await supabaseAdmin.rpc('get_referral_discount_info', {
+      p_user_id: user.id,
+    })
+
+    if (refInfo && refInfo.length > 0 && refInfo[0].referral_active) {
+      referralInfo = refInfo[0]
+      discountCents = Math.round(platformFeeCents * Number(referralInfo.discount_percent))
+      const effectiveFeeCents = platformFeeCents - discountCents
+      referrerEarningCents = Math.round(effectiveFeeCents * Number(referralInfo.revenue_share_percent))
+      platformFeeCents = effectiveFeeCents
+      console.log(`Referral discount applied: discount=${discountCents}c, effective fee=${platformFeeCents}c, referrer earns=${referrerEarningCents}c`)
+    }
 
     // Get or create Stripe customer for buyer
     const { data: buyerProfile } = await supabaseAdmin
@@ -248,6 +266,29 @@ serve(async (req) => {
 
     if (paymentError) {
       console.error('Failed to create payment record:', paymentError)
+    }
+
+    // Record referral earnings if applicable
+    if (referralInfo && referralInfo.referral_active && payment?.id) {
+      const { error: earningsError } = await supabaseAdmin
+        .from('referral_earnings')
+        .insert({
+          referrer_id: referralInfo.referrer_id,
+          referred_user_id: user.id,
+          payment_id: payment.id,
+          platform_fee_cents: platformFeeCents + discountCents,
+          discount_cents: discountCents,
+          earning_cents: referrerEarningCents,
+          discount_percent_applied: Number(referralInfo.discount_percent),
+          revenue_share_percent_applied: Number(referralInfo.revenue_share_percent),
+          status: 'pending',
+        })
+
+      if (earningsError) {
+        console.error('Failed to record referral earnings:', earningsError)
+      } else {
+        console.log(`Referral earnings recorded: referrer=${referralInfo.referrer_id}, earning=${referrerEarningCents}c`)
+      }
     }
 
     console.log(`Created resale payment intent ${paymentIntent.id} for listing ${resale_listing_id}`)

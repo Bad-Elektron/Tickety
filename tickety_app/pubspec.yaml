@@ -73,6 +73,9 @@ dependencies:
   # Date/time formatting
   intl: ^0.19.0
 
+  # Share content via native share sheet
+  share_plus: ^10.1.4
+
   # Permissions handling (for notification permissions)
   permission_handler: ^11.0.0
 

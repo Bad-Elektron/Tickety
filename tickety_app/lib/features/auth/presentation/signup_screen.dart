@@ -22,6 +22,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _referralCodeController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
 
@@ -31,6 +32,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _referralCodeController.dispose();
     super.dispose();
   }
 
@@ -39,11 +41,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
     // Sanitize display name to prevent XSS
     final sanitizedName = Validators.sanitize(_nameController.text);
+    final referralCode = _referralCodeController.text.trim();
 
     final success = await ref.read(authProvider.notifier).signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text,
           displayName: sanitizedName.isNotEmpty ? sanitizedName : null,
+          referralCode: referralCode.isNotEmpty ? referralCode : null,
         );
 
     if (success && mounted) {
@@ -199,6 +203,22 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 16),
+
+                // Referral code field
+                TextFormField(
+                  controller: _referralCodeController,
+                  textInputAction: TextInputAction.done,
+                  textCapitalization: TextCapitalization.characters,
+                  maxLength: 8,
+                  onFieldSubmitted: (_) => _handleSignup(),
+                  decoration: const InputDecoration(
+                    labelText: 'Referral code (optional)',
+                    prefixIcon: Icon(Icons.card_giftcard_outlined),
+                    border: OutlineInputBorder(),
+                    counterText: '',
+                  ),
                 ),
                 const SizedBox(height: 24),
 

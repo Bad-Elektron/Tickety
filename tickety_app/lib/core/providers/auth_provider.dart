@@ -100,6 +100,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String email,
     required String password,
     String? displayName,
+    String? referralCode,
   }) async {
     // Check rate limit before attempting
     if (!_rateLimiter.canAttempt()) {
@@ -119,10 +120,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _rateLimiter.recordAttempt();
 
     try {
+      final metadata = <String, dynamic>{
+        if (displayName != null) 'display_name': displayName,
+        if (referralCode != null) 'referral_code': referralCode.toUpperCase(),
+      };
+
       await SupabaseService.instance.client.auth.signUp(
         email: email,
         password: password,
-        data: displayName != null ? {'display_name': displayName} : null,
+        data: metadata.isNotEmpty ? metadata : null,
       );
       AppLogger.info('Sign up successful for: ${AppLogger.maskEmail(email)}', tag: _tag);
       _rateLimiter.reset(); // Clear rate limit on success

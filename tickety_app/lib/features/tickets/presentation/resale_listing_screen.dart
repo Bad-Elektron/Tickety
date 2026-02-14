@@ -48,10 +48,17 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
   Future<void> _checkOnboardingStatus() async {
     try {
       final repository = ref.read(resaleRepositoryProvider);
-      final isOnboarded = await repository.isSellerOnboarded();
+      var hasAccount = await repository.hasSellerAccount();
+
+      // Auto-create a minimal seller account if the user doesn't have one
+      if (!hasAccount) {
+        await repository.createSellerAccount();
+        hasAccount = true;
+      }
+
       if (mounted) {
         setState(() {
-          _isSellerOnboarded = isOnboarded;
+          _isSellerOnboarded = hasAccount;
           _isCheckingOnboarding = false;
         });
       }

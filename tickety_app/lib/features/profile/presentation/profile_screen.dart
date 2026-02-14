@@ -11,6 +11,7 @@ import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../payments/payments.dart';
+import '../../referral/referral.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
 
@@ -92,6 +93,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.lock_outline,
                   title: 'Privacy',
                   subtitle: 'Data and permissions',
+                ),
+                ProfileMenuItem(
+                  icon: Icons.card_giftcard_outlined,
+                  title: 'Referral',
+                  subtitle: 'Share and earn',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ReferralScreen(),
+                      ),
+                    );
+                  },
                 ),
               ],
             ),

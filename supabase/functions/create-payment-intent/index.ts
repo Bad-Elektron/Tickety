@@ -25,6 +25,41 @@ interface PaymentIntentRequest {
   metadata?: Record<string, unknown>
 }
 
+// Fee constants — must match client-side ServiceFeeCalculator exactly
+const PLATFORM_FEE_RATE = 0.05
+const STRIPE_FEE_RATE = 0.029
+const STRIPE_FEE_FIXED_CENTS = 30
+const MINT_FEE_CENTS = 0
+
+function calculateFees(baseCents: number) {
+  if (baseCents <= 0) {
+    return {
+      base_cents: 0,
+      platform_fee_cents: 0,
+      mint_fee_cents: 0,
+      stripe_fee_cents: 0,
+      service_fee_cents: 0,
+      total_cents: 0,
+    }
+  }
+
+  const platform_fee_cents = Math.ceil(baseCents * PLATFORM_FEE_RATE)
+  const mint_fee_cents = MINT_FEE_CENTS
+  const subtotal = baseCents + platform_fee_cents + mint_fee_cents
+  const total_cents = Math.ceil((subtotal + STRIPE_FEE_FIXED_CENTS) / (1 - STRIPE_FEE_RATE))
+  const stripe_fee_cents = total_cents - subtotal
+  const service_fee_cents = platform_fee_cents + stripe_fee_cents + mint_fee_cents
+
+  return {
+    base_cents: baseCents,
+    platform_fee_cents,
+    mint_fee_cents,
+    stripe_fee_cents,
+    service_fee_cents,
+    total_cents,
+  }
+}
+
 // Admin client for operations that need to bypass RLS (e.g. inserting payments)
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
@@ -103,15 +138,36 @@ serve(async (req) => {
       }
       event = eventData
 
-      // For primary purchases, validate total = quantity × unit price
+      // For primary purchases, validate total = fees(quantity × unit price)
       if (type === 'primary_purchase' && event.price_in_cents) {
-        const expectedTotal = event.price_in_cents * quantity
-        if (amount_cents !== expectedTotal) {
-          console.log(`Price mismatch: expected ${expectedTotal} (${quantity} × ${event.price_in_cents}), got ${amount_cents}`)
+        const baseCents = event.price_in_cents * quantity
+        const fees = calculateFees(baseCents)
+        if (amount_cents !== fees.total_cents) {
+          console.log(`Price mismatch: expected ${fees.total_cents} (base: ${baseCents}, fee: ${fees.service_fee_cents}), got ${amount_cents}`)
           return new Response(
             JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
+        }
+      }
+
+      // For favor ticket purchases, validate total against offer price + fees
+      if (type === 'favor_ticket_purchase' && metadata?.offer_id) {
+        const { data: offer } = await supabaseAdmin
+          .from('ticket_offers')
+          .select('price_cents')
+          .eq('id', metadata.offer_id)
+          .single()
+
+        if (offer && offer.price_cents > 0) {
+          const fees = calculateFees(offer.price_cents)
+          if (amount_cents !== fees.total_cents) {
+            console.log(`Favor price mismatch: expected ${fees.total_cents} (base: ${offer.price_cents}), got ${amount_cents}`)
+            return new Response(
+              JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
         }
       }
     }
@@ -167,8 +223,44 @@ serve(async (req) => {
     )
     console.log('Ephemeral key created, secret length:', ephemeralKey.secret?.length || 0)
 
+    // Compute fee breakdown for metadata
+    let fees: ReturnType<typeof calculateFees> | null = null
+    if (type === 'primary_purchase' && event.price_in_cents) {
+      fees = calculateFees(event.price_in_cents * quantity)
+    } else if (type === 'favor_ticket_purchase' && metadata?.offer_id) {
+      const { data: offerForFees } = await supabaseAdmin
+        .from('ticket_offers')
+        .select('price_cents')
+        .eq('id', metadata.offer_id)
+        .single()
+      if (offerForFees && offerForFees.price_cents > 0) {
+        fees = calculateFees(offerForFees.price_cents)
+      }
+    }
+
     // Generate idempotency key
     const idempotencyKey = `pi_${user.id}_${event_id}_${Date.now()}`
+
+    // Build PaymentIntent metadata (Stripe requires string values)
+    const piMetadata: Record<string, string> = {
+      event_id,
+      user_id: user.id,
+      type,
+      event_title: event.title,
+      quantity: String(quantity),
+    }
+    if (fees) {
+      piMetadata.base_amount_cents = String(fees.base_cents)
+      piMetadata.service_fee_cents = String(fees.service_fee_cents)
+      piMetadata.platform_fee_cents = String(fees.platform_fee_cents)
+      piMetadata.stripe_fee_cents = String(fees.stripe_fee_cents)
+    }
+    // Spread additional metadata (e.g. offer_id)
+    if (metadata) {
+      for (const [k, v] of Object.entries(metadata)) {
+        piMetadata[k] = String(v)
+      }
+    }
 
     // Create PaymentIntent
     const paymentIntent = await stripe.paymentIntents.create({
@@ -178,14 +270,7 @@ serve(async (req) => {
       automatic_payment_methods: { enabled: true },
       // Enable saving payment methods for future use
       setup_future_usage: 'off_session',
-      metadata: {
-        event_id,
-        user_id: user.id,
-        type,
-        event_title: event.title,
-        quantity: String(quantity),
-        ...metadata,
-      },
+      metadata: piMetadata,
     }, {
       idempotencyKey,
     })
@@ -201,8 +286,10 @@ serve(async (req) => {
         status: 'pending',
         type,
         stripe_payment_intent_id: paymentIntent.id,
+        platform_fee_cents: fees ? fees.service_fee_cents : 0,
         metadata: {
           event_title: event.title,
+          ...(fees && { fee_breakdown: fees }),
           ...metadata,
         },
       })
@@ -221,6 +308,7 @@ serve(async (req) => {
         customer_id: customerId,
         ephemeral_key: ephemeralKey.secret,
         payment_id: payment?.id,
+        ...(fees && { fee_breakdown: fees }),
         _debug: {
           profile_customer_id: profile?.stripe_customer_id || 'NULL',
           profile_error: profileError?.message || 'none',

@@ -1,19 +1,180 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/models/models.dart';
+import '../../../core/errors/errors.dart';
+import '../../../core/services/services.dart';
 import '../../events/models/event_model.dart';
+import '../data/resale_repository.dart';
 import '../models/payment.dart';
 import '../models/resale_listing.dart';
 import 'checkout_screen.dart';
 import 'seller_onboarding_screen.dart';
 
-/// Provider for event resale listings (paginated).
-final eventResaleListingsProvider = FutureProvider.family<
-    PaginatedResult<ResaleListing>, String>((ref, eventId) async {
-  final repository = ref.watch(resaleRepositoryProvider);
-  return repository.getEventListings(eventId);
-});
+const _tag = 'ResaleBrowse';
+const int _kPageSize = 20;
+
+// ============================================================
+// STATE
+// ============================================================
+
+class ResaleListingsState {
+  final List<ResaleListing> listings;
+  final bool isLoading;
+  final bool isLoadingMore;
+  final String? error;
+  final int currentPage;
+  final bool hasMore;
+
+  const ResaleListingsState({
+    this.listings = const [],
+    this.isLoading = false,
+    this.isLoadingMore = false,
+    this.error,
+    this.currentPage = 0,
+    this.hasMore = true,
+  });
+
+  bool get canLoadMore => hasMore && !isLoading && !isLoadingMore;
+
+  ResaleListingsState copyWith({
+    List<ResaleListing>? listings,
+    bool? isLoading,
+    bool? isLoadingMore,
+    String? error,
+    int? currentPage,
+    bool? hasMore,
+    bool clearError = false,
+  }) {
+    return ResaleListingsState(
+      listings: listings ?? this.listings,
+      isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+      error: clearError ? null : (error ?? this.error),
+      currentPage: currentPage ?? this.currentPage,
+      hasMore: hasMore ?? this.hasMore,
+    );
+  }
+}
+
+// ============================================================
+// NOTIFIER
+// ============================================================
+
+class ResaleListingsNotifier extends StateNotifier<ResaleListingsState> {
+  final ResaleRepository _repository;
+  final String _eventId;
+
+  ResaleListingsNotifier(this._repository, this._eventId)
+      : super(const ResaleListingsState());
+
+  Future<void> load() async {
+    if (state.isLoading) return;
+
+    AppLogger.debug('Loading resale listings for event: $_eventId', tag: _tag);
+
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      currentPage: 0,
+      hasMore: true,
+    );
+
+    try {
+      final result = await _repository.getEventListings(
+        _eventId,
+        page: 0,
+        pageSize: _kPageSize,
+      );
+      AppLogger.info(
+        'Loaded ${result.items.length} resale listings (hasMore: ${result.hasMore})',
+        tag: _tag,
+      );
+      state = state.copyWith(
+        listings: result.items,
+        isLoading: false,
+        currentPage: 0,
+        hasMore: result.hasMore,
+      );
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load resale listings',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isLoading: false,
+        error: appError.userMessage,
+        hasMore: false,
+      );
+    }
+  }
+
+  Future<void> loadMore() async {
+    if (!state.canLoadMore) return;
+
+    final nextPage = state.currentPage + 1;
+    AppLogger.debug('Loading more resale listings (page: $nextPage)', tag: _tag);
+    state = state.copyWith(isLoadingMore: true);
+
+    try {
+      final result = await _repository.getEventListings(
+        _eventId,
+        page: nextPage,
+        pageSize: _kPageSize,
+      );
+
+      AppLogger.info(
+        'Loaded ${result.items.length} more resale listings (hasMore: ${result.hasMore})',
+        tag: _tag,
+      );
+
+      state = state.copyWith(
+        listings: [...state.listings, ...result.items],
+        isLoadingMore: false,
+        currentPage: nextPage,
+        hasMore: result.hasMore,
+      );
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to load more resale listings',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isLoadingMore: false,
+        error: appError.userMessage,
+      );
+    }
+  }
+
+  Future<void> refresh() async {
+    state = state.copyWith(isLoading: false);
+    await load();
+  }
+}
+
+// ============================================================
+// PROVIDERS
+// ============================================================
+
+final resaleListingsProvider = StateNotifierProvider.autoDispose
+    .family<ResaleListingsNotifier, ResaleListingsState, String>(
+  (ref, eventId) {
+    final repository = ref.watch(resaleRepositoryProvider);
+    final notifier = ResaleListingsNotifier(repository, eventId);
+    notifier.load();
+    return notifier;
+  },
+);
+
+// ============================================================
+// SCREEN
+// ============================================================
 
 /// Screen for browsing and purchasing resale tickets.
 class ResaleBrowseScreen extends ConsumerWidget {
@@ -26,7 +187,8 @@ class ResaleBrowseScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listingsAsync = ref.watch(eventResaleListingsProvider(event.id));
+    final state = ref.watch(resaleListingsProvider(event.id));
+    final notifier = ref.read(resaleListingsProvider(event.id).notifier);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -34,91 +196,130 @@ class ResaleBrowseScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Resale Tickets'),
       ),
-      body: listingsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => _ErrorView(
-          error: e.toString(),
-          onRetry: () => ref.refresh(eventResaleListingsProvider(event.id)),
-        ),
-        data: (result) {
-          final listings = result.items;
-          if (listings.isEmpty) {
-            return _EmptyView(event: event);
-          }
+      body: _buildBody(context, ref, state, notifier, theme, colorScheme),
+    );
+  }
 
-          return Column(
+  Widget _buildBody(
+    BuildContext context,
+    WidgetRef ref,
+    ResaleListingsState state,
+    ResaleListingsNotifier notifier,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    if (state.isLoading && state.listings.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (state.error != null && state.listings.isEmpty) {
+      return _ErrorView(
+        error: state.error!,
+        onRetry: () => notifier.refresh(),
+      );
+    }
+
+    if (state.listings.isEmpty) {
+      return _EmptyView(event: event);
+    }
+
+    final listings = state.listings;
+    final currentUserId = SupabaseService.instance.currentUser?.id;
+
+    return Column(
+      children: [
+        // Event header
+        Container(
+          padding: const EdgeInsets.all(16),
+          color: colorScheme.surfaceContainerLow,
+          child: Row(
             children: [
-              // Event header
               Container(
-                padding: const EdgeInsets.all(16),
-                color: colorScheme.surfaceContainerLow,
-                child: Row(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [colorScheme.primary, colorScheme.secondary],
+                  ),
+                ),
+                child: const Icon(
+                  Icons.event,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Event image placeholder
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [colorScheme.primary, colorScheme.secondary],
-                        ),
+                    Text(
+                      event.title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
-                      child: const Icon(
-                        Icons.event,
-                        color: Colors.white,
-                        size: 28,
-                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            event.title,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${listings.length}${result.hasMore ? "+" : ""} ${listings.length == 1 ? "ticket" : "tickets"} available',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 4),
+                    Text(
+                      '${listings.length}${state.hasMore ? "+" : ""} ${listings.length == 1 ? "ticket" : "tickets"} available',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
               ),
-
-              // Listings
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: listings.length,
-                  separatorBuilder: (context, index) => const SizedBox(height: 12),
-                  itemBuilder: (context, index) {
-                    final listing = listings[index];
-                    return _ResaleListingCard(
-                      listing: listing,
-                      event: event,
-                    );
-                  },
-                ),
-              ),
             ],
-          );
-        },
-      ),
+          ),
+        ),
+
+        // Listings with infinite scroll
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => notifier.refresh(),
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: listings.length + (state.hasMore ? 1 : 0),
+              separatorBuilder: (context, index) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                // Load more trigger
+                if (index == listings.length) {
+                  if (state.canLoadMore) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      notifier.loadMore();
+                    });
+                  }
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  );
+                }
+
+                final listing = listings[index];
+                final isOwnListing =
+                    currentUserId != null && listing.sellerId == currentUserId;
+                return _ResaleListingCard(
+                  listing: listing,
+                  event: event,
+                  isOwnListing: isOwnListing,
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -127,10 +328,12 @@ class _ResaleListingCard extends StatelessWidget {
   const _ResaleListingCard({
     required this.listing,
     required this.event,
+    this.isOwnListing = false,
   });
 
   final ResaleListing listing;
   final EventModel event;
+  final bool isOwnListing;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +353,9 @@ class _ResaleListingCard extends StatelessWidget {
         color: colorScheme.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: colorScheme.outline.withValues(alpha: 0.2),
+          color: isOwnListing
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : colorScheme.outline.withValues(alpha: 0.2),
         ),
         boxShadow: [
           BoxShadow(
@@ -163,6 +368,25 @@ class _ResaleListingCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Own listing badge
+          if (isOwnListing) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                'Your Listing',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onPrimaryContainer,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           // Top row: Ticket info and price
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -283,21 +507,37 @@ class _ResaleListingCard extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Buy button
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => _handleBuy(context),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          // Buy button or own listing indicator
+          if (isOwnListing)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _handleOwnListing(context),
+                icon: const Icon(Icons.sell_outlined, size: 18),
+                label: const Text('Your Listing'),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
-              child: Text(
-                  'Buy for ${listing.formattedTotalBuyerPrice}'),
+            )
+          else
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => _handleBuy(context),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: Text(
+                    'Buy for ${listing.formattedTotalBuyerPrice}'),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -312,6 +552,27 @@ class _ResaleListingCard extends StatelessWidget {
           paymentType: PaymentType.resalePurchase,
           resaleListingId: listing.id,
           sellerId: listing.sellerId,
+        ),
+      ),
+    );
+  }
+
+  void _handleOwnListing(BuildContext context) {
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.white, size: 20),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text('You can\'t buy your own listing'),
+            ),
+          ],
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
     );

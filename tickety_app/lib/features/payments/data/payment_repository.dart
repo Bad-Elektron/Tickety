@@ -147,6 +147,7 @@ class PaymentRepository implements IPaymentRepository {
         .from('payments')
         .select()
         .eq('user_id', userId)
+        .neq('status', 'pending')
         .order('created_at', ascending: false)
         .range(from, to);
 

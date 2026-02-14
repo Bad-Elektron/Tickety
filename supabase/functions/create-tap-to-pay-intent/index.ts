@@ -113,7 +113,25 @@ serve(async (req) => {
     }
 
     // Calculate platform fee (5%)
-    const platformFee = Math.round(amount_cents * 0.05)
+    let platformFee = Math.round(amount_cents * 0.05)
+
+    // Check for referral discount on buyer
+    let discountCents = 0
+    let referrerEarningCents = 0
+    let referralInfo: any = null
+
+    const { data: refInfo } = await supabase.rpc('get_referral_discount_info', {
+      p_user_id: user.id,
+    })
+
+    if (refInfo && refInfo.length > 0 && refInfo[0].referral_active) {
+      referralInfo = refInfo[0]
+      discountCents = Math.round(platformFee * Number(referralInfo.discount_percent))
+      const effectiveFeeCents = platformFee - discountCents
+      referrerEarningCents = Math.round(effectiveFeeCents * Number(referralInfo.revenue_share_percent))
+      platformFee = effectiveFeeCents
+      console.log(`Referral discount applied: discount=${discountCents}c, effective fee=${platformFee}c, referrer earns=${referrerEarningCents}c`)
+    }
 
     // Create payment intent
     const paymentIntentParams: Stripe.PaymentIntentCreateParams = {
@@ -149,6 +167,29 @@ serve(async (req) => {
       .from('pending_payments')
       .update({ stripe_payment_intent_id: paymentIntent.id })
       .eq('id', pending_payment_id)
+
+    // Record referral earnings if applicable
+    if (referralInfo && referralInfo.referral_active) {
+      const { error: earningsError } = await supabase
+        .from('referral_earnings')
+        .insert({
+          referrer_id: referralInfo.referrer_id,
+          referred_user_id: user.id,
+          payment_id: null,
+          platform_fee_cents: platformFee + discountCents,
+          discount_cents: discountCents,
+          earning_cents: referrerEarningCents,
+          discount_percent_applied: Number(referralInfo.discount_percent),
+          revenue_share_percent_applied: Number(referralInfo.revenue_share_percent),
+          status: 'pending',
+        })
+
+      if (earningsError) {
+        console.error('Failed to record referral earnings:', earningsError)
+      } else {
+        console.log(`Referral earnings recorded: referrer=${referralInfo.referrer_id}, earning=${referrerEarningCents}c`)
+      }
+    }
 
     return new Response(
       JSON.stringify({
