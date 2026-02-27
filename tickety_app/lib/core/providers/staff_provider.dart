@@ -267,7 +267,7 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
 
   UserSearchNotifier(this._repository) : super(const UserSearchState());
 
-  /// Search users by email.
+  /// Search users by email or handle.
   Future<void> search(String query) async {
     if (query.trim().length < 2) {
       state = state.copyWith(results: []);
@@ -278,7 +278,7 @@ class UserSearchNotifier extends StateNotifier<UserSearchState> {
     state = state.copyWith(isSearching: true, clearError: true);
 
     try {
-      final results = await _repository.searchUsersByEmail(query);
+      final results = await _repository.searchUsers(query);
 
       AppLogger.debug('Found ${results.length} users matching query', tag: _tag);
 

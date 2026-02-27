@@ -11,8 +11,9 @@ import '../models/event_model.dart';
 import '../models/ticket_availability.dart';
 
 /// Provider for ticket availability (official + resale counts).
+/// Uses autoDispose so it refetches when the screen is re-entered.
 final _ticketAvailabilityProvider =
-    FutureProvider.family<TicketAvailability, String>((ref, eventId) async {
+    FutureProvider.autoDispose.family<TicketAvailability, String>((ref, eventId) async {
   final eventRepo = ref.watch(eventRepositoryProvider);
   final resaleRepo = ref.watch(resaleRepositoryProvider);
 

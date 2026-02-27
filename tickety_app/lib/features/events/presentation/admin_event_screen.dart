@@ -4,8 +4,11 @@ import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../core/state/state.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../analytics/analytics.dart';
 import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
+import '../../subscriptions/subscriptions.dart';
 import '../../staff/data/ticket_repository.dart';
 import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../../staff/presentation/manage_staff_screen.dart';
@@ -216,6 +219,31 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                         : 'Enable cash payments at door',
                     color: Colors.green,
                     onTap: () => _showCashSalesSheet(context),
+                  ),
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.analytics_outlined,
+                    title: 'Market Analytics',
+                    subtitle: AppState().tier == AccountTier.enterprise
+                        ? 'Platform trends & insights'
+                        : 'Enterprise plan required',
+                    color: Colors.indigo,
+                    onTap: () {
+                      if (AppState().tier == AccountTier.enterprise) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                const AnalyticsDashboardScreen(),
+                          ),
+                        );
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SubscriptionScreen(),
+                          ),
+                        );
+                      }
+                    },
                   ),
                   const SizedBox(height: 24),
                   // Event info

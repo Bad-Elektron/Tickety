@@ -13,15 +13,16 @@ class StaffRepository implements IStaffRepository {
   final _client = SupabaseService.instance.client;
 
   @override
-  Future<List<UserSearchResult>> searchUsersByEmail(String emailQuery) async {
-    if (emailQuery.trim().isEmpty) return [];
+  Future<List<UserSearchResult>> searchUsers(String query) async {
+    if (query.trim().isEmpty) return [];
 
-    AppLogger.debug('Searching users by email: ${AppLogger.maskEmail(emailQuery)}', tag: _tag);
+    final trimmed = query.trim();
+    AppLogger.debug('Searching users: $trimmed', tag: _tag);
 
     final response = await _client
         .from('profiles')
-        .select('id, email, display_name')
-        .ilike('email', '%${emailQuery.trim()}%')
+        .select('id, email, display_name, handle')
+        .or('email.ilike.%$trimmed%,handle.ilike.%$trimmed%')
         .limit(10);
 
     final results = (response as List<dynamic>)
@@ -38,7 +39,7 @@ class StaffRepository implements IStaffRepository {
 
     final response = await _client
         .from('profiles')
-        .select('id, email, display_name')
+        .select('id, email, display_name, handle')
         .eq('email', email.trim().toLowerCase())
         .maybeSingle();
 
@@ -76,7 +77,7 @@ class StaffRepository implements IStaffRepository {
       // Fetch profiles for all users in one query (2 queries total, not N+1)
       final profilesResponse = await _client
           .from('profiles')
-          .select('id, display_name, email')
+          .select('id, display_name, email, handle')
           .inFilter('id', userIds);
 
       // Create a map of user_id -> profile for quick lookup

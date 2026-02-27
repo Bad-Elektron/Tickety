@@ -166,6 +166,15 @@ class ErrorHandler {
       return const ValidationException('A required field is missing.');
     }
 
+    // User-defined exception from trigger functions (P0001)
+    if (code == 'P0001') {
+      return BusinessException(
+        error.message,
+        technicalDetails: 'Trigger exception: ${error.message}',
+        cause: error,
+      );
+    }
+
     // Default database error
     return DataException(
       'Database error. Please try again.',

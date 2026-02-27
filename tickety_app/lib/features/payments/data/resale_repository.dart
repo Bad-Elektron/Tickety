@@ -170,6 +170,21 @@ class ResaleRepository implements IResaleRepository {
       throw PaymentException.connectAccountRequired();
     }
 
+    // Check for existing active listing (prevent duplicate constraint error)
+    final existingListing = await _client
+        .from('resale_listings')
+        .select('id, status')
+        .eq('ticket_id', ticketId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+    if (existingListing != null) {
+      throw const PaymentException(
+        'This ticket is already listed for sale.',
+        technicalDetails: 'Active listing already exists for ticket',
+      );
+    }
+
     final response = await _client
         .from('resale_listings')
         .insert({

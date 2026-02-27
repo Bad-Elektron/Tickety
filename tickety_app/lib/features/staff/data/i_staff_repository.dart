@@ -6,11 +6,13 @@ class UserSearchResult {
   final String id;
   final String email;
   final String? displayName;
+  final String? handle;
 
   const UserSearchResult({
     required this.id,
     required this.email,
     this.displayName,
+    this.handle,
   });
 
   factory UserSearchResult.fromJson(Map<String, dynamic> json) {
@@ -18,10 +20,11 @@ class UserSearchResult {
       id: json['id'] as String,
       email: json['email'] as String,
       displayName: json['display_name'] as String?,
+      handle: json['handle'] as String?,
     );
   }
 
-  String get displayLabel => displayName ?? email;
+  String get displayLabel => displayName ?? handle ?? email;
 }
 
 /// Abstract repository interface for staff operations.
@@ -29,9 +32,9 @@ class UserSearchResult {
 /// Defines the contract for managing event staff (ushers, sellers, managers).
 /// Implementations can use different data sources (Supabase, mock, etc).
 abstract class IStaffRepository {
-  /// Search for users by email (for adding staff).
-  /// Returns users matching the email pattern from the profiles table.
-  Future<List<UserSearchResult>> searchUsersByEmail(String emailQuery);
+  /// Search for users by email or handle (for adding staff).
+  /// Returns users matching the query from the profiles table.
+  Future<List<UserSearchResult>> searchUsers(String query);
 
   /// Get a user by exact email address.
   Future<UserSearchResult?> getUserByEmail(String email);

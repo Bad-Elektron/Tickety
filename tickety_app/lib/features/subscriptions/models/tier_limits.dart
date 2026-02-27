@@ -6,7 +6,8 @@ enum AnalyticsSection {
   checkInProgress('Check-in Progress'),
   ticketTypeBreakdown('Ticket Type Breakdown'),
   hourlyCheckins('Hourly Check-ins'),
-  usherPerformance('Usher Performance');
+  usherPerformance('Usher Performance'),
+  platformTrends('Platform Trends');
 
   const AnalyticsSection(this.label);
 
@@ -70,6 +71,7 @@ class TierLimits {
       AnalyticsSection.ticketTypeBreakdown,
       AnalyticsSection.hourlyCheckins,
       AnalyticsSection.usherPerformance,
+      AnalyticsSection.platformTrends,
     },
   };
 

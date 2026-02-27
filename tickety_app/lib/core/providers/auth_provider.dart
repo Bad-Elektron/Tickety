@@ -16,6 +16,7 @@ class AuthState {
   final String? error;
   final bool isRateLimited;
   final Duration? lockoutRemaining;
+  final String? handle;
 
   const AuthState({
     this.user,
@@ -23,6 +24,7 @@ class AuthState {
     this.error,
     this.isRateLimited = false,
     this.lockoutRemaining,
+    this.handle,
   });
 
   bool get isAuthenticated => user != null;
@@ -36,6 +38,7 @@ class AuthState {
     String? error,
     bool? isRateLimited,
     Duration? lockoutRemaining,
+    String? handle,
     bool clearUser = false,
     bool clearError = false,
     bool clearLockout = false,
@@ -46,6 +49,7 @@ class AuthState {
       error: clearError ? null : (error ?? this.error),
       isRateLimited: clearLockout ? false : (isRateLimited ?? this.isRateLimited),
       lockoutRemaining: clearLockout ? null : (lockoutRemaining ?? this.lockoutRemaining),
+      handle: clearUser ? null : (handle ?? this.handle),
     );
   }
 }
@@ -70,6 +74,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (currentUser != null) {
       AppLogger.info('Found existing session for: ${AppLogger.maskEmail(currentUser.email)}', tag: _tag);
       state = state.copyWith(user: currentUser);
+      _fetchHandle(currentUser.id);
     }
 
     // Listen to auth state changes
@@ -78,6 +83,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         .listen((authState) {
       if (authState.user != null) {
         AppLogger.info('Auth state changed: signed in as ${AppLogger.maskEmail(authState.user?.email)}', tag: _tag);
+        _fetchHandle(authState.user!.id);
       } else {
         AppLogger.info('Auth state changed: signed out', tag: _tag);
       }
@@ -87,6 +93,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
         clearError: true,
       );
     });
+  }
+
+  /// Fetch the user's handle from the profiles table.
+  Future<void> _fetchHandle(String userId) async {
+    try {
+      final response = await SupabaseService.instance.client
+          .from('profiles')
+          .select('handle')
+          .eq('id', userId)
+          .maybeSingle();
+      if (response != null && response['handle'] != null) {
+        state = state.copyWith(handle: response['handle'] as String);
+      }
+    } catch (e) {
+      AppLogger.warning('Failed to fetch handle for user $userId', tag: _tag);
+    }
   }
 
   @override

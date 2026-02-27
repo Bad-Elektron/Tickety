@@ -46,7 +46,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final success = await ref.read(authProvider.notifier).signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text,
-          displayName: sanitizedName.isNotEmpty ? sanitizedName : null,
+          displayName: sanitizedName,
           referralCode: referralCode.isNotEmpty ? referralCode : null,
         );
 
@@ -123,9 +123,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 TextFormField(
                   controller: _nameController,
                   textInputAction: TextInputAction.next,
-                  textCapitalization: TextCapitalization.words,
+                  textCapitalization: TextCapitalization.none,
                   decoration: const InputDecoration(
-                    labelText: 'Display name (optional)',
+                    labelText: 'Username',
                     prefixIcon: Icon(Icons.person_outlined),
                     border: OutlineInputBorder(),
                   ),

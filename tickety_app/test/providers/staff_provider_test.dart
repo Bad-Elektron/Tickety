@@ -234,7 +234,7 @@ void main() {
       await notifier.search('a');
 
       expect(notifier.state.results, isEmpty);
-      verifyNever(() => mockRepository.searchUsersByEmail(any()));
+      verifyNever(() => mockRepository.searchUsers(any()));
     });
 
     test('search fetches results for valid query', () async {
@@ -242,7 +242,7 @@ void main() {
         const UserSearchResult(id: '1', email: 'test@example.com'),
       ];
 
-      when(() => mockRepository.searchUsersByEmail('test'))
+      when(() => mockRepository.searchUsers('test'))
           .thenAnswer((_) async => results);
 
       await notifier.search('test');
@@ -258,7 +258,7 @@ void main() {
         const UserSearchResult(id: '3', email: 'user3@example.com'),
       ];
 
-      when(() => mockRepository.searchUsersByEmail('user'))
+      when(() => mockRepository.searchUsers('user'))
           .thenAnswer((_) async => results);
 
       await notifier.search('user');
@@ -271,7 +271,7 @@ void main() {
       final results = [
         const UserSearchResult(id: '1', email: 'test@example.com'),
       ];
-      when(() => mockRepository.searchUsersByEmail('test'))
+      when(() => mockRepository.searchUsers('test'))
           .thenAnswer((_) async => results);
       await notifier.search('test');
 

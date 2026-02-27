@@ -96,9 +96,9 @@ abstract class Validators {
     return null;
   }
 
-  /// Validates display name.
+  /// Validates username (required).
   static String? displayName(String? value) {
-    if (value == null || value.isEmpty) return null;
+    if (value == null || value.trim().isEmpty) return 'Username is required';
     if (value.length > maxDisplayNameLength) {
       return 'Name must be under $maxDisplayNameLength characters';
     }

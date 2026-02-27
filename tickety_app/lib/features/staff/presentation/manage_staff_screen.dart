@@ -1028,7 +1028,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     });
 
     try {
-      final results = await _repository.searchUsersByEmail(query);
+      final results = await _repository.searchUsers(query);
       setState(() {
         _searchResults = results;
         _isSearching = false;
@@ -1056,9 +1056,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
           children: [
             TextField(
               controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
               decoration: InputDecoration(
-                labelText: 'Search by email',
+                labelText: 'Search by email or handle',
                 border: const OutlineInputBorder(),
                 suffixIcon: _isSearching
                     ? const Padding(
@@ -1103,7 +1102,11 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                     _selectedUser!.displayName ?? 'No name',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  subtitle: Text(_selectedUser!.email),
+                  subtitle: Text(
+                    _selectedUser!.handle != null
+                        ? '${_selectedUser!.handle}  \u00B7  ${_selectedUser!.email}'
+                        : _selectedUser!.email,
+                  ),
                   trailing: IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () {
@@ -1173,7 +1176,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                               ],
                             )
                           : Text(
-                              user.email,
+                              user.handle != null
+                                  ? '${user.handle}  \u00B7  ${user.email}'
+                                  : user.email,
                               style: const TextStyle(fontSize: 12),
                             ),
                       onTap: () {

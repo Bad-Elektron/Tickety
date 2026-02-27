@@ -1,1 +1,15 @@
 nul
+
+# Claude Code local settings (may contain secrets in permissions)
+.claude/settings.local.json
+
+# Node modules (used for ad-hoc scripts)
+node_modules/
+
+# Temp SQL dumps
+dump_*.sql
+
+# Environment files
+.env
+.env.local
+.env.*.local

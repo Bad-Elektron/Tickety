@@ -1,6 +1,7 @@
 /// Core providers for state management using Riverpod.
 library;
 
+export 'analytics_provider.dart';
 export 'auth_provider.dart';
 export 'events_provider.dart';
 export 'favor_ticket_provider.dart';

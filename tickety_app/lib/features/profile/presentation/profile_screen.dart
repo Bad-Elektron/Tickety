@@ -11,6 +11,7 @@ import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../payments/payments.dart';
+import '../../analytics/analytics.dart';
 import '../../referral/referral.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
@@ -104,6 +105,28 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         builder: (_) => const ReferralScreen(),
                       ),
                     );
+                  },
+                ),
+                ProfileMenuItem(
+                  icon: Icons.analytics_outlined,
+                  title: 'Market Analytics',
+                  subtitle: _appState.tier == AccountTier.enterprise
+                      ? 'Platform trends & insights'
+                      : 'Enterprise plan required',
+                  onTap: () {
+                    if (_appState.tier == AccountTier.enterprise) {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AnalyticsDashboardScreen(),
+                        ),
+                      );
+                    } else {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SubscriptionScreen(),
+                        ),
+                      );
+                    }
                   },
                 ),
               ],
@@ -277,6 +300,16 @@ class _ProfileHeader extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
+          if (isAuthenticated && authState.handle != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              authState.handle!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           const SizedBox(height: 4),
           Text(
             isAuthenticated
