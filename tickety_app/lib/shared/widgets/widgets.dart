@@ -8,3 +8,5 @@ export 'error_display.dart';
 export 'filter_chip.dart';
 export 'limit_reached_banner.dart';
 export 'noise_background.dart';
+export 'places_autocomplete_field.dart';
+export 'verified_badge.dart';

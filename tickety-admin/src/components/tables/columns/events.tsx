@@ -10,6 +10,12 @@ interface EventRow extends Event {
   ticket_count?: number;
 }
 
+const statusColors: Record<string, string> = {
+  active: "border-emerald-500/30 text-emerald-400",
+  pending_review: "border-amber-500/30 text-amber-400",
+  suspended: "border-red-500/30 text-red-400",
+};
+
 export const eventColumns: ColumnDef<EventRow>[] = [
   {
     accessorKey: "title",
@@ -17,6 +23,21 @@ export const eventColumns: ColumnDef<EventRow>[] = [
     cell: ({ getValue }) => (
       <span className="font-medium text-white">{getValue() as string}</span>
     ),
+  },
+  {
+    accessorKey: "status",
+    header: "Status",
+    cell: ({ getValue }) => {
+      const status = (getValue() as string) ?? "active";
+      return (
+        <Badge
+          variant="outline"
+          className={statusColors[status] ?? "border-zinc-600 text-zinc-400"}
+        >
+          {status === "pending_review" ? "Pending" : status}
+        </Badge>
+      );
+    },
   },
   {
     accessorKey: "organizer_name",

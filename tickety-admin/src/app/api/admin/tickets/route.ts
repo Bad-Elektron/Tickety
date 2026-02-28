@@ -5,19 +5,19 @@ export async function GET() {
   const admin = createAdminClient();
 
   const { data, error } = await admin
-    .from("admin_audit_log")
-    .select("*, profiles!admin_audit_log_admin_user_id_profiles_fkey(email)")
-    .order("created_at", { ascending: false })
-    .limit(200);
+    .from("tickets")
+    .select("*, events(title)")
+    .order("sold_at", { ascending: false })
+    .limit(500);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const rows = (data ?? []).map((row) => ({
-    ...row,
-    admin_email: (row.profiles as unknown as { email: string })?.email,
-    profiles: undefined,
+  const rows = (data ?? []).map((t) => ({
+    ...t,
+    event_title: (t.events as unknown as { title: string })?.title,
+    events: undefined,
   }));
 
   return NextResponse.json(rows);

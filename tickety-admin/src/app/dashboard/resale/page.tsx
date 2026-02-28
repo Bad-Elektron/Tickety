@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { resaleColumns } from "@/components/tables/columns/resale";
 import type { ResaleListing } from "@/types/database";
@@ -32,36 +31,17 @@ export default function ResalePage() {
 
   useEffect(() => {
     async function fetchListings() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("resale_listings")
-        .select(
-          "*, profiles!resale_listings_seller_id_fkey(email), tickets!resale_listings_ticket_id_fkey(ticket_number, events(title))"
-        )
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/resale");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setListings(data);
+      } catch {
+        // Fetch failed
       }
-
-      const rows: ResaleRow[] = data.map((r) => {
-        const ticket = r.tickets as unknown as {
-          ticket_number: string;
-          events: { title: string };
-        };
-        return {
-          ...r,
-          seller_email: (r.profiles as unknown as { email: string })?.email,
-          ticket_number: ticket?.ticket_number,
-          event_title: ticket?.events?.title,
-          profiles: undefined,
-          tickets: undefined,
-        };
-      });
-
-      setListings(rows);
       setLoading(false);
     }
     fetchListings();
@@ -71,13 +51,14 @@ export default function ResalePage() {
     if (!delistTarget) return;
     setDelisting(true);
     try {
-      const supabase = createClient();
-      const { error } = await supabase
-        .from("resale_listings")
-        .update({ status: "cancelled" })
-        .eq("id", delistTarget.id);
+      // Use admin API for delist too (service role bypasses RLS)
+      const res = await fetch("/api/admin/resale", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: delistTarget.id, status: "cancelled" }),
+      });
 
-      if (!error) {
+      if (res.ok) {
         setListings((prev) =>
           prev.map((l) =>
             l.id === delistTarget.id ? { ...l, status: "cancelled" } : l

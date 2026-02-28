@@ -73,6 +73,9 @@ dependencies:
   # Charts for analytics dashboard
   fl_chart: ^0.69.0
 
+  # HTTP client for API calls
+  http: ^1.2.0
+
   # Date/time formatting
   intl: ^0.19.0
 

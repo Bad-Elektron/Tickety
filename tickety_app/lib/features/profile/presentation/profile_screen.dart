@@ -1,11 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../core/debug/debug.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
+import '../../../shared/widgets/verified_badge.dart';
 import '../../auth/auth.dart';
 import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
@@ -15,6 +17,7 @@ import '../../analytics/analytics.dart';
 import '../../referral/referral.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
+import 'verification_screen.dart';
 
 /// The profile screen displaying user information and settings.
 ///
@@ -66,6 +69,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             const ProfileSectionHeader(title: 'Account'),
             ProfileMenuCard(
               children: [
+                ProfileMenuItem(
+                  icon: Icons.verified_user_outlined,
+                  title: 'Identity Verification',
+                  subtitle: 'Verify to create large events',
+                  trailing: authState.isAuthenticated
+                      ? const _VerificationStatusIndicator()
+                      : null,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const VerificationScreen(),
+                      ),
+                    );
+                  },
+                ),
                 ProfileMenuItem(
                   icon: Icons.settings_outlined,
                   title: 'Settings',
@@ -198,6 +216,46 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Shows verification status indicator on the profile menu item.
+class _VerificationStatusIndicator extends ConsumerWidget {
+  const _VerificationStatusIndicator();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+    if (!authState.isAuthenticated) return const SizedBox.shrink();
+
+    // We'll use a FutureBuilder to fetch the status
+    return FutureBuilder<String>(
+      future: _fetchVerificationStatus(),
+      builder: (context, snapshot) {
+        final status = snapshot.data ?? 'none';
+        return switch (status) {
+          'verified' => const VerifiedBadge(size: 18),
+          'pending' => const Icon(Icons.hourglass_top, size: 16, color: Colors.amber),
+          'failed' => Icon(Icons.error_outline, size: 16, color: Theme.of(context).colorScheme.error),
+          _ => const SizedBox.shrink(),
+        };
+      },
+    );
+  }
+
+  Future<String> _fetchVerificationStatus() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return 'none';
+      final response = await Supabase.instance.client
+          .from('profiles')
+          .select('identity_verification_status')
+          .eq('id', userId)
+          .single();
+      return response['identity_verification_status'] as String? ?? 'none';
+    } catch (_) {
+      return 'none';
+    }
   }
 }
 

@@ -75,6 +75,30 @@ class EventModel {
   /// When true, staff can sell tickets for cash at the door.
   final bool cashSalesEnabled;
 
+  /// Organizer display name (from joined profiles data).
+  final String? organizerName;
+
+  /// Organizer handle (from joined profiles data).
+  final String? organizerHandle;
+
+  /// Whether the organizer has verified their identity.
+  final bool organizerVerified;
+
+  /// Event status: 'active', 'pending_review', 'suspended'.
+  final String status;
+
+  /// Reason for pending_review or suspended status.
+  final String? statusReason;
+
+  /// Latitude coordinate for the event location.
+  final double? latitude;
+
+  /// Longitude coordinate for the event location.
+  final double? longitude;
+
+  /// Full formatted address from Google Places.
+  final String? formattedAddress;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -95,6 +119,14 @@ class EventModel {
     this.hideLocation = false,
     this.maxTickets,
     this.cashSalesEnabled = false,
+    this.organizerName,
+    this.organizerHandle,
+    this.organizerVerified = false,
+    this.status = 'active',
+    this.statusReason,
+    this.latitude,
+    this.longitude,
+    this.formattedAddress,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -103,8 +135,17 @@ class EventModel {
   /// Whether the event is free.
   bool get isFree => priceInCents == null || priceInCents == 0;
 
+  /// Whether this event has latitude/longitude coordinates.
+  bool get hasCoordinates => latitude != null && longitude != null;
+
+  /// Returns a Google Maps URL for this event's coordinates.
+  String? get mapsUrl {
+    if (!hasCoordinates) return null;
+    return 'https://www.google.com/maps/search/?api=1&query=$latitude,$longitude';
+  }
+
   /// Combines venue and city for display purposes.
-  /// Falls back to [location] if venue/city are not set.
+  /// Falls back to [formattedAddress], then [location] if venue/city are not set.
   /// Note: This returns the raw location regardless of [hideLocation].
   /// Use [getDisplayLocation] to respect the hide setting.
   String? get displayLocation {
@@ -113,6 +154,7 @@ class EventModel {
     }
     if (venue != null) return venue;
     if (city != null) return city;
+    if (formattedAddress != null) return formattedAddress;
     return location;
   }
 
@@ -166,6 +208,15 @@ class EventModel {
     };
   }
 
+  /// Whether the event is pending review and not yet visible.
+  bool get isPendingReview => status == 'pending_review';
+
+  /// Whether the event has been suspended.
+  bool get isSuspended => status == 'suspended';
+
+  /// Whether the event is active and visible to buyers.
+  bool get isActive => status == 'active';
+
   /// Creates a copy with modified properties.
   EventModel copyWith({
     String? id,
@@ -187,6 +238,14 @@ class EventModel {
     bool? hideLocation,
     int? maxTickets,
     bool? cashSalesEnabled,
+    String? organizerName,
+    String? organizerHandle,
+    bool? organizerVerified,
+    String? status,
+    String? statusReason,
+    double? latitude,
+    double? longitude,
+    String? formattedAddress,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -208,6 +267,14 @@ class EventModel {
       hideLocation: hideLocation ?? this.hideLocation,
       maxTickets: maxTickets ?? this.maxTickets,
       cashSalesEnabled: cashSalesEnabled ?? this.cashSalesEnabled,
+      organizerName: organizerName ?? this.organizerName,
+      organizerHandle: organizerHandle ?? this.organizerHandle,
+      organizerVerified: organizerVerified ?? this.organizerVerified,
+      status: status ?? this.status,
+      statusReason: statusReason ?? this.statusReason,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      formattedAddress: formattedAddress ?? this.formattedAddress,
     );
   }
 

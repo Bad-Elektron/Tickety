@@ -79,4 +79,18 @@ abstract class EventRepository {
   ///
   /// Returns counts without fetching individual ticket records.
   Future<TicketAvailability> getTicketAvailability(String eventId);
+
+  /// Find events with similar titles (for duplicate/impersonation detection).
+  Future<List<Map<String, dynamic>>> findSimilarEvents({
+    required String title,
+    String? venue,
+    DateTime? date,
+  });
+
+  /// Report an event for review.
+  Future<void> reportEvent({
+    required String eventId,
+    required String reason,
+    String? description,
+  });
 }

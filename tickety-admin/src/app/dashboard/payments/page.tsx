@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { paymentColumns } from "@/components/tables/columns/payments";
 import type { Payment } from "@/types/database";
@@ -31,29 +30,17 @@ export default function PaymentsPage() {
 
   useEffect(() => {
     async function fetchPayments() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("payments")
-        .select(
-          "*, profiles!payments_user_id_fkey(email), events(title)"
-        )
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/payments");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setPayments(data);
+      } catch {
+        // Fetch failed
       }
-
-      const rows: PaymentRow[] = data.map((p) => ({
-        ...p,
-        user_email: (p.profiles as unknown as { email: string })?.email,
-        event_title: (p.events as unknown as { title: string })?.title,
-        profiles: undefined,
-        events: undefined,
-      }));
-
-      setPayments(rows);
       setLoading(false);
     }
     fetchPayments();

@@ -244,7 +244,7 @@ class LocalEventSearchRepository implements EventSearchRepository {
       if (event.title.toLowerCase().contains(lowerQuery) ||
           event.subtitle.toLowerCase().contains(lowerQuery) ||
           (event.category?.toLowerCase().contains(lowerQuery) ?? false) ||
-          (event.location?.toLowerCase().contains(lowerQuery) ?? false)) {
+          (event.displayLocation?.toLowerCase().contains(lowerQuery) ?? false)) {
         return true;
       }
 

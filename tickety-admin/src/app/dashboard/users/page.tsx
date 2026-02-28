@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { userColumns } from "@/components/tables/columns/users";
 import type { Profile } from "@/types/database";
@@ -19,32 +18,17 @@ export default function UsersPage() {
 
   useEffect(() => {
     async function fetchUsers() {
-      const supabase = createClient();
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("email", { ascending: true });
-
-      if (!profiles) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/users");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setUsers(data);
+      } catch {
+        // Fetch failed
       }
-
-      // Fetch subscriptions to join tier
-      const { data: subs } = await supabase
-        .from("subscriptions")
-        .select("user_id, tier");
-
-      const subMap = new Map(
-        subs?.map((s) => [s.user_id, s.tier]) ?? []
-      );
-
-      const rows: UserRow[] = profiles.map((p) => ({
-        ...p,
-        subscription_tier: subMap.get(p.id) ?? "base",
-      }));
-
-      setUsers(rows);
       setLoading(false);
     }
     fetchUsers();

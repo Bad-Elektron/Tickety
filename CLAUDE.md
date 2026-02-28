@@ -209,7 +209,7 @@ Organizers can send comp/gift tickets to anyone by email. Uses a two-phase lifec
 
 ### Stripe Webhooks Setup (Production)
 
-Set up Stripe webhooks to handle subscription lifecycle events:
+Set up Stripe webhooks to handle subscription and identity lifecycle events:
 
 1. Go to **Stripe Dashboard → Developers → Webhooks**
 2. Add endpoint: `https://hnouslchigcmbiovdbfz.supabase.co/functions/v1/stripe-webhook`
@@ -217,6 +217,8 @@ Set up Stripe webhooks to handle subscription lifecycle events:
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
+   - `identity.verification_session.verified`
+   - `identity.verification_session.requires_input`
 4. Copy the webhook signing secret
 5. Add to Supabase: **Project Settings → Edge Functions → Secrets** as `STRIPE_WEBHOOK_SECRET`
 
@@ -225,6 +227,48 @@ This enables:
 - Failed payment retries
 - Cancellations from Stripe dashboard
 - Plan changes from billing portal
+- Identity verification status updates (auto-approve events on verification)
+
+### Organizer Verification & Event Security (Completed)
+
+Organizers must verify their identity via Stripe Identity to create events with 250+ capacity. Unverified large events are auto-held for admin review.
+
+**Database:**
+- `profiles` table: `identity_verification_status` (none/pending/verified/failed), `identity_verified_at`, `stripe_identity_session_id`, `payout_delay_days` (14 → 2 on verification)
+- `events` table: `status` (active/pending_review/suspended), `status_reason`
+- `event_reports` table: user-submitted reports (impersonation/scam/inappropriate/duplicate/other)
+- `auto_hold_unverified_large_events` trigger: auto-sets `pending_review` on events with 250+ capacity from unverified organizers
+- `find_similar_events()` SQL function: pg_trgm-based similarity detection
+- Feature flags: `organizer_verification`, `event_similarity_check`, `event_reporting`
+- Migration: `20260228100001_organizer_verification_system.sql`
+
+**Edge Functions:**
+- `create-identity-verification` - Creates Stripe Identity VerificationSession (document + selfie)
+- `stripe-webhook` - Extended with `identity.verification_session.verified` and `.requires_input` handlers; auto-approves pending events on verification
+
+**Flutter:**
+- `EventModel` - Added `organizerName`, `organizerHandle`, `organizerVerified`, `status`, `statusReason`
+- `EventMapper` - Parses joined `organizer:profiles` data
+- `SupabaseEventRepository` - Queries join organizer profiles; home/featured filter `status = 'active'`; `findSimilarEvents()` and `reportEvent()` methods
+- `VerifiedBadge` widget - Indigo checkmark icon, shared across cards and screens
+- `EventBannerCard` - Shows "by @handle" with verified badge
+- `EventDetailsScreen` - Organizer section with name/handle/verified badge, report event button
+- `ReportEventSheet` - Bottom sheet with reason selector and description
+- `CreateEventScreen` - Similarity warning banner when similar events found (step 1)
+- `AdminEventScreen` - Pending review / suspended status banners
+- `VerificationScreen` - Stripe Identity verification flow (profile → get verified)
+- `ProfileScreen` - Identity Verification menu item with status indicator
+
+**Admin Panel:**
+- Reports page (`/dashboard/reports`) with status management (open → reviewed/resolved/dismissed)
+- Event detail page: Approve / Suspend / Reactivate buttons with dialog
+- Events table: Status column with color-coded badges
+- User detail page: Verification status badge, "Manually Verify" button
+- Sidebar: "Reports" nav item added
+
+**Stripe Identity Test Mode:**
+- Use test document images from Stripe docs
+- Verification completes automatically in test mode
 
 ## Future: Cardano (ADA) Integration
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { eventColumns } from "@/components/tables/columns/events";
 import type { Event } from "@/types/database";
@@ -20,44 +19,17 @@ export default function EventsPage() {
 
   useEffect(() => {
     async function fetchEvents() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("events")
-        .select("*, profiles!events_organizer_id_fkey(display_name, email)")
-        .is("deleted_at", null)
-        .order("date", { ascending: false });
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/events");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setEvents(data);
+      } catch {
+        // Fetch failed
       }
-
-      // Get ticket counts per event
-      const eventIds = data.map((e) => e.id);
-      const { data: ticketCounts } = await supabase
-        .from("tickets")
-        .select("event_id")
-        .in("event_id", eventIds);
-
-      const countMap = new Map<string, number>();
-      ticketCounts?.forEach((t) => {
-        countMap.set(t.event_id, (countMap.get(t.event_id) ?? 0) + 1);
-      });
-
-      const rows: EventRow[] = data.map((e) => {
-        const organizer = e.profiles as unknown as {
-          display_name: string | null;
-          email: string | null;
-        };
-        return {
-          ...e,
-          organizer_name: organizer?.display_name ?? organizer?.email ?? "Unknown",
-          ticket_count: countMap.get(e.id) ?? 0,
-          profiles: undefined,
-        };
-      });
-
-      setEvents(rows);
       setLoading(false);
     }
     fetchEvents();

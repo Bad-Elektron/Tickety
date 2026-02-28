@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { referralColumns } from "@/components/tables/columns/referrals";
-import type { ReferralEarning } from "@/types/database";
 import { Skeleton } from "@/components/ui/skeleton";
 
-interface ReferralRow extends ReferralEarning {
-  referrer_email?: string;
-  referred_email?: string;
+interface ReferralRow {
+  id: string;
+  referrer_email: string;
+  referrer_name?: string;
+  referred_email: string;
+  referred_name?: string;
+  referred_at: string;
+  signed_up_at: string;
 }
 
 export default function ReferralsPage() {
@@ -18,29 +21,17 @@ export default function ReferralsPage() {
 
   useEffect(() => {
     async function fetchReferrals() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("referral_earnings")
-        .select(
-          "*, referrer:profiles!referral_earnings_referrer_id_fkey(email), referred:profiles!referral_earnings_referred_user_id_fkey(email)"
-        )
-        .order("created_at", { ascending: false })
-        .limit(500);
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/referrals");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setReferrals(data);
+      } catch {
+        // Fetch failed
       }
-
-      const rows: ReferralRow[] = data.map((r) => ({
-        ...r,
-        referrer_email: (r.referrer as unknown as { email: string })?.email,
-        referred_email: (r.referred as unknown as { email: string })?.email,
-        referrer: undefined,
-        referred: undefined,
-      }));
-
-      setReferrals(rows);
       setLoading(false);
     }
     fetchReferrals();

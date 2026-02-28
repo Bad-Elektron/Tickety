@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { subscriptionColumns } from "@/components/tables/columns/subscriptions";
 import type { Subscription } from "@/types/database";
@@ -17,24 +16,17 @@ export default function SubscriptionsPage() {
 
   useEffect(() => {
     async function fetchSubscriptions() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("subscriptions")
-        .select("*, profiles!subscriptions_user_id_fkey(email)")
-        .order("created_at", { ascending: false });
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/subscriptions");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setSubscriptions(data);
+      } catch {
+        // Fetch failed
       }
-
-      const rows: SubscriptionRow[] = data.map((s) => ({
-        ...s,
-        user_email: (s.profiles as unknown as { email: string })?.email,
-        profiles: undefined,
-      }));
-
-      setSubscriptions(rows);
       setLoading(false);
     }
     fetchSubscriptions();

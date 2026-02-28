@@ -378,7 +378,7 @@ class _EventSearchTile extends StatelessWidget {
                         ],
                         Expanded(
                           child: Text(
-                            event.location ?? '',
+                            event.displayLocation ?? '',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),

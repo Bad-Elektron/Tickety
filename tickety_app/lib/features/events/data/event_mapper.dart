@@ -16,6 +16,11 @@ abstract class EventMapper {
         ? tagsJson.cast<String>()
         : (json['category'] != null ? [json['category'] as String] : []);
 
+    // Parse organizer data from joined profiles
+    final organizer = json['organizer'] as Map<String, dynamic>?;
+    final organizerVerificationStatus =
+        organizer?['identity_verification_status'] as String?;
+
     return EventModel(
       id: json['id'] as String,
       title: json['title'] as String,
@@ -36,6 +41,14 @@ abstract class EventMapper {
       hideLocation: json['hide_location'] as bool? ?? false,
       maxTickets: json['max_tickets'] as int?,
       cashSalesEnabled: json['cash_sales_enabled'] as bool? ?? false,
+      organizerName: organizer?['display_name'] as String?,
+      organizerHandle: organizer?['handle'] as String?,
+      organizerVerified: organizerVerificationStatus == 'verified',
+      status: json['status'] as String? ?? 'active',
+      statusReason: json['status_reason'] as String?,
+      latitude: (json['latitude'] as num?)?.toDouble(),
+      longitude: (json['longitude'] as num?)?.toDouble(),
+      formattedAddress: json['formatted_address'] as String?,
     );
   }
 
@@ -46,7 +59,7 @@ abstract class EventMapper {
       'subtitle': event.subtitle,
       'description': event.description,
       'date': event.date.toUtc().toIso8601String(),
-      'location': event.location,
+      'location': event.location ?? event.displayLocation,
       'venue': event.venue,
       'city': event.city,
       'country': event.country,
@@ -61,6 +74,10 @@ abstract class EventMapper {
       'hide_location': event.hideLocation,
       'max_tickets': event.maxTickets,
       'cash_sales_enabled': event.cashSalesEnabled,
+      // Only include location coordinates when present (columns may not exist yet)
+      if (event.latitude != null) 'latitude': event.latitude,
+      if (event.longitude != null) 'longitude': event.longitude,
+      if (event.formattedAddress != null) 'formatted_address': event.formattedAddress,
     };
   }
 

@@ -64,6 +64,15 @@ serve(async (req) => {
         await handleSubscriptionDeleted(event.data.object as Stripe.Subscription)
         break
 
+      // Identity verification events
+      case 'identity.verification_session.verified':
+        await handleIdentityVerified(event.data.object)
+        break
+
+      case 'identity.verification_session.requires_input':
+        await handleIdentityFailed(event.data.object)
+        break
+
       default:
         console.log(`Unhandled event type: ${event.type}`)
     }
@@ -643,6 +652,82 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
     console.error('Failed to reset subscription to base:', error)
   } else {
     console.log(`User ${targetUserId} reset to base tier`)
+  }
+}
+
+// ============================================================
+// IDENTITY VERIFICATION EVENT HANDLERS
+// ============================================================
+
+async function handleIdentityVerified(session: any) {
+  const userId = session.metadata?.supabase_user_id
+  if (!userId) {
+    console.error('No supabase_user_id in identity session metadata:', session.id)
+    return
+  }
+
+  console.log(`Identity verified for user ${userId}, session ${session.id}`)
+
+  // Update profile: set verified status, reduce payout delay
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      identity_verification_status: 'verified',
+      identity_verified_at: new Date().toISOString(),
+      payout_delay_days: 2,
+    })
+    .eq('id', userId)
+
+  if (profileError) {
+    console.error('Failed to update profile verification status:', profileError)
+  }
+
+  // Auto-approve any pending_review events by this organizer
+  const { data: pendingEvents, error: eventsError } = await supabase
+    .from('events')
+    .select('id, title')
+    .eq('organizer_id', userId)
+    .eq('status', 'pending_review')
+    .is('deleted_at', null)
+
+  if (eventsError) {
+    console.error('Failed to fetch pending events:', eventsError)
+  } else if (pendingEvents && pendingEvents.length > 0) {
+    const { error: approveError } = await supabase
+      .from('events')
+      .update({
+        status: 'active',
+        status_reason: 'Auto-approved: organizer identity verified',
+      })
+      .eq('organizer_id', userId)
+      .eq('status', 'pending_review')
+
+    if (approveError) {
+      console.error('Failed to auto-approve events:', approveError)
+    } else {
+      console.log(`Auto-approved ${pendingEvents.length} pending events for verified user ${userId}`)
+    }
+  }
+}
+
+async function handleIdentityFailed(session: any) {
+  const userId = session.metadata?.supabase_user_id
+  if (!userId) {
+    console.error('No supabase_user_id in identity session metadata:', session.id)
+    return
+  }
+
+  console.log(`Identity verification failed/needs input for user ${userId}, session ${session.id}`)
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      identity_verification_status: 'failed',
+    })
+    .eq('id', userId)
+
+  if (error) {
+    console.error('Failed to update profile verification status:', error)
   }
 }
 

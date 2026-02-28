@@ -8,7 +8,7 @@ export async function GET() {
 
   const { data, error } = await admin
     .from("admin_announcements")
-    .select("*, author:profiles!admin_announcements_author_id_fkey(display_name, email)")
+    .select("*, author:profiles!admin_announcements_author_id_profiles_fkey(display_name, email)")
     .order("created_at", { ascending: false })
     .limit(50);
 

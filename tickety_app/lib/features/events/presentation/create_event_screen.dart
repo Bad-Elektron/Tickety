@@ -10,7 +10,11 @@ import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../../../core/utils/utils.dart';
 import '../../../shared/widgets/limit_reached_banner.dart';
+import '../../../shared/widgets/widgets.dart' show PlacesAutocompleteField;
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
+
 import '../../auth/auth.dart';
+import '../../profile/presentation/verification_screen.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
 import '../data/supabase_event_repository.dart' show TicketTypeInput;
@@ -136,10 +140,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   final _nameController = TextEditingController();
   final _subtitleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _venueController = TextEditingController();
-  final _cityController = TextEditingController();
 
   final _repository = SupabaseEventRepository();
+
+  // Google Places selection
+  PlaceDetails? _selectedPlace;
 
   bool _isPublic = false;
   bool _isLoading = false;
@@ -147,6 +152,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
   Set<EventTag> _selectedTags = {};
+
+  // Similarity detection
+  List<Map<String, dynamic>> _similarEvents = [];
+  bool _checkingSimilarity = false;
 
   // Ticket types
   late List<_TicketType> _ticketTypes;
@@ -196,8 +205,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     _nameController.dispose();
     _subtitleController.dispose();
     _descriptionController.dispose();
-    _venueController.dispose();
-    _cityController.dispose();
     for (final ticketType in _ticketTypes) {
       ticketType.dispose();
     }
@@ -310,6 +317,59 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       return;
     }
 
+    // Check if total capacity exceeds 250 and organizer is unverified
+    final totalCapacity = _ticketTypes.fold<int>(0, (sum, tt) {
+      final qty = int.tryParse(tt.quantityController.text) ?? 0;
+      return sum + qty;
+    });
+
+    if (totalCapacity >= 250) {
+      try {
+        final userId = SupabaseService.instance.currentUser?.id;
+        if (userId != null) {
+          final profile = await Supabase.instance.client
+              .from('profiles')
+              .select('identity_verification_status')
+              .eq('id', userId)
+              .single();
+
+          final status = profile['identity_verification_status'] as String? ?? 'none';
+          if (status != 'verified' && mounted) {
+            final shouldVerify = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                icon: const Icon(Icons.shield_outlined, size: 40),
+                title: const Text('Verification Required'),
+                content: const Text(
+                  'Events with 250+ total ticket capacity require identity verification '
+                  'to protect ticket buyers. Please verify your identity to continue.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Get Verified'),
+                  ),
+                ],
+              ),
+            );
+
+            if (shouldVerify == true && mounted) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const VerificationScreen()),
+              );
+            }
+            return;
+          }
+        }
+      } catch (_) {
+        // Column may not exist yet — allow event creation (DB trigger will catch it)
+      }
+    }
+
     setState(() => _isLoading = true);
 
     try {
@@ -349,8 +409,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final sanitizedTitle = Validators.sanitize(_nameController.text);
       final sanitizedSubtitle = Validators.sanitize(_subtitleController.text);
       final sanitizedDescription = Validators.sanitize(_descriptionController.text);
-      final sanitizedVenue = Validators.sanitize(_venueController.text);
-      final sanitizedCity = Validators.sanitize(_cityController.text);
+
+      // Use place details if selected, otherwise null
+      final venue = _selectedPlace?.name;
+      final city = _selectedPlace?.city;
+      final country = _selectedPlace?.country;
 
       await _repository.createEventWithTicketTypes(
         title: sanitizedTitle,
@@ -361,12 +424,16 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             ? sanitizedDescription
             : null,
         date: eventDateTime,
-        venue: sanitizedVenue.isNotEmpty ? sanitizedVenue : null,
-        city: sanitizedCity.isNotEmpty ? sanitizedCity : null,
+        venue: venue,
+        city: city,
+        country: country,
         ticketTypes: ticketTypeInputs,
         tags: tagIds,
         noiseSeed: _noiseSeed,
         hideLocation: _hideLocation,
+        latitude: _selectedPlace?.lat,
+        longitude: _selectedPlace?.lng,
+        formattedAddress: _selectedPlace?.formattedAddress,
       );
 
       HapticFeedback.mediumImpact();
@@ -406,9 +473,36 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
   void _nextStep() {
     if (_currentStep < 2) {
+      // Check for similar events when leaving step 0 (basics)
+      if (_currentStep == 0 && _nameController.text.trim().isNotEmpty) {
+        _checkSimilarEvents();
+      }
       setState(() => _currentStep++);
     } else {
       _createEvent();
+    }
+  }
+
+  Future<void> _checkSimilarEvents() async {
+    if (_checkingSimilarity) return;
+    setState(() => _checkingSimilarity = true);
+
+    try {
+      final results = await _repository.findSimilarEvents(
+        title: _nameController.text.trim(),
+        venue: _selectedPlace?.name,
+        date: _selectedDate,
+      );
+      if (mounted) {
+        setState(() {
+          _similarEvents = results;
+          _checkingSimilarity = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _checkingSimilarity = false);
+      }
     }
   }
 
@@ -635,35 +729,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           textCapitalization: TextCapitalization.sentences,
         ),
         const SizedBox(height: 16),
-        // Venue and City
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _venueController,
-                decoration: const InputDecoration(
-                  labelText: 'Venue',
-                  hintText: 'e.g., Madison Square Garden',
-                  prefixIcon: Icon(Icons.place_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.words,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: TextFormField(
-                controller: _cityController,
-                decoration: const InputDecoration(
-                  labelText: 'City',
-                  hintText: 'e.g., New York',
-                  prefixIcon: Icon(Icons.location_city_outlined),
-                  border: OutlineInputBorder(),
-                ),
-                textCapitalization: TextCapitalization.words,
-              ),
-            ),
-          ],
+        // Location (Google Places autocomplete)
+        PlacesAutocompleteField(
+          onPlaceSelected: (details) {
+            setState(() => _selectedPlace = details);
+          },
+          onCleared: () {
+            setState(() => _selectedPlace = null);
+          },
         ),
         const SizedBox(height: 12),
         // Hide location toggle
@@ -699,13 +772,63 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   }
 
   Widget _buildPromotionStep(ThemeData theme, ColorScheme colorScheme) {
-    return _PromotionStep(
+    return Column(
       key: const ValueKey('promotion'),
-      selectedTags: _selectedTags,
-      onTagsChanged: (tags) => setState(() => _selectedTags = tags),
-      selectedPromotions: _selectedPromotions,
-      onPromotionsChanged: (promos) => setState(() => _selectedPromotions = promos),
-      userTier: _userTier,
+      children: [
+        // Similarity warning
+        if (_similarEvents.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.amber.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Similar events found',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.amber,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Events with similar names already exist. Please make sure you\'re not creating a duplicate.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ..._similarEvents.take(3).map((e) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '\u2022 ${e['title']}${e['venue'] != null ? ' at ${e['venue']}' : ''}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                )),
+              ],
+            ),
+          ),
+        _PromotionStep(
+          selectedTags: _selectedTags,
+          onTagsChanged: (tags) => setState(() => _selectedTags = tags),
+          selectedPromotions: _selectedPromotions,
+          onPromotionsChanged: (promos) => setState(() => _selectedPromotions = promos),
+          userTier: _userTier,
+        ),
+      ],
     );
   }
 

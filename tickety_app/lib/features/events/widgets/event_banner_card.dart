@@ -101,6 +101,24 @@ class EventBannerCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
+          if (event.organizerName != null || event.organizerHandle != null) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Text(
+                  'by ${event.organizerHandle ?? event.organizerName ?? ''}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: const Color(0xAAFFFFFF),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (event.organizerVerified) ...[
+                  const SizedBox(width: 4),
+                  const VerifiedBadge(size: 14),
+                ],
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
           _buildFooter(context),
         ],
@@ -129,12 +147,12 @@ class EventBannerCard extends StatelessWidget {
   Widget _buildFooter(BuildContext context) {
     return Row(
       children: [
-        if (event.location != null) ...[
+        if (event.displayLocation != null) ...[
           const Icon(Icons.location_on_outlined, size: 16, color: Color(0xCCFFFFFF)),
           const SizedBox(width: 4),
           Expanded(
             child: Text(
-              event.location!,
+              event.displayLocation!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: const Color(0xCCFFFFFF),
               ),

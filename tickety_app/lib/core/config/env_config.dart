@@ -40,6 +40,18 @@ abstract class EnvConfig {
     return key;
   }
 
+  /// The Google Places API key for location autocomplete.
+  static String get googlePlacesApiKey {
+    final key = dotenv.env['GOOGLE_PLACES_API_KEY'];
+    if (key == null || key.isEmpty || key == 'YOUR_GOOGLE_PLACES_API_KEY') {
+      throw StateError(
+        'GOOGLE_PLACES_API_KEY is not configured. '
+        'Please update your .env file with your Google Places API key.',
+      );
+    }
+    return key;
+  }
+
   /// Loads environment variables from the .env file.
   ///
   /// Call this once at app startup before accessing any env values.

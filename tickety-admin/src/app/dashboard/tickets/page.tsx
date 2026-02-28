@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { DataTable } from "@/components/tables/data-table";
 import { ticketColumns } from "@/components/tables/columns/tickets";
 import type { Ticket } from "@/types/database";
@@ -17,25 +16,17 @@ export default function TicketsPage() {
 
   useEffect(() => {
     async function fetchTickets() {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("tickets")
-        .select("*, events(title)")
-        .order("sold_at", { ascending: false })
-        .limit(500);
-
-      if (!data) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch("/api/admin/tickets");
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setTickets(data);
+      } catch {
+        // Fetch failed
       }
-
-      const rows: TicketRow[] = data.map((t) => ({
-        ...t,
-        event_title: (t.events as unknown as { title: string })?.title,
-        events: undefined,
-      }));
-
-      setTickets(rows);
       setLoading(false);
     }
     fetchTickets();

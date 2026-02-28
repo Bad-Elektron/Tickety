@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,7 +46,13 @@ import {
 import Link from "next/link";
 
 interface UserDetail {
-  profile: Profile & { suspended_at?: string | null; suspended_reason?: string | null };
+  profile: Profile & {
+    suspended_at?: string | null;
+    suspended_reason?: string | null;
+    identity_verification_status?: string | null;
+    identity_verified_at?: string | null;
+    payout_delay_days?: number | null;
+  };
   subscription: Subscription | null;
   payments: (Payment & { user_email?: string; event_title?: string })[];
   events: Event[];
@@ -79,71 +84,18 @@ export default function UserDetailPage() {
 
   useEffect(() => {
     async function fetchUser() {
-      const supabase = createClient();
-
-      const [profileRes, subRes, paymentsRes, eventsRes, , referralsRes] =
-        await Promise.all([
-          supabase.from("profiles").select("*").eq("id", userId).single(),
-          supabase
-            .from("subscriptions")
-            .select("*")
-            .eq("user_id", userId)
-            .maybeSingle(),
-          supabase
-            .from("payments")
-            .select("*, events(title)")
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false })
-            .limit(50),
-          supabase
-            .from("events")
-            .select("*")
-            .eq("organizer_id", userId)
-            .is("deleted_at", null)
-            .order("date", { ascending: false }),
-          supabase.from("tickets").select("*").eq("owner_email", "").limit(0),
-          supabase.from("profiles").select("*").eq("referred_by", userId),
-        ]);
-
-      const profile = profileRes.data;
-      if (!profile) {
-        setLoading(false);
-        return;
+      try {
+        const res = await fetch(`/api/admin/users/${userId}`);
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+        const json = await res.json();
+        setData(json);
+        setNewTier(json.subscription?.tier ?? "base");
+      } catch {
+        // Fetch failed
       }
-
-      const { data: tickets } = await supabase
-        .from("tickets")
-        .select("*")
-        .eq("owner_email", profile.email ?? "")
-        .order("sold_at", { ascending: false })
-        .limit(50);
-
-      let referredBy: Profile | null = null;
-      if (profile.referred_by) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", profile.referred_by)
-          .single();
-        referredBy = data;
-      }
-
-      const payments = (paymentsRes.data ?? []).map((p) => ({
-        ...p,
-        user_email: profile.email ?? undefined,
-        event_title: (p.events as unknown as { title: string })?.title,
-      }));
-
-      setData({
-        profile,
-        subscription: subRes.data,
-        payments,
-        events: eventsRes.data ?? [],
-        tickets: tickets ?? [],
-        referredBy,
-        referrals: referralsRes.data ?? [],
-      });
-      setNewTier(subRes.data?.tier ?? "base");
       setLoading(false);
     }
     fetchUser();
@@ -196,7 +148,21 @@ export default function UserDetailPage() {
       const result = await res.json();
 
       if (res.ok) {
-        if (action === "suspend") {
+        if (action === "manual_verify") {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  profile: {
+                    ...prev.profile,
+                    identity_verification_status: "verified",
+                    identity_verified_at: new Date().toISOString(),
+                    payout_delay_days: 2,
+                  },
+                }
+              : prev
+          );
+        } else if (action === "suspend") {
           setData((prev) =>
             prev
               ? {
@@ -357,6 +323,45 @@ export default function UserDetailPage() {
             <InfoRow label="Referral Code" value={profile.referral_code} />
             <InfoRow label="Stripe Customer" value={profile.stripe_customer_id} mono />
             <InfoRow label="Stripe Connect" value={profile.stripe_connect_account_id} mono />
+            <Separator className="bg-zinc-800" />
+            <InfoRow label="Verification">
+              <Badge
+                variant="outline"
+                className={
+                  profile.identity_verification_status === "verified"
+                    ? "border-emerald-500/30 text-emerald-400"
+                    : profile.identity_verification_status === "pending"
+                      ? "border-amber-500/30 text-amber-400"
+                      : profile.identity_verification_status === "failed"
+                        ? "border-red-500/30 text-red-400"
+                        : "border-zinc-600 text-zinc-400"
+                }
+              >
+                {profile.identity_verification_status ?? "none"}
+              </Badge>
+            </InfoRow>
+            {profile.identity_verified_at && (
+              <InfoRow
+                label="Verified At"
+                value={formatDate(profile.identity_verified_at)}
+              />
+            )}
+            <InfoRow
+              label="Payout Delay"
+              value={`${profile.payout_delay_days ?? 14} days`}
+            />
+            {profile.identity_verification_status !== "verified" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleAction("manual_verify")}
+                disabled={actionLoading === "manual_verify"}
+                className="mt-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-950/30"
+              >
+                <ShieldCheck className="mr-2 h-3 w-3" />
+                {actionLoading === "manual_verify" ? "..." : "Manually Verify"}
+              </Button>
+            )}
           </CardContent>
         </Card>
 

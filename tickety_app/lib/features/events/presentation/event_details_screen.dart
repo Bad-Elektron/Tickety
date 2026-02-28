@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../payments/models/payment.dart';
@@ -9,6 +11,7 @@ import '../../payments/presentation/resale_browse_screen.dart';
 import '../../payments/presentation/seller_onboarding_screen.dart';
 import '../models/event_model.dart';
 import '../models/ticket_availability.dart';
+import 'report_event_sheet.dart';
 
 /// Provider for ticket availability (official + resale counts).
 /// Uses autoDispose so it refetches when the screen is re-entered.
@@ -128,12 +131,20 @@ class EventDetailsScreen extends ConsumerWidget {
                     color: colorScheme.primary,
                   ),
                   const SizedBox(height: 12),
-                  if (event.location != null)
+                  if (event.displayLocation != null)
                     _InfoCard(
                       icon: Icons.location_on_outlined,
                       title: 'Location',
-                      value: event.location!,
+                      value: event.displayLocation!,
                       color: colorScheme.tertiary,
+                      onTap: event.hasCoordinates
+                          ? () async {
+                              final url = Uri.parse(event.mapsUrl!);
+                              if (await canLaunchUrl(url)) {
+                                await launchUrl(url, mode: LaunchMode.externalApplication);
+                              }
+                            }
+                          : null,
                     ),
                   const SizedBox(height: 12),
                   // Official Tickets
@@ -177,6 +188,93 @@ class EventDetailsScreen extends ConsumerWidget {
                         : const SizedBox.shrink(),
                   ),
                   const SizedBox(height: 24),
+                  // Organizer info
+                  if (event.organizerName != null || event.organizerHandle != null) ...[
+                    Text(
+                      'Organizer',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: colorScheme.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.person_outline,
+                              color: colorScheme.primary,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        event.organizerName ?? 'Organizer',
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (event.organizerVerified) ...[
+                                      const SizedBox(width: 6),
+                                      const VerifiedBadge(size: 16),
+                                    ],
+                                  ],
+                                ),
+                                if (event.organizerHandle != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    event.organizerHandle!,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Report button
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => _showReportSheet(context),
+                        icon: Icon(
+                          Icons.flag_outlined,
+                          size: 18,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                        label: Text(
+                          'Report this event',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                   // Description
                   if (event.description != null) ...[
                     Text(
@@ -231,6 +329,15 @@ class EventDetailsScreen extends ConsumerWidget {
     return '$weekday, $month $day at $hour:$minute $period';
   }
 
+  void _showReportSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ReportEventSheet(eventId: event.id),
+    );
+  }
+
   void _showBuyTicketSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -247,12 +354,14 @@ class _InfoCard extends StatelessWidget {
   final String title;
   final String value;
   final Color color;
+  final VoidCallback? onTap;
 
   const _InfoCard({
     required this.icon,
     required this.title,
     required this.value,
     required this.color,
+    this.onTap,
   });
 
   @override
@@ -260,44 +369,54 @@ class _InfoCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+    return Material(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+        child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 22),
             ),
-            child: Icon(icon, color: color, size: 22),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
+                  const SizedBox(height: 4),
+                  Text(
+                    value,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                ),
-              ],
+                ],
             ),
           ),
+          if (onTap != null)
+            Icon(
+              Icons.open_in_new,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
         ],
+      ),
+      ),
       ),
     );
   }

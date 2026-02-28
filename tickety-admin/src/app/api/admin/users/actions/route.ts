@@ -121,6 +121,38 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    case "manual_verify": {
+      const { error } = await admin
+        .from("profiles")
+        .update({
+          identity_verification_status: "verified",
+          identity_verified_at: new Date().toISOString(),
+          payout_delay_days: 2,
+        })
+        .eq("id", user_id);
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      // Also auto-approve any pending_review events by this user
+      await admin
+        .from("events")
+        .update({
+          status: "active",
+          status_reason: "Auto-approved: organizer manually verified by admin",
+        })
+        .eq("organizer_id", user_id)
+        .eq("status", "pending_review");
+
+      await writeAuditLog({
+        admin_user_id: session.user.id,
+        action: "user_manual_verify",
+        target_table: "profiles",
+        target_id: user_id,
+        ip_address: ip,
+      });
+      return NextResponse.json({ success: true });
+    }
+
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
