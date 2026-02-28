@@ -270,6 +270,39 @@ Organizers must verify their identity via Stripe Identity to create events with 
 - Use test document images from Stripe docs
 - Verification completes automatically in test mode
 
+### Google Places Location Integration (Completed)
+
+Events use Google Places Autocomplete for reliable location input with coordinates, replacing the old manual venue/city text fields.
+
+**Approach:** Calls Google Places HTTP API directly (no native SDK) — works on all platforms, no AndroidManifest/iOS changes needed.
+
+**Environment:**
+- `GOOGLE_PLACES_API_KEY` in `tickety_app/.env`
+- `EnvConfig.googlePlacesApiKey` getter in `core/config/env_config.dart`
+
+**Database:**
+- `events` table: `latitude` (DOUBLE PRECISION), `longitude` (DOUBLE PRECISION), `formatted_address` (TEXT) — all nullable for backward compat
+- Migration: `20260228200001_add_lat_lng_to_events.sql`
+
+**Service:**
+- `GooglePlacesService` (`core/services/google_places_service.dart`) — `getAutocompletePredictions(input)` and `getPlaceDetails(placeId)` via HTTP
+- `PlacePrediction` model (placeId, description, mainText, secondaryText)
+- `PlaceDetails` model (placeId, formattedAddress, name, lat, lng, city, country)
+- Uses `http` package (added to pubspec.yaml)
+
+**Flutter:**
+- `PlacesAutocompleteField` (`shared/widgets/places_autocomplete_field.dart`) — Debounced (300ms) search with overlay dropdown
+- `EventModel` — Added `latitude`, `longitude`, `formattedAddress` fields + `hasCoordinates` getter + `mapsUrl` getter
+- `EventMapper` — Serializes new fields only when non-null (backward compat with DBs without columns); auto-populates legacy `location` from `displayLocation`
+- `CreateEventScreen` — Single `PlacesAutocompleteField` replaces venue+city row; stores `PlaceDetails?` in state; passes lat/lng/formattedAddress/venue/city/country to repository
+- `EventDetailsScreen` — Location card is tappable when coordinates exist (opens Google Maps via `url_launcher`)
+- All screens use `event.displayLocation` (not deprecated `event.location`) — falls back through venue+city → formattedAddress → location
+
+**Important:**
+- `displayLocation` fallback chain: venue+city → venue → city → formattedAddress → location
+- Legacy `location` column auto-populated from `displayLocation` in `toJson` for backward compat
+- Mapper uses `if (value != null)` collection-if for new fields so inserts don't fail on DBs without the columns
+
 ## Future: Cardano (ADA) Integration
 
 The wallet screen includes a placeholder for "Crypto Balance" showing ADA. This is reserved for future Cardano blockchain integration for:
