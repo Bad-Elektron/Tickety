@@ -49,6 +49,8 @@ abstract class EventMapper {
       latitude: (json['latitude'] as num?)?.toDouble(),
       longitude: (json['longitude'] as num?)?.toDouble(),
       formattedAddress: json['formatted_address'] as String?,
+      isPrivate: json['is_private'] as bool? ?? false,
+      inviteCode: json['invite_code'] as String?,
     );
   }
 
@@ -74,6 +76,8 @@ abstract class EventMapper {
       'hide_location': event.hideLocation,
       'max_tickets': event.maxTickets,
       'cash_sales_enabled': event.cashSalesEnabled,
+      // Only include is_private when true (column may not exist yet on older DBs)
+      if (event.isPrivate) 'is_private': event.isPrivate,
       // Only include location coordinates when present (columns may not exist yet)
       if (event.latitude != null) 'latitude': event.latitude,
       if (event.longitude != null) 'longitude': event.longitude,

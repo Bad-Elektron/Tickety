@@ -8,6 +8,7 @@ import '../../notifications/notifications.dart';
 import '../../profile/profile.dart';
 import '../../tickets/tickets.dart';
 import '../../wallet/wallet.dart';
+import '../data/supabase_event_repository.dart';
 import '../models/event_category.dart';
 import '../models/event_model.dart';
 import '../widgets/widgets.dart';
@@ -34,6 +35,8 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
   Timer? _searchDebounce;
   bool _isSearching = false;
   String _searchQuery = '';
+  EventModel? _inviteCodeResult;
+  final _eventRepo = SupabaseEventRepository();
 
   @override
   void dispose() {
@@ -46,9 +49,21 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
   void _onSearchChanged(String value) {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      final trimmed = value.trim();
       setState(() {
-        _searchQuery = value.trim().toLowerCase();
+        _searchQuery = trimmed.toLowerCase();
       });
+      // Check for invite code pattern (8 alphanumeric chars)
+      final upper = trimmed.toUpperCase();
+      if (RegExp(r'^[A-Z0-9]{8}$').hasMatch(upper)) {
+        _eventRepo.getEventByInviteCode(upper).then((event) {
+          if (mounted) setState(() => _inviteCodeResult = event);
+        });
+      } else {
+        if (_inviteCodeResult != null) {
+          setState(() => _inviteCodeResult = null);
+        }
+      }
     });
   }
 
@@ -58,6 +73,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
         _searchController.clear();
         _searchFocusNode.unfocus();
         _searchQuery = '';
+        _inviteCodeResult = null;
       }
       _isSearching = !_isSearching;
     });
@@ -150,7 +166,21 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                     },
                   ),
                 ),
-                if (filteredEvents.isEmpty)
+                // Invite code result card
+                if (_inviteCodeResult != null)
+                  SliverToBoxAdapter(
+                    child: _InviteCodeResultCard(
+                      event: _inviteCodeResult!,
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => EventDetailsScreen(event: _inviteCodeResult!),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                if (filteredEvents.isEmpty && _inviteCodeResult == null)
                   _EmptyFilterState(
                     searchQuery: _searchQuery,
                     onClearFilters: () {
@@ -159,7 +189,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                       if (_isSearching) _toggleSearch();
                     },
                   )
-                else
+                else if (filteredEvents.isNotEmpty)
                   _EventList(events: filteredEvents),
               ],
             ],
@@ -451,9 +481,9 @@ class _EventListTile extends StatelessWidget {
               color: Theme.of(context).colorScheme.primary,
             ),
           ),
-          if (event.displayLocation != null)
+          if (event.getDisplayLocation(hasTicket: false) != null)
             Text(
-              event.displayLocation!,
+              event.getDisplayLocation(hasTicket: false)!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -515,6 +545,104 @@ class _Thumbnail extends StatelessWidget {
           ),
         ),
         child: const SizedBox(width: 56, height: 56),
+      ),
+    );
+  }
+}
+
+class _InviteCodeResultCard extends StatelessWidget {
+  final EventModel event;
+  final VoidCallback onTap;
+
+  const _InviteCodeResultCard({
+    required this.event,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final config = event.getNoiseConfig();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: Material(
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.3),
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  height: 72,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: config.colors,
+                    ),
+                  ),
+                  child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.lock_outline, color: Colors.white, size: 18),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Private Event Found',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              event.subtitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../../core/services/services.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../payments/models/payment.dart';
 import '../../payments/presentation/checkout_screen.dart';
@@ -12,6 +13,22 @@ import '../../payments/presentation/seller_onboarding_screen.dart';
 import '../models/event_model.dart';
 import '../models/ticket_availability.dart';
 import 'report_event_sheet.dart';
+
+/// Provider that checks if the current user owns a ticket for a given event.
+final _userHasTicketProvider =
+    FutureProvider.autoDispose.family<bool, String>((ref, eventId) async {
+  final userId = SupabaseService.instance.currentUser?.id;
+  if (userId == null) return false;
+
+  final response = await SupabaseService.instance.client
+      .from('tickets')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('sold_by', userId)
+      .limit(1);
+
+  return (response as List).isNotEmpty;
+});
 
 /// Provider for ticket availability (official + resale counts).
 /// Uses autoDispose so it refetches when the screen is re-entered.
@@ -47,6 +64,9 @@ class EventDetailsScreen extends ConsumerWidget {
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();
     final availabilityAsync = ref.watch(_ticketAvailabilityProvider(event.id));
+    final hasTicket = ref.watch(_userHasTicketProvider(event.id)).valueOrNull ?? false;
+    final locationText = event.getDisplayLocation(hasTicket: hasTicket);
+    final showMapLink = event.hasCoordinates && (!event.hideLocation || hasTicket);
 
     return Scaffold(
       body: CustomScrollView(
@@ -55,6 +75,12 @@ class EventDetailsScreen extends ConsumerWidget {
           SliverAppBar(
             expandedHeight: 240,
             pinned: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: () => _shareEvent(context),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -107,6 +133,38 @@ class EventDetailsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Private event badge
+                  if (event.isPrivate) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.lock_outline,
+                            size: 14,
+                            color: colorScheme.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Invite Only',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Title
                   Text(
                     event.title,
@@ -131,13 +189,15 @@ class EventDetailsScreen extends ConsumerWidget {
                     color: colorScheme.primary,
                   ),
                   const SizedBox(height: 12),
-                  if (event.displayLocation != null)
+                  if (locationText != null)
                     _InfoCard(
-                      icon: Icons.location_on_outlined,
+                      icon: event.hideLocation && !hasTicket
+                          ? Icons.lock_outlined
+                          : Icons.location_on_outlined,
                       title: 'Location',
-                      value: event.displayLocation!,
+                      value: locationText,
                       color: colorScheme.tertiary,
-                      onTap: event.hasCoordinates
+                      onTap: showMapLink
                           ? () async {
                               final url = Uri.parse(event.mapsUrl!);
                               if (await canLaunchUrl(url)) {
@@ -327,6 +387,19 @@ class EventDetailsScreen extends ConsumerWidget {
     final period = date.hour >= 12 ? 'PM' : 'AM';
 
     return '$weekday, $month $day at $hour:$minute $period';
+  }
+
+  void _shareEvent(BuildContext context) {
+    final location = event.displayLocation;
+    final dateStr = _formatDateTime(event.date);
+    final buffer = StringBuffer();
+    buffer.writeln('Check out "${event.title}" on Tickety!');
+    if (location != null) buffer.writeln('📍 $location');
+    buffer.writeln('📅 $dateStr');
+    if (event.isPrivate && event.inviteCode != null) {
+      buffer.writeln('🔒 Invite code: ${event.inviteCode}');
+    }
+    Share.share(buffer.toString());
   }
 
   void _showReportSheet(BuildContext context) {

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../core/services/services.dart';
 import '../../events/data/event_mapper.dart';
 import '../../events/models/event_model.dart';
@@ -18,6 +20,10 @@ abstract class EventSearchRepository {
 
   /// Save a search query to history.
   Future<void> saveSearch(String query);
+
+  /// Search for a private event by invite code.
+  /// Returns the event if the code matches an 8-char alphanumeric pattern.
+  Future<EventModel?> searchByInviteCode(String query);
 }
 
 /// Supabase implementation that searches real events from the database.
@@ -48,18 +54,36 @@ class SupabaseEventSearchRepository implements EventSearchRepository {
 
     // Search across multiple fields using OR conditions with ilike
     // Supabase uses PostgreSQL's ilike for case-insensitive pattern matching
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .isFilter('deleted_at', null)
-        .or('title.ilike.%$escapedQuery%,'
-            'subtitle.ilike.%$escapedQuery%,'
-            'category.ilike.%$escapedQuery%,'
-            'city.ilike.%$escapedQuery%,'
-            'venue.ilike.%$escapedQuery%,'
-            'description.ilike.%$escapedQuery%')
-        .order('date', ascending: true)
-        .limit(20);
+    List<dynamic> response;
+    try {
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .eq('is_private', false)
+          .or('title.ilike.%$escapedQuery%,'
+              'subtitle.ilike.%$escapedQuery%,'
+              'category.ilike.%$escapedQuery%,'
+              'city.ilike.%$escapedQuery%,'
+              'venue.ilike.%$escapedQuery%,'
+              'description.ilike.%$escapedQuery%')
+          .order('date', ascending: true)
+          .limit(20);
+    } catch (_) {
+      // Fallback: is_private column may not exist yet
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .or('title.ilike.%$escapedQuery%,'
+              'subtitle.ilike.%$escapedQuery%,'
+              'category.ilike.%$escapedQuery%,'
+              'city.ilike.%$escapedQuery%,'
+              'venue.ilike.%$escapedQuery%,'
+              'description.ilike.%$escapedQuery%')
+          .order('date', ascending: true)
+          .limit(20);
+    }
 
     final events = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
@@ -69,13 +93,25 @@ class SupabaseEventSearchRepository implements EventSearchRepository {
     // This handles the case where user searches for a tag label like "underground"
     if (events.isEmpty) {
       // Try searching by tags - get all upcoming events and filter by tags
-      final allResponse = await _client
-          .from(_tableName)
-          .select()
-          .isFilter('deleted_at', null)
-          .gte('date', DateTime.now().toUtc().toIso8601String())
-          .order('date', ascending: true)
-          .limit(100);
+      List<dynamic> allResponse;
+      try {
+        allResponse = await _client
+            .from(_tableName)
+            .select()
+            .isFilter('deleted_at', null)
+            .eq('is_private', false)
+            .gte('date', DateTime.now().toUtc().toIso8601String())
+            .order('date', ascending: true)
+            .limit(100);
+      } catch (_) {
+        allResponse = await _client
+            .from(_tableName)
+            .select()
+            .isFilter('deleted_at', null)
+            .gte('date', DateTime.now().toUtc().toIso8601String())
+            .order('date', ascending: true)
+            .limit(100);
+      }
 
       final allEvents = (allResponse as List<dynamic>)
           .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
@@ -101,13 +137,26 @@ class SupabaseEventSearchRepository implements EventSearchRepository {
   Future<List<EventModel>> getTrending() async {
     // Get upcoming events, ordered by date (nearest first)
     // In production, you might rank by ticket sales or views
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .isFilter('deleted_at', null)
-        .gte('date', DateTime.now().toUtc().toIso8601String())
-        .order('date', ascending: true)
-        .limit(6);
+    List<dynamic> response;
+    try {
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .eq('is_private', false)
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .order('date', ascending: true)
+          .limit(6);
+    } catch (_) {
+      // Fallback: is_private column may not exist yet
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .order('date', ascending: true)
+          .limit(6);
+    }
 
     return (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
@@ -128,6 +177,34 @@ class SupabaseEventSearchRepository implements EventSearchRepository {
       if (_recentSearches.length > 10) {
         _recentSearches.removeLast();
       }
+    }
+  }
+
+  @override
+  Future<EventModel?> searchByInviteCode(String query) async {
+    final trimmed = query.trim().toUpperCase();
+    debugPrint('[InviteCode] Input: "$query" -> Trimmed: "$trimmed" (len=${trimmed.length})');
+    // Only attempt if it looks like an 8-char alphanumeric invite code
+    if (!RegExp(r'^[A-Z0-9]{8}$').hasMatch(trimmed)) {
+      debugPrint('[InviteCode] Regex did not match');
+      return null;
+    }
+
+    debugPrint('[InviteCode] Regex matched, querying DB for invite_code=$trimmed');
+    try {
+      final response = await _client
+          .from(_tableName)
+          .select()
+          .eq('invite_code', trimmed)
+          .isFilter('deleted_at', null)
+          .maybeSingle();
+
+      debugPrint('[InviteCode] DB response: $response');
+      if (response == null) return null;
+      return EventMapper.fromJson(response);
+    } catch (e) {
+      debugPrint('[InviteCode] Error: $e');
+      return null;
     }
   }
 }
@@ -285,5 +362,11 @@ class LocalEventSearchRepository implements EventSearchRepository {
         _recentSearches.removeLast();
       }
     }
+  }
+
+  @override
+  Future<EventModel?> searchByInviteCode(String query) async {
+    // Local implementation doesn't support invite codes
+    return null;
   }
 }

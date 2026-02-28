@@ -147,12 +147,16 @@ class EventBannerCard extends StatelessWidget {
   Widget _buildFooter(BuildContext context) {
     return Row(
       children: [
-        if (event.displayLocation != null) ...[
-          const Icon(Icons.location_on_outlined, size: 16, color: Color(0xCCFFFFFF)),
+        if (event.getDisplayLocation(hasTicket: false) != null) ...[
+          Icon(
+            event.hideLocation ? Icons.lock_outlined : Icons.location_on_outlined,
+            size: 16,
+            color: const Color(0xCCFFFFFF),
+          ),
           const SizedBox(width: 4),
           Expanded(
             child: Text(
-              event.displayLocation!,
+              event.getDisplayLocation(hasTicket: false)!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: const Color(0xCCFFFFFF),
               ),

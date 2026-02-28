@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/utils/utils.dart';
@@ -21,8 +23,11 @@ class _SearchScreenState extends State<SearchScreen> {
   List<EventModel> _results = [];
   List<EventModel> _trending = [];
   List<String> _recentSearches = [];
+  EventModel? _inviteCodeResult;
   bool _isLoading = false;
   bool _hasSearched = false;
+  Timer? _debounce;
+  int _searchVersion = 0;
 
   @override
   void initState() {
@@ -33,6 +38,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -49,29 +55,53 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _performSearch(String query) async {
-    // Sanitize query to remove control characters and normalize whitespace
+  void _performSearch(String query) {
+    _debounce?.cancel();
+
     final sanitizedQuery = Validators.sanitize(query);
 
     if (sanitizedQuery.isEmpty) {
       setState(() {
         _results = [];
+        _inviteCodeResult = null;
         _hasSearched = false;
+        _isLoading = false;
       });
       return;
     }
 
     setState(() => _isLoading = true);
 
-    final results = await _repository.search(sanitizedQuery);
-    await _repository.saveSearch(sanitizedQuery);
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _executeSearch(sanitizedQuery);
+    });
+  }
 
-    if (mounted) {
+  Future<void> _executeSearch(String query) async {
+    final version = ++_searchVersion;
+    debugPrint('[Search] Executing search v$version: "$query"');
+
+    // Run normal search and invite code lookup in parallel
+    final futures = await Future.wait([
+      _repository.search(query),
+      _repository.searchByInviteCode(query),
+    ]);
+    await _repository.saveSearch(query);
+
+    final results = futures[0] as List<EventModel>;
+    final inviteResult = futures[1] as EventModel?;
+    debugPrint('[Search] v$version results: ${results.length} events, invite=${inviteResult?.title}');
+
+    // Only update state if this is still the latest search
+    if (mounted && version == _searchVersion) {
       setState(() {
         _results = results;
+        _inviteCodeResult = inviteResult;
         _isLoading = false;
         _hasSearched = true;
       });
+    } else {
+      debugPrint('[Search] v$version discarded (current=$_searchVersion)');
     }
   }
 
@@ -84,7 +114,14 @@ class _SearchScreenState extends State<SearchScreen> {
           controller: _searchController,
           focusNode: _focusNode,
           onChanged: _performSearch,
-          onSubmitted: _performSearch,
+          onSubmitted: (query) {
+            _debounce?.cancel();
+            final sanitized = Validators.sanitize(query);
+            if (sanitized.isNotEmpty) {
+              setState(() => _isLoading = true);
+              _executeSearch(sanitized);
+            }
+          },
         ),
         actions: [
           if (_searchController.text.isNotEmpty)
@@ -169,7 +206,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    if (_results.isEmpty) {
+    if (_results.isEmpty && _inviteCodeResult == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -203,9 +240,17 @@ class _SearchScreenState extends State<SearchScreen> {
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: _results.length,
+      itemCount: _results.length + (_inviteCodeResult != null ? 1 : 0),
       itemBuilder: (context, index) {
-        final event = _results[index];
+        // Show invite code result card at the top
+        if (_inviteCodeResult != null && index == 0) {
+          return _InviteCodeResultCard(
+            event: _inviteCodeResult!,
+            onTap: () => _navigateToEvent(_inviteCodeResult!),
+          );
+        }
+        final eventIndex = _inviteCodeResult != null ? index - 1 : index;
+        final event = _results[eventIndex];
         return _EventSearchTile(
           event: event,
           onTap: () => _navigateToEvent(event),
@@ -378,7 +423,7 @@ class _EventSearchTile extends StatelessWidget {
                         ],
                         Expanded(
                           child: Text(
-                            event.displayLocation ?? '',
+                            event.getDisplayLocation(hasTicket: false) ?? '',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -400,6 +445,113 @@ class _EventSearchTile extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InviteCodeResultCard extends StatelessWidget {
+  final EventModel event;
+  final VoidCallback onTap;
+
+  const _InviteCodeResultCard({
+    required this.event,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final config = event.getNoiseConfig();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Material(
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(
+                color: colorScheme.primary.withValues(alpha: 0.3),
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                // Gradient header
+                Container(
+                  height: 80,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: config.colors,
+                    ),
+                  ),
+                  child: Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(
+                          Icons.lock_outline,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Private Event Found',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Event info
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              event.title,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              event.subtitle,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.chevron_right,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

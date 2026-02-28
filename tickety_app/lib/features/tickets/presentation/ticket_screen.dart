@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/graphics/graphics.dart';
 import '../../../core/services/nfc_service.dart';
@@ -215,26 +216,39 @@ class _TicketScreenState extends State<TicketScreen> {
     }
   }
 
-  void _openNavigation(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.navigation, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('Navigate to ${_fullAddress ?? _venue ?? "venue"}'),
-            ),
-          ],
-        ),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'OK',
-          textColor: Colors.white,
-          onPressed: () {},
-        ),
-      ),
-    );
+  Future<void> _openNavigation(BuildContext context) async {
+    final lat = widget.ticket.eventData?['latitude'] as num?;
+    final lng = widget.ticket.eventData?['longitude'] as num?;
+
+    Uri? mapsUri;
+    if (lat != null && lng != null) {
+      final label = Uri.encodeComponent(_venue ?? _eventTitle);
+      if (Platform.isIOS) {
+        mapsUri = Uri.parse('maps://?q=$label&ll=$lat,$lng');
+      } else {
+        mapsUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+      }
+    } else if (_fullAddress != null) {
+      final query = Uri.encodeComponent(_fullAddress!);
+      if (Platform.isIOS) {
+        mapsUri = Uri.parse('maps://?q=$query');
+      } else {
+        mapsUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+      }
+    }
+
+    if (mapsUri != null && await canLaunchUrl(mapsUri)) {
+      await launchUrl(mapsUri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open maps'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
   void _showSellConfirmation() {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/providers.dart';
@@ -199,6 +201,14 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                           ),
                         ],
                       ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  // Invite code card for private events
+                  if (event.isPrivate && event.inviteCode != null) ...[
+                    _InviteCodeCard(
+                      inviteCode: event.inviteCode!,
+                      eventTitle: event.title,
                     ),
                     const SizedBox(height: 16),
                   ],
@@ -1145,6 +1155,96 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _InviteCodeCard extends StatelessWidget {
+  final String inviteCode;
+  final String eventTitle;
+
+  const _InviteCodeCard({
+    required this.inviteCode,
+    required this.eventTitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: colorScheme.primary.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.lock_outline,
+                color: colorScheme.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Private Event',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: colorScheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            inviteCode,
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+              letterSpacing: 4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: inviteCode));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Invite code copied!'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Share.share(
+                      'Join my event "$eventTitle" on Tickety! Use invite code: $inviteCode',
+                    );
+                  },
+                  icon: const Icon(Icons.share, size: 18),
+                  label: const Text('Share'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

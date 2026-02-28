@@ -146,7 +146,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   // Google Places selection
   PlaceDetails? _selectedPlace;
 
-  bool _isPublic = false;
+  bool _isPublic = true;
   bool _isLoading = false;
   bool _hideLocation = false;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
@@ -431,6 +431,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         tags: tagIds,
         noiseSeed: _noiseSeed,
         hideLocation: _hideLocation,
+        isPrivate: !_isPublic,
         latitude: _selectedPlace?.lat,
         longitude: _selectedPlace?.lng,
         formattedAddress: _selectedPlace?.formattedAddress,
@@ -679,6 +680,39 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     return Column(
       key: const ValueKey('basics'),
       children: [
+        // Private event info banner
+        if (!_isPublic) ...[
+          const SizedBox(height: 8),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.lock_outline,
+                  size: 20,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Private event \u2014 a unique invite code will be generated. Share it so people can find your event.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         // Event name input at the top
         TextField(
@@ -729,6 +763,24 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           textCapitalization: TextCapitalization.sentences,
         ),
         const SizedBox(height: 16),
+        // Location row: hint (left) + toggle (right)
+        Row(
+          children: [
+            // Hint text — always takes space, only visible when secret
+            Expanded(
+              child: AnimatedOpacity(
+                opacity: _hideLocation ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 200),
+                child: _SecretLocationHint(),
+              ),
+            ),
+            _HideLocationToggle(
+              value: _hideLocation,
+              onChanged: (value) => setState(() => _hideLocation = value),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         // Location (Google Places autocomplete)
         PlacesAutocompleteField(
           onPlaceSelected: (details) {
@@ -737,12 +789,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           onCleared: () {
             setState(() => _selectedPlace = null);
           },
-        ),
-        const SizedBox(height: 12),
-        // Hide location toggle
-        _HideLocationToggle(
-          value: _hideLocation,
-          onChanged: (value) => setState(() => _hideLocation = value),
         ),
         const SizedBox(height: 16),
         // Description
@@ -1084,20 +1130,55 @@ class _VisibilityToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          isPublic ? Icons.public : Icons.lock_outline,
-          size: 18,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: () => onChanged(!isPublic),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: isPublic
+              ? colorScheme.primaryContainer.withValues(alpha: 0.5)
+              : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isPublic
+                ? colorScheme.primary.withValues(alpha: 0.3)
+                : colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+          ),
         ),
-        const SizedBox(width: 4),
-        Switch(
-          value: isPublic,
-          onChanged: onChanged,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isPublic ? Icons.public : Icons.lock_outline,
+              size: 16,
+              color: isPublic
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              isPublic ? 'Public' : 'Private',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: isPublic
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.swap_horiz,
+              size: 14,
+              color: isPublic
+                  ? colorScheme.primary.withValues(alpha: 0.6)
+                  : colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
@@ -1119,55 +1200,59 @@ class _HideLocationToggle extends StatelessWidget {
 
     return GestureDetector(
       onTap: () => onChanged(!value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: value
-              ? colorScheme.primaryContainer.withValues(alpha: 0.5)
-              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: value
-                ? colorScheme.primary.withValues(alpha: 0.5)
-                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            value ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+            size: 16,
+            color: value ? colorScheme.primary : colorScheme.onSurfaceVariant,
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              value ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-              size: 20,
+          const SizedBox(width: 6),
+          Text(
+            value ? 'Secret location' : 'Public location',
+            style: theme.textTheme.labelSmall?.copyWith(
               color: value ? colorScheme.primary : colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w500,
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Secret Location',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: value ? colorScheme.primary : colorScheme.onSurface,
-                    ),
-                  ),
-                  Text(
-                    'Reveal location only after ticket purchase',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 24,
+            child: FittedBox(
+              child: Switch(
+                value: value,
+                onChanged: onChanged,
               ),
             ),
-            Switch(
-              value: value,
-              onChanged: onChanged,
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+class _SecretLocationHint extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        Icon(
+          Icons.lock_outlined,
+          size: 14,
+          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'Location revealed after purchase',
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+          ),
+        ),
+      ],
     );
   }
 }

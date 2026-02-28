@@ -93,4 +93,9 @@ abstract class EventRepository {
     required String reason,
     String? description,
   });
+
+  /// Fetches an event by its invite code (for private events).
+  ///
+  /// Returns null if no event matches the code.
+  Future<EventModel?> getEventByInviteCode(String code);
 }

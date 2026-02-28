@@ -99,6 +99,12 @@ class EventModel {
   /// Full formatted address from Google Places.
   final String? formattedAddress;
 
+  /// Whether this event is private (invite-only).
+  final bool isPrivate;
+
+  /// Unique 8-char invite code for private events (generated server-side).
+  final String? inviteCode;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -127,6 +133,8 @@ class EventModel {
     this.latitude,
     this.longitude,
     this.formattedAddress,
+    this.isPrivate = false,
+    this.inviteCode,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -134,6 +142,9 @@ class EventModel {
 
   /// Whether the event is free.
   bool get isFree => priceInCents == null || priceInCents == 0;
+
+  /// Whether this event is public (not private).
+  bool get isPublic => !isPrivate;
 
   /// Whether this event has latitude/longitude coordinates.
   bool get hasCoordinates => latitude != null && longitude != null;
@@ -162,7 +173,7 @@ class EventModel {
   /// If [hideLocation] is true and [hasTicket] is false, returns a placeholder.
   String? getDisplayLocation({required bool hasTicket}) {
     if (hideLocation && !hasTicket) {
-      return 'Location revealed after purchase';
+      return 'Secret Location';
     }
     return displayLocation;
   }
@@ -246,6 +257,8 @@ class EventModel {
     double? latitude,
     double? longitude,
     String? formattedAddress,
+    bool? isPrivate,
+    String? inviteCode,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -275,6 +288,8 @@ class EventModel {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       formattedAddress: formattedAddress ?? this.formattedAddress,
+      isPrivate: isPrivate ?? this.isPrivate,
+      inviteCode: inviteCode ?? this.inviteCode,
     );
   }
 

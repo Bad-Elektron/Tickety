@@ -46,29 +46,46 @@ class SupabaseEventRepository implements EventRepository {
       tag: _tag,
     );
 
-    // Build query with filters first, then ordering
-    // Join organizer profile data for display (gracefully handles missing columns)
-    var query = _client
-        .from(_tableName)
-        .select()
-        .isFilter('deleted_at', null)
-        .gte('date', DateTime.now().toUtc().toIso8601String());
-
-    if (category != null) {
-      query = query.eq('category', category);
-    }
-    if (city != null) {
-      query = query.eq('city', city);
-    }
-
-    // Apply ordering after all filters
-    final orderedQuery = query.order('date', ascending: true);
-
     // Calculate range for pagination (fetch one extra to detect hasMore)
     final from = page * pageSize;
     final to = from + pageSize;
 
-    final response = await orderedQuery.range(from, to);
+    List<dynamic> response;
+    try {
+      // Build query with privacy and status filters
+      var query = _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .eq('is_private', false)
+          .eq('status', 'active')
+          .gte('date', DateTime.now().toUtc().toIso8601String());
+
+      if (category != null) {
+        query = query.eq('category', category);
+      }
+      if (city != null) {
+        query = query.eq('city', city);
+      }
+
+      response = await query.order('date', ascending: true).range(from, to);
+    } catch (_) {
+      // Fallback: is_private column may not exist yet
+      var query = _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .gte('date', DateTime.now().toUtc().toIso8601String());
+
+      if (category != null) {
+        query = query.eq('category', category);
+      }
+      if (city != null) {
+        query = query.eq('city', city);
+      }
+
+      response = await query.order('date', ascending: true).range(from, to);
+    }
 
     final allItems = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
@@ -115,13 +132,27 @@ class SupabaseEventRepository implements EventRepository {
 
     // For now, just get the nearest upcoming events as featured
     // In production, you might have a "featured" flag or algorithm
-    final response = await _client
-        .from(_tableName)
-        .select()
-        .isFilter('deleted_at', null)
-        .gte('date', DateTime.now().toUtc().toIso8601String())
-        .order('date', ascending: true)
-        .limit(limit);
+    List<dynamic> response;
+    try {
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .eq('is_private', false)
+          .eq('status', 'active')
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .order('date', ascending: true)
+          .limit(limit);
+    } catch (_) {
+      // Fallback: is_private column may not exist yet
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .order('date', ascending: true)
+          .limit(limit);
+    }
 
     final events = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
@@ -168,6 +199,7 @@ class SupabaseEventRepository implements EventRepository {
     List<String>? tags,
     int? noiseSeed,
     bool hideLocation = false,
+    bool isPrivate = false,
     double? latitude,
     double? longitude,
     String? formattedAddress,
@@ -188,6 +220,7 @@ class SupabaseEventRepository implements EventRepository {
       tags: tags ?? const [],
       noiseSeed: noiseSeed ?? DateTime.now().millisecondsSinceEpoch % 10000,
       hideLocation: hideLocation,
+      isPrivate: isPrivate,
       latitude: latitude,
       longitude: longitude,
       formattedAddress: formattedAddress,
@@ -453,6 +486,7 @@ class SupabaseEventRepository implements EventRepository {
     List<String>? tags,
     int? noiseSeed,
     bool hideLocation = false,
+    bool isPrivate = false,
     double? latitude,
     double? longitude,
     String? formattedAddress,
@@ -486,6 +520,7 @@ class SupabaseEventRepository implements EventRepository {
       tags: tags,
       noiseSeed: noiseSeed,
       hideLocation: hideLocation,
+      isPrivate: isPrivate,
       latitude: latitude,
       longitude: longitude,
       formattedAddress: formattedAddress,
@@ -503,5 +538,23 @@ class SupabaseEventRepository implements EventRepository {
     }
 
     return event;
+  }
+
+  @override
+  Future<EventModel?> getEventByInviteCode(String code) async {
+    AppLogger.debug('Looking up event by invite code: $code', tag: _tag);
+
+    final response = await _client
+        .from(_tableName)
+        .select()
+        .eq('invite_code', code.toUpperCase())
+        .isFilter('deleted_at', null)
+        .maybeSingle();
+
+    if (response == null) {
+      AppLogger.debug('No event found for invite code: $code', tag: _tag);
+      return null;
+    }
+    return EventMapper.fromJson(response);
   }
 }
