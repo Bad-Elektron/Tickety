@@ -402,25 +402,52 @@ class _EventSearchTile extends StatelessWidget {
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        if (event.category != null) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
+                        // Show auto-badges and up to 2 tags
+                        ...event.autoBadges.take(1).map((badge) => Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                              color: badge.color.withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(
-                              event.category!,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: colorScheme.primary,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(badge.icon, size: 10, color: badge.color),
+                                const SizedBox(width: 2),
+                                Text(
+                                  badge.label,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: badge.color,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(width: 8),
-                        ],
+                        )),
+                        ...event.eventTags.take(2).map((tag) {
+                          final tagColor = tag.color ?? colorScheme.primary;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: tagColor.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                tag.label,
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: tagColor,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                         Expanded(
                           child: Text(
                             event.getDisplayLocation(hasTicket: false) ?? '',

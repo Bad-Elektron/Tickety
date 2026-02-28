@@ -18,6 +18,7 @@ import 'my_events_screen.dart';
 // Local UI state for filters (doesn't need to be global)
 final _selectedCategoriesProvider = StateProvider<Set<EventCategory>>((ref) => {});
 final _selectedCityProvider = StateProvider<String?>((ref) => null);
+final _selectedTagsProvider = StateProvider<Set<String>>((ref) => {});
 
 /// The main home screen displaying featured events.
 ///
@@ -85,12 +86,14 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     final eventsState = ref.watch(eventsProvider);
     final selectedCategories = ref.watch(_selectedCategoriesProvider);
     final selectedCity = ref.watch(_selectedCityProvider);
+    final selectedTags = ref.watch(_selectedTagsProvider);
 
     // Compute filtered events
     final filteredEvents = _filterEvents(
       eventsState.events,
       selectedCategories,
       selectedCity,
+      selectedTags,
       _searchQuery,
     );
 
@@ -152,6 +155,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                   child: EventFilterChips(
                     selectedCategories: selectedCategories,
                     selectedCity: selectedCity,
+                    selectedTags: selectedTags,
                     availableCities: availableCities,
                     isSearching: _isSearching,
                     searchController: _searchController,
@@ -163,6 +167,9 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                     },
                     onCityChanged: (city) {
                       ref.read(_selectedCityProvider.notifier).state = city;
+                    },
+                    onTagsChanged: (tags) {
+                      ref.read(_selectedTagsProvider.notifier).state = tags;
                     },
                   ),
                 ),
@@ -186,6 +193,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                     onClearFilters: () {
                       ref.read(_selectedCategoriesProvider.notifier).state = {};
                       ref.read(_selectedCityProvider.notifier).state = null;
+                      ref.read(_selectedTagsProvider.notifier).state = {};
                       if (_isSearching) _toggleSearch();
                     },
                   )
@@ -199,11 +207,12 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     );
   }
 
-  /// Filter events by category, city, and search query.
+  /// Filter events by category, city, tags, and search query.
   List<EventModel> _filterEvents(
     List<EventModel> events,
     Set<EventCategory> categories,
     String? city,
+    Set<String> tags,
     String searchQuery,
   ) {
     return events.where((event) {
@@ -217,6 +226,12 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
       // City filter
       if (city != null && event.city != city) {
         return false;
+      }
+      // Tag filter — event must have ALL selected tags
+      if (tags.isNotEmpty) {
+        if (!tags.every((tagId) => event.tags.contains(tagId))) {
+          return false;
+        }
       }
       // Search filter
       if (searchQuery.isNotEmpty) {
@@ -490,6 +505,58 @@ class _EventListTile extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
+          if (event.autoBadges.isNotEmpty || event.eventTags.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                ...event.autoBadges.take(1).map((badge) => Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: badge.color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(badge.icon, size: 10, color: badge.color),
+                        const SizedBox(width: 2),
+                        Text(
+                          badge.label,
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: badge.color,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )),
+                ...event.eventTags.take(2).map((tag) {
+                  final tagColor = tag.color ?? Theme.of(context).colorScheme.primary;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: tagColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        tag.label,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: tagColor,
+                          fontSize: 9,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ],
         ],
       ),
       trailing: Text(

@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import 'debug_menu.dart';
 
 /// Debug metrics data class.
 class DebugMetrics {
@@ -117,8 +116,6 @@ class _DebugOverlayState extends State<DebugOverlay> {
     return Stack(
       children: [
         widget.child,
-        // Debug FAB - always visible in debug builds for quick access
-        if (kDebugMode) const DebugFab(),
         // FPS overlay - only when debug mode toggle is enabled
         if (widget.enabled)
           Positioned(

@@ -17,8 +17,9 @@ import '../../auth/auth.dart';
 import '../../profile/presentation/verification_screen.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
-import '../data/supabase_event_repository.dart' show TicketTypeInput;
 import '../models/event_tag.dart';
+import '../../../core/state/app_state.dart';
+import '../../subscriptions/models/tier_limits.dart';
 
 /// Screen for creating a new event.
 class CreateEventScreen extends ConsumerStatefulWidget {
@@ -40,70 +41,6 @@ const _predefinedTicketNames = [
   'Seated',
   'Backstage',
   'All Access',
-];
-
-/// Subscription tiers for promotion access.
-enum SubscriptionTier { free, pro, enterprise }
-
-/// Promotion package for event marketing.
-class PromotionPackage {
-  final String id;
-  final String name;
-  final String description;
-  final IconData icon;
-  final double priceEur;
-  final SubscriptionTier includedIn; // Tier where this is free
-  final Color color;
-
-  const PromotionPackage({
-    required this.id,
-    required this.name,
-    required this.description,
-    required this.icon,
-    required this.priceEur,
-    required this.includedIn,
-    required this.color,
-  });
-}
-
-/// Available promotion packages.
-const _promotionPackages = [
-  PromotionPackage(
-    id: 'featured',
-    name: 'Featured',
-    description: 'Appear in the Featured carousel on home screen for 7 days',
-    icon: Icons.star_rounded,
-    priceEur: 15,
-    includedIn: SubscriptionTier.pro,
-    color: Color(0xFFF59E0B),
-  ),
-  PromotionPackage(
-    id: 'spotlight',
-    name: 'Spotlight',
-    description: 'Highlighted badge + priority in search results for 14 days',
-    icon: Icons.lightbulb_rounded,
-    priceEur: 25,
-    includedIn: SubscriptionTier.pro,
-    color: Color(0xFF8B5CF6),
-  ),
-  PromotionPackage(
-    id: 'push_notification',
-    name: 'Push Blast',
-    description: 'Send a push notification to users in your city',
-    icon: Icons.notifications_active_rounded,
-    priceEur: 35,
-    includedIn: SubscriptionTier.enterprise,
-    color: Color(0xFFEF4444),
-  ),
-  PromotionPackage(
-    id: 'social_boost',
-    name: 'Social Boost',
-    description: 'We promote your event on our social media channels',
-    icon: Icons.share_rounded,
-    priceEur: 45,
-    includedIn: SubscriptionTier.enterprise,
-    color: Color(0xFF3B82F6),
-  ),
 ];
 
 /// Represents a ticket type with name, price, quantity, and description.
@@ -160,12 +97,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   // Ticket types
   late List<_TicketType> _ticketTypes;
 
-  // Promotions
-  Set<String> _selectedPromotions = {};
-  // TODO: Get actual subscription tier from user profile
-  final SubscriptionTier _userTier = SubscriptionTier.free;
-
-  // Track which step we're on (0 = basics, 1 = details, 2 = pricing)
+  // Track which step we're on (0 = basics, 1 = location & tags, 2 = tickets)
   int _currentStep = 0;
 
   // Noise preview state
@@ -650,25 +582,12 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     );
   }
 
-  String _getStepTitle() {
-    switch (_currentStep) {
-      case 0:
-        return 'Event Basics';
-      case 1:
-        return 'Location & Details';
-      case 2:
-        return 'Pricing & Category';
-      default:
-        return 'Create Event';
-    }
-  }
-
   Widget _buildCurrentStep(ThemeData theme, ColorScheme colorScheme) {
     switch (_currentStep) {
       case 0:
         return _buildBasicsStep(theme, colorScheme);
       case 1:
-        return _buildPromotionStep(theme, colorScheme);
+        return _buildTagStep(theme, colorScheme);
       case 2:
         return _buildTicketsStep(theme, colorScheme);
       default:
@@ -817,9 +736,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     );
   }
 
-  Widget _buildPromotionStep(ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildTagStep(ThemeData theme, ColorScheme colorScheme) {
+    final tier = ref.watch(currentTierProvider);
+
     return Column(
-      key: const ValueKey('promotion'),
+      key: const ValueKey('tags'),
       children: [
         // Similarity warning
         if (_similarEvents.isNotEmpty)
@@ -867,12 +788,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               ],
             ),
           ),
-        _PromotionStep(
+        _TagStep(
           selectedTags: _selectedTags,
           onTagsChanged: (tags) => setState(() => _selectedTags = tags),
-          selectedPromotions: _selectedPromotions,
-          onPromotionsChanged: (promos) => setState(() => _selectedPromotions = promos),
-          userTier: _userTier,
+          userTier: tier,
         ),
       ],
     );
@@ -1897,64 +1816,44 @@ class _EventNoisePainter extends CustomPainter {
       oldDelegate.seed != seed;
 }
 
-/// Promotion step with tags and marketing packages.
-class _PromotionStep extends StatefulWidget {
+/// Tag selection step with browsable category and vibe tag grids.
+class _TagStep extends StatefulWidget {
   final Set<EventTag> selectedTags;
   final ValueChanged<Set<EventTag>> onTagsChanged;
-  final Set<String> selectedPromotions;
-  final ValueChanged<Set<String>> onPromotionsChanged;
-  final SubscriptionTier userTier;
+  final AccountTier userTier;
 
-  const _PromotionStep({
-    super.key,
+  const _TagStep({
     required this.selectedTags,
     required this.onTagsChanged,
-    required this.selectedPromotions,
-    required this.onPromotionsChanged,
     required this.userTier,
   });
 
   @override
-  State<_PromotionStep> createState() => _PromotionStepState();
+  State<_TagStep> createState() => _TagStepState();
 }
 
-class _PromotionStepState extends State<_PromotionStep> {
-  final _tagController = TextEditingController();
-  final _tagFocusNode = FocusNode();
-  List<EventTag> _suggestions = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _tagController.addListener(_onTextChanged);
-  }
+class _TagStepState extends State<_TagStep> {
+  final _customTagController = TextEditingController();
 
   @override
   void dispose() {
-    _tagController.dispose();
-    _tagFocusNode.dispose();
+    _customTagController.dispose();
     super.dispose();
   }
 
-  void _onTextChanged() {
-    final query = _tagController.text.toLowerCase().trim();
-    if (query.isEmpty) {
-      setState(() => _suggestions = []);
-      return;
-    }
-    final matches = PredefinedTags.all.where((tag) {
-      if (widget.selectedTags.contains(tag)) return false;
-      return tag.label.toLowerCase().contains(query);
-    }).toList();
-    setState(() => _suggestions = matches.take(5).toList());
-  }
+  int get _maxTags => TierLimits.getMaxTags(widget.userTier);
+  bool get _canUseCustomTags => TierLimits.canUseCustomTags(widget.userTier);
+  bool get _isAtLimit => widget.selectedTags.length >= _maxTags;
 
-  void _addTag(EventTag tag) {
-    if (widget.selectedTags.length >= 3) return;
-    final newTags = Set<EventTag>.from(widget.selectedTags)..add(tag);
+  void _toggleTag(EventTag tag) {
+    final newTags = Set<EventTag>.from(widget.selectedTags);
+    if (newTags.contains(tag)) {
+      newTags.remove(tag);
+    } else {
+      if (_isAtLimit) return;
+      newTags.add(tag);
+    }
     widget.onTagsChanged(newTags);
-    _tagController.clear();
-    setState(() => _suggestions = []);
   }
 
   void _removeTag(EventTag tag) {
@@ -1963,61 +1862,60 @@ class _PromotionStepState extends State<_PromotionStep> {
   }
 
   void _submitCustomTag() {
-    final text = _tagController.text.trim();
-    if (text.isEmpty || widget.selectedTags.length >= 3) return;
+    final text = _customTagController.text.trim();
+    if (text.isEmpty || _isAtLimit) return;
     final existing = PredefinedTags.all.where(
       (t) => t.label.toLowerCase() == text.toLowerCase(),
     );
     final tag = existing.isNotEmpty ? existing.first : EventTag.custom(text);
-    _addTag(tag);
-  }
-
-  void _togglePromotion(String id) {
-    final newPromos = Set<String>.from(widget.selectedPromotions);
-    if (newPromos.contains(id)) {
-      newPromos.remove(id);
-    } else {
-      newPromos.add(id);
-    }
-    widget.onPromotionsChanged(newPromos);
-  }
-
-  bool _isIncludedFree(PromotionPackage pkg) {
-    if (widget.userTier == SubscriptionTier.enterprise) return true;
-    if (widget.userTier == SubscriptionTier.pro &&
-        pkg.includedIn == SubscriptionTier.pro) return true;
-    return false;
-  }
-
-  double _calculateTotal() {
-    double total = 0;
-    for (final pkg in _promotionPackages) {
-      if (widget.selectedPromotions.contains(pkg.id) && !_isIncludedFree(pkg)) {
-        total += pkg.priceEur;
-      }
-    }
-    return total;
+    final newTags = Set<EventTag>.from(widget.selectedTags)..add(tag);
+    widget.onTagsChanged(newTags);
+    _customTagController.clear();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final total = _calculateTotal();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 16),
-        // Tags section
+        // Header with count
+        Row(
+          children: [
+            Icon(Icons.label_outline, size: 20, color: colorScheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              'Tags',
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '${widget.selectedTags.length}/$_maxTags',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: _isAtLimit
+                    ? colorScheme.error
+                    : colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
         Text(
-          'Tags',
-          style: theme.textTheme.titleSmall?.copyWith(
+          'Choose tags that describe your event',
+          style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 8),
-        // Selected tags
+        const SizedBox(height: 12),
+
+        // Selected tags with close buttons
         if (widget.selectedTags.isNotEmpty) ...[
           Wrap(
             spacing: 8,
@@ -2058,147 +1956,93 @@ class _PromotionStepState extends State<_PromotionStep> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
         ],
-        // Tag input
-        if (widget.selectedTags.length < 3)
+
+        // Limit banner
+        if (_isAtLimit) ...[
+          LimitReachedBanner(
+            message: 'Tag limit reached (${widget.selectedTags.length}/$_maxTags)',
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // Category tags grid
+        _TagGroupHeader(title: 'Category'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: PredefinedTags.categories.map((tag) {
+            final isSelected = widget.selectedTags.contains(tag);
+            final tagColor = tag.color ?? colorScheme.primary;
+            return _TagChip(
+              tag: tag,
+              isSelected: isSelected,
+              isDisabled: !isSelected && _isAtLimit,
+              tagColor: tagColor,
+              onTap: () => _toggleTag(tag),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 20),
+
+        // Vibe tags grid
+        _TagGroupHeader(title: 'Vibe'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: PredefinedTags.vibes.map((tag) {
+            final isSelected = widget.selectedTags.contains(tag);
+            final tagColor = tag.color ?? colorScheme.primary;
+            return _TagChip(
+              tag: tag,
+              isSelected: isSelected,
+              isDisabled: !isSelected && _isAtLimit,
+              tagColor: tagColor,
+              onTap: () => _toggleTag(tag),
+            );
+          }).toList(),
+        ),
+
+        // Custom tag input (Pro+ only)
+        const SizedBox(height: 20),
+        if (_canUseCustomTags) ...[
           TextField(
-            controller: _tagController,
-            focusNode: _tagFocusNode,
+            controller: _customTagController,
             decoration: InputDecoration(
-              hintText: 'Add tags...',
-              prefixIcon: const Icon(Icons.label_outline, size: 20),
+              hintText: 'Create custom tag...',
+              prefixIcon: const Icon(Icons.add, size: 20),
               border: const OutlineInputBorder(),
               isDense: true,
-              suffixText: '${widget.selectedTags.length}/3',
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.check, size: 20),
+                onPressed: _isAtLimit ? null : _submitCustomTag,
+              ),
             ),
+            enabled: !_isAtLimit,
             style: theme.textTheme.bodyMedium,
             textCapitalization: TextCapitalization.words,
             onSubmitted: (_) => _submitCustomTag(),
           ),
-        // Suggestions
-        if (_suggestions.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: _suggestions.map((tag) {
-              final tagColor = tag.color ?? colorScheme.primary;
-              return GestureDetector(
-                onTap: () => _addTag(tag),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: tagColor.withValues(alpha: 0.3)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (tag.icon != null) ...[
-                        Icon(tag.icon, size: 14, color: tagColor),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(tag.label, style: theme.textTheme.labelSmall),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ],
-
-        const SizedBox(height: 24),
-        // Promotion packages section
-        Row(
-          children: [
-            Icon(Icons.campaign_rounded, size: 20, color: colorScheme.primary),
-            const SizedBox(width: 8),
-            Text(
-              'Boost Your Event',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Get more visibility with promotion packages',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 12),
-        // Promotion cards
-        ..._promotionPackages.map((pkg) {
-          final isSelected = widget.selectedPromotions.contains(pkg.id);
-          final isFree = _isIncludedFree(pkg);
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _PromotionCard(
-              package: pkg,
-              isSelected: isSelected,
-              isFree: isFree,
-              userTier: widget.userTier,
-              onTap: () => _togglePromotion(pkg.id),
-            ),
-          );
-        }),
-
-        // Total and subscription upsell
-        if (total > 0) ...[
-          const SizedBox(height: 8),
+        ] else ...[
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: colorScheme.primaryContainer.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(
+            child: Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Promotion total',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w500,
-                      ),
+                Icon(Icons.diamond_outlined, size: 16, color: colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Upgrade to Pro for custom tags',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
                     ),
-                    Text(
-                      '€${total.toStringAsFixed(0)}',
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.diamond_outlined, size: 18, color: colorScheme.secondary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Get Pro for €12/mo and promotions are included free!',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ],
@@ -2211,19 +2055,38 @@ class _PromotionStepState extends State<_PromotionStep> {
   }
 }
 
-/// Card for a single promotion package.
-class _PromotionCard extends StatelessWidget {
-  final PromotionPackage package;
+/// Header for a group of tags.
+class _TagGroupHeader extends StatelessWidget {
+  final String title;
+
+  const _TagGroupHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Text(
+      title,
+      style: theme.textTheme.labelLarge?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+/// A single tappable tag chip for the grid.
+class _TagChip extends StatelessWidget {
+  final EventTag tag;
   final bool isSelected;
-  final bool isFree;
-  final SubscriptionTier userTier;
+  final bool isDisabled;
+  final Color tagColor;
   final VoidCallback onTap;
 
-  const _PromotionCard({
-    required this.package,
+  const _TagChip({
+    required this.tag,
     required this.isSelected,
-    required this.isFree,
-    required this.userTier,
+    required this.isDisabled,
+    required this.tagColor,
     required this.onTap,
   });
 
@@ -2233,118 +2096,46 @@ class _PromotionCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: isDisabled ? null : onTap,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(12),
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
-              ? package.color.withValues(alpha: 0.1)
-              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-          borderRadius: BorderRadius.circular(12),
+              ? tagColor.withValues(alpha: 0.15)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: isDisabled ? 0.2 : 0.5),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isSelected
-                ? package.color.withValues(alpha: 0.6)
-                : colorScheme.outlineVariant.withValues(alpha: 0.3),
-            width: isSelected ? 2 : 1,
+                ? tagColor.withValues(alpha: 0.6)
+                : colorScheme.outlineVariant.withValues(alpha: isDisabled ? 0.15 : 0.3),
           ),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: package.color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+            if (tag.icon != null) ...[
+              Icon(
+                tag.icon,
+                size: 14,
+                color: isSelected
+                    ? tagColor
+                    : (isDisabled
+                        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.3)
+                        : colorScheme.onSurfaceVariant),
               ),
-              child: Icon(package.icon, size: 20, color: package.color),
-            ),
-            const SizedBox(width: 12),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        package.name,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (isFree) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.green.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            'FREE',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    package.description,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+              const SizedBox(width: 4),
+            ],
+            Text(
+              tag.label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: isSelected
+                    ? tagColor
+                    : (isDisabled
+                        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.3)
+                        : colorScheme.onSurfaceVariant),
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
               ),
-            ),
-            const SizedBox(width: 8),
-            // Price / checkbox
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                if (!isFree)
-                  Text(
-                    '€${package.priceEur.toStringAsFixed(0)}',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: isSelected ? package.color : colorScheme.onSurface,
-                    ),
-                  )
-                else
-                  Text(
-                    '€${package.priceEur.toStringAsFixed(0)}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      decoration: TextDecoration.lineThrough,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                const SizedBox(height: 4),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: isSelected ? package.color : Colors.transparent,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isSelected ? package.color : colorScheme.outline,
-                      width: 2,
-                    ),
-                  ),
-                  child: isSelected
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                      : null,
-                ),
-              ],
             ),
           ],
         ),

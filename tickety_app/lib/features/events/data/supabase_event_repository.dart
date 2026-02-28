@@ -108,6 +108,58 @@ class SupabaseEventRepository implements EventRepository {
     );
   }
 
+  /// Fetches upcoming events filtered by a specific tag ID.
+  Future<PaginatedResult<EventModel>> getUpcomingEventsByTag(
+    String tagId, {
+    int page = 0,
+    int pageSize = 20,
+  }) async {
+    AppLogger.debug(
+      'Fetching upcoming events by tag: $tagId (page: $page)',
+      tag: _tag,
+    );
+
+    final from = page * pageSize;
+    final to = from + pageSize;
+
+    List<dynamic> response;
+    try {
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .eq('is_private', false)
+          .eq('status', 'active')
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .contains('tags', [tagId])
+          .order('date', ascending: true)
+          .range(from, to);
+    } catch (_) {
+      response = await _client
+          .from(_tableName)
+          .select()
+          .isFilter('deleted_at', null)
+          .gte('date', DateTime.now().toUtc().toIso8601String())
+          .contains('tags', [tagId])
+          .order('date', ascending: true)
+          .range(from, to);
+    }
+
+    final allItems = response
+        .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    final hasMore = allItems.length > pageSize;
+    final events = hasMore ? allItems.take(pageSize).toList() : allItems;
+
+    return PaginatedResult(
+      items: events,
+      page: page,
+      pageSize: pageSize,
+      hasMore: hasMore,
+    );
+  }
+
   @override
   Future<EventModel?> getEventById(String id) async {
     AppLogger.debug('Fetching event by ID: $id', tag: _tag);

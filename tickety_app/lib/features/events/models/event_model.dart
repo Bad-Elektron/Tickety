@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/graphics/graphics.dart';
 import 'event_category.dart';
 import 'event_tag.dart';
+export 'event_tag.dart' show AutoBadge;
 
 /// Represents an event that can be displayed in the application.
 ///
@@ -105,6 +106,9 @@ class EventModel {
   /// Unique 8-char invite code for private events (generated server-side).
   final String? inviteCode;
 
+  /// When this event was created in the database.
+  final DateTime? createdAt;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -135,6 +139,7 @@ class EventModel {
     this.formattedAddress,
     this.isPrivate = false,
     this.inviteCode,
+    this.createdAt,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -193,6 +198,9 @@ class EventModel {
 
   /// Returns true if this event has the specified tag.
   bool hasTag(String tagId) => tags.contains(tagId);
+
+  /// Auto-badges computed from event data (e.g., "New" within 7 days).
+  List<AutoBadge> get autoBadges => AutoBadge.forEvent(createdAt: createdAt);
 
   /// Formatted price string.
   String get formattedPrice {
@@ -259,6 +267,7 @@ class EventModel {
     String? formattedAddress,
     bool? isPrivate,
     String? inviteCode,
+    DateTime? createdAt,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -290,6 +299,7 @@ class EventModel {
       formattedAddress: formattedAddress ?? this.formattedAddress,
       isPrivate: isPrivate ?? this.isPrivate,
       inviteCode: inviteCode ?? this.inviteCode,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 

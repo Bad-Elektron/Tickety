@@ -61,6 +61,24 @@ final canAddTicketTypeProvider = Provider.family<LimitCheckResult, int>((ref, cu
   );
 });
 
+/// Check whether adding another tag is allowed.
+///
+/// Pass the current count of tags.
+/// Usage: `ref.watch(canAddTagProvider(currentCount))`
+final canAddTagProvider = Provider.family<LimitCheckResult, int>((ref, currentCount) {
+  final tier = ref.watch(currentTierProvider);
+  final max = TierLimits.getMaxTags(tier);
+
+  return LimitCheckResult(
+    allowed: currentCount < max,
+    currentCount: currentCount,
+    maxAllowed: max,
+    message: currentCount >= max
+        ? 'Tag limit reached ($currentCount/$max). Upgrade your plan for more.'
+        : null,
+  );
+});
+
 /// Check whether an analytics section is viewable at the current tier.
 ///
 /// Usage: `ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.hourlyCheckins))`

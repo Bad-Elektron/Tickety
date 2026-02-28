@@ -56,6 +56,20 @@ class TierLimits {
     AccountTier.enterprise: 999,
   };
 
+  // ── Tag limits per event ──────────────────────────────────
+
+  static const Map<AccountTier, int> _maxTags = {
+    AccountTier.base: 3,
+    AccountTier.pro: 5,
+    AccountTier.enterprise: 10,
+  };
+
+  static const Map<AccountTier, bool> _customTagsAllowed = {
+    AccountTier.base: false,
+    AccountTier.pro: true,
+    AccountTier.enterprise: true,
+  };
+
   // ── Analytics access ────────────────────────────────────────
 
   static const Map<AccountTier, Set<AnalyticsSection>> _analyticsAccess = {
@@ -82,6 +96,8 @@ class TierLimits {
   static int getMaxManagers(AccountTier tier) => _maxManagers[tier] ?? 1;
   static int getMaxTicketTypes(AccountTier tier) => _maxTicketTypes[tier] ?? 3;
   static int getMaxActiveEvents(AccountTier tier) => _maxActiveEvents[tier] ?? 3;
+  static int getMaxTags(AccountTier tier) => _maxTags[tier] ?? 3;
+  static bool canUseCustomTags(AccountTier tier) => _customTagsAllowed[tier] ?? false;
 
   /// Whether [tier] can view the given analytics [section].
   static bool canViewAnalytics(AccountTier tier, AnalyticsSection section) {

@@ -9,7 +9,6 @@ import '../services/notification_service.dart';
 import '../state/app_state.dart';
 
 /// Global navigator key for accessing navigator from anywhere.
-/// Used by DebugFab which exists outside the Navigator tree.
 final GlobalKey<NavigatorState> debugNavigatorKey = GlobalKey<NavigatorState>();
 
 /// Debug menu item configuration.
@@ -47,8 +46,7 @@ class DebugMenu extends ConsumerWidget {
   static void show(BuildContext context) {
     if (!kDebugMode) return;
 
-    // Use the navigator key's context if available (for DebugFab outside Navigator tree)
-    // Otherwise fall back to provided context (for calls from within Navigator tree)
+    // Use the navigator key's context if available, otherwise fall back to provided context
     final navContext = debugNavigatorKey.currentContext ?? context;
 
     showModalBottomSheet(
@@ -624,25 +622,3 @@ class _TierButton extends StatelessWidget {
   }
 }
 
-/// Floating debug button that appears in debug mode.
-///
-/// Shows a small bug icon that opens the debug menu when tapped.
-class DebugFab extends StatelessWidget {
-  const DebugFab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    if (!kDebugMode) return const SizedBox.shrink();
-
-    return Positioned(
-      right: 16,
-      bottom: 80,
-      child: FloatingActionButton.small(
-        heroTag: 'debug_fab',
-        backgroundColor: Colors.orange,
-        onPressed: () => DebugMenu.show(context),
-        child: const Icon(Icons.bug_report, color: Colors.white),
-      ),
-    );
-  }
-}

@@ -180,6 +180,74 @@ class EventDetailsScreen extends ConsumerWidget {
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
+                  // Tags row
+                  if (event.autoBadges.isNotEmpty || event.eventTags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          // Auto-badges first
+                          ...event.autoBadges.map((badge) => Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: badge.color.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: badge.color.withValues(alpha: 0.4)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(badge.icon, size: 14, color: badge.color),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    badge.label,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: badge.color,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )),
+                          // Regular tags
+                          ...event.eventTags.map((tag) {
+                            final tagColor = tag.color ?? colorScheme.primary;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: tagColor.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(color: tagColor.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (tag.icon != null) ...[
+                                      Icon(tag.icon, size: 14, color: tagColor),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      tag.label,
+                                      style: theme.textTheme.labelSmall?.copyWith(
+                                        color: tagColor,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   // Info cards
                   _InfoCard(

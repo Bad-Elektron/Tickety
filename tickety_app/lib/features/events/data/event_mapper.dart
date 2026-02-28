@@ -51,6 +51,9 @@ abstract class EventMapper {
       formattedAddress: json['formatted_address'] as String?,
       isPrivate: json['is_private'] as bool? ?? false,
       inviteCode: json['invite_code'] as String?,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
     );
   }
 

@@ -26,6 +26,7 @@ class TierBenefits {
       'Up to 3 ushers per event',
       'Up to 3 sellers per event',
       'Up to 3 ticket types',
+      'Up to 3 tags per event',
       'Basic event analytics',
     ],
     AccountTier.pro: [
@@ -33,6 +34,7 @@ class TierBenefits {
       'Up to 10 active events',
       'Up to 15 staff per role',
       'Up to 10 ticket types',
+      'Up to 5 tags + custom tags',
       'Advanced analytics',
     ],
     AccountTier.enterprise: [
@@ -40,6 +42,7 @@ class TierBenefits {
       'Unlimited active events',
       'Unlimited staff members',
       'Unlimited ticket types',
+      'Up to 10 tags + custom tags',
       'Full analytics suite',
     ],
   };

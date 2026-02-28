@@ -119,11 +119,98 @@ class EventBannerCard extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          _buildTagChips(context),
+          const SizedBox(height: 12),
           _buildFooter(context),
         ],
       ),
     );
+  }
+
+  Widget _buildTagChips(BuildContext context) {
+    final badges = event.autoBadges;
+    final tags = event.eventTags;
+    if (badges.isEmpty && tags.isEmpty) return const SizedBox.shrink();
+
+    final chips = <Widget>[];
+
+    // Auto-badges first with distinct styling
+    for (final badge in badges) {
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: badge.color.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(badge.icon, size: 12, color: Colors.white),
+            const SizedBox(width: 3),
+            Text(
+              badge.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+
+    // Regular tags (up to 3 total including badges)
+    final maxRegularTags = 3 - badges.length;
+    final visibleTags = tags.take(maxRegularTags);
+    for (final tag in visibleTags) {
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0x33FFFFFF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tag.icon != null) ...[
+              Icon(tag.icon, size: 12, color: Colors.white),
+              const SizedBox(width: 3),
+            ],
+            Text(
+              tag.label,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+
+    // "+N more" chip if overflow
+    final remaining = tags.length - maxRegularTags;
+    if (remaining > 0) {
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0x22FFFFFF),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          '+$remaining',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: const Color(0xAAFFFFFF),
+            fontSize: 10,
+          ),
+        ),
+      ));
+    }
+
+    return Wrap(spacing: 6, runSpacing: 4, children: chips);
   }
 
   Widget _buildDateChip(BuildContext context) {
