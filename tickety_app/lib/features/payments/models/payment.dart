@@ -28,7 +28,9 @@ enum PaymentType {
   resalePurchase('resale_purchase'),
   vendorPos('vendor_pos'),
   subscription('subscription'),
-  favorTicketPurchase('favor_ticket_purchase');
+  favorTicketPurchase('favor_ticket_purchase'),
+  walletPurchase('wallet_purchase'),
+  walletTopUp('wallet_top_up');
 
   final String value;
   const PaymentType(this.value);
@@ -282,6 +284,68 @@ class CreatePaymentIntentRequest {
       if (metadata != null) 'metadata': metadata,
     };
   }
+}
+
+/// Fee breakdown for a wallet purchase (no Stripe fee).
+typedef WalletFeeBreakdown = ({
+  int baseCents,
+  int platformFeeCents,
+  int totalCents,
+});
+
+/// Calculates fees for wallet purchases (5% platform fee only, no Stripe).
+class WalletFeeCalculator {
+  WalletFeeCalculator._();
+
+  static const double _platformFeeRate = 0.05;
+
+  static WalletFeeBreakdown calculate(int baseCents) {
+    if (baseCents <= 0) {
+      return (baseCents: 0, platformFeeCents: 0, totalCents: 0);
+    }
+
+    final platformFeeCents = (baseCents * _platformFeeRate).ceil();
+    final totalCents = baseCents + platformFeeCents;
+
+    return (
+      baseCents: baseCents,
+      platformFeeCents: platformFeeCents,
+      totalCents: totalCents,
+    );
+  }
+}
+
+/// Fee breakdown for an ACH top-up.
+typedef ACHFeeBreakdown = ({
+  int amountCents,
+  int achFeeCents,
+  int totalChargeCents,
+});
+
+/// Calculates ACH fees: 0.8% capped at $5, min $5 / max $2,000 per top-up.
+class ACHFeeCalculator {
+  ACHFeeCalculator._();
+
+  static const double _achFeeRate = 0.008;
+  static const int _achFeeCapCents = 500;
+  static const int minTopUpCents = 500;
+  static const int maxTopUpCents = 200000;
+
+  static int calculateFee(int amountCents) {
+    return (amountCents * _achFeeRate).ceil().clamp(0, _achFeeCapCents);
+  }
+
+  static ACHFeeBreakdown calculate(int amountCents) {
+    final achFeeCents = calculateFee(amountCents);
+    return (
+      amountCents: amountCents,
+      achFeeCents: achFeeCents,
+      totalChargeCents: amountCents + achFeeCents,
+    );
+  }
+
+  static bool isValidAmount(int cents) =>
+      cents >= minTopUpCents && cents <= maxTopUpCents;
 }
 
 /// Response from creating a payment intent.

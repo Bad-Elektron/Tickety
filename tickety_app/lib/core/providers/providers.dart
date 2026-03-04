@@ -3,6 +3,7 @@ library;
 
 export 'analytics_provider.dart';
 export 'auth_provider.dart';
+export 'cardano_wallet_provider.dart';
 export 'events_provider.dart';
 export 'favor_ticket_provider.dart';
 export 'notification_preferences_provider.dart';
@@ -15,3 +16,4 @@ export 'subscription_provider.dart';
 export 'theme_provider.dart';
 export 'ticket_provider.dart';
 export 'tier_limits_provider.dart';
+export 'wallet_balance_provider.dart';

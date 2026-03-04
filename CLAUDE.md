@@ -303,9 +303,153 @@ Events use Google Places Autocomplete for reliable location input with coordinat
 - Legacy `location` column auto-populated from `displayLocation` in `toJson` for backward compat
 - Mapper uses `if (value != null)` collection-if for new fields so inserts don't fail on DBs without the columns
 
-## Future: Cardano (ADA) Integration
+### Analytics Consolidation (TODO)
 
-The wallet screen includes a placeholder for "Crypto Balance" showing ADA. This is reserved for future Cardano blockchain integration for:
-- NFT-based ticket ownership
-- Decentralized ticket resale
-- Crypto payments
+The analytics system is scattered across multiple surfaces with inconsistent patterns. Needs a consolidation pass to unify into a coherent architecture.
+
+**Current state (6 cache tables, 5 RPC functions, 2 edge functions, 2 dashboards):**
+
+| Surface | Location | Problem |
+|---------|----------|---------|
+| `analytics_tag_weekly` | SQL cache table | Overlaps with engagement daily cache; both aggregate by tag |
+| `analytics_trending_tags` | SQL cache table | Derived from tag_weekly; could be a view or computed in the summary RPC |
+| `analytics_market_snapshot` | SQL cache table | External data (Ticketmaster/SeatGeek); separate concern but shares `analytics_cache_meta` |
+| `analytics_engagement_daily` | SQL cache table | Newest; only covers views, not revenue/tickets |
+| `get_event_analytics()` | RPC (live) | Returns ticket stats + check-ins; ignores views entirely |
+| `get_ticket_stats()` | RPC (live) | Lightweight subset of `get_event_analytics()`; redundant |
+| `get_event_engagement()` | RPC (live) | Returns views + conversion; doesn't include revenue/check-in data |
+| `refresh-analytics` | Edge function | Chains `refresh-market-analytics`; `refresh_engagement_cache()` is NOT chained in |
+| Flutter Analytics Dashboard | `features/analytics/` | Enterprise-tier only; shows market/tag trends but no engagement data |
+| Admin Overview | `dashboard/overview/` | KPIs via live queries in `/api/admin/stats`; no caching |
+| Admin Engagement | `dashboard/engagement/` | Separate page; should be part of a unified analytics view |
+
+**Consolidation goals:**
+1. **Unify per-event analytics**: Merge `get_event_analytics()`, `get_ticket_stats()`, and `get_event_engagement()` into a single `get_event_dashboard(event_id)` RPC that returns tickets + check-ins + views + conversion in one call
+2. **Unify cache refresh**: Chain `refresh_engagement_cache()` into the existing `refresh-analytics` edge function so one cron job refreshes everything
+3. **Merge admin pages**: Consider combining Overview + Engagement into a single analytics dashboard with tabs (Revenue, Engagement, Market)
+4. **Flutter analytics screen**: Add engagement data (views, conversion) alongside existing market/tag trends
+5. **Drop redundant functions**: Remove `get_ticket_stats()` (subset of event analytics) once callers are updated
+6. **Consistent naming**: All cache tables should follow `analytics_{domain}_{granularity}` pattern (already mostly true)
+
+### ACH Bank Transfer + Tickety Wallet System (Completed)
+
+Users can fund a Tickety Wallet via ACH bank transfer (0.8% fee, capped at $5), then buy tickets instantly from wallet balance with only a 5% platform fee (no Stripe processing fee). A $50 ticket costs $52.50 from wallet vs $54.33 via card.
+
+**Database:**
+- `wallet_balances` - Per-user available + pending cents, auto-created on first access
+- `wallet_transactions` - Double-entry ledger (ach_top_up, ach_top_up_pending, ticket_purchase, refund_credit, admin_adjustment)
+- `linked_bank_accounts` - Cached bank account info (Stripe Financial Connections)
+- `purchase_from_wallet()` SQL function - Atomic purchase with `FOR UPDATE` row lock to prevent double-spend
+- Migration: `20260301100001_create_wallet_system.sql`
+- PaymentType constraint updated: added `wallet_purchase`, `wallet_top_up`
+
+**Edge Functions:**
+- `get-wallet-balance` - Returns available/pending cents + linked bank accounts (auto-creates wallet)
+- `link-bank-account` - Creates Stripe SetupIntent with Financial Connections for ACH bank linking
+- `manage-bank-accounts` - List/save/remove linked bank accounts
+- `create-wallet-top-up` - ACH PaymentIntent (0.8% fee capped at $5, min $5 / max $2,000), adds to pending_cents
+- `purchase-from-wallet` - Validates event, calls `purchase_from_wallet()` SQL function (atomic, no Stripe)
+- `stripe-webhook` - Extended: `payment_intent.processing` for ACH logging, wallet top-up settlement on `succeeded`, cleanup on `failed`
+
+**Flutter Models:**
+- `wallet/models/wallet_balance.dart` - WalletBalance with formattedAvailable, hasFunds, defaultBank
+- `wallet/models/linked_bank_account.dart` - LinkedBankAccount with displayName ("Chase ****1234")
+- `wallet/models/wallet_transaction.dart` - WalletTransaction + WalletTransactionType enum
+- `payment.dart` - Added `walletPurchase`, `walletTopUp` to PaymentType; `WalletFeeCalculator` (5% only); `ACHFeeCalculator` (0.8% capped at $5)
+
+**Flutter Data/Providers:**
+- `wallet/data/wallet_repository.dart` - All wallet edge function calls + direct transaction reads
+- `core/providers/wallet_balance_provider.dart` - WalletBalanceNotifier with loadBalance, topUp, purchaseFromWallet
+
+**Flutter UI:**
+- `wallet_screen.dart` - Redesigned: Tickety Wallet card (indigo gradient, prominent) → Seller Balance + Crypto cards → Linked Banks section → Actions + Info
+- `add_funds_screen.dart` - Preset chips ($10/$25/$50/$100) + custom input, bank selector, ACH fee breakdown
+- `link_bank_screen.dart` - Stripe Financial Connections flow via `collectBankAccount()`
+- `checkout_screen.dart` - Payment method selector (Wallet vs Card) when wallet has sufficient funds; wallet shows 5%-only fee + savings badge
+- `transactions_screen.dart` + `transaction_detail_sheet.dart` - Added wallet_purchase and wallet_top_up icons/labels
+
+**ACH Settlement Flow:**
+1. User tops up → PaymentIntent created (processing) → pending_cents increased
+2. ACH settles (4-5 days) → webhook `payment_intent.succeeded` → pending→available move
+3. ACH fails → webhook `payment_intent.payment_failed` → pending reversed, transaction deleted
+
+**No split payments in v1.** Wallet covers full amount or user pays full by card.
+
+**Stripe Test Values:** Routing `110000000`, Account `000123456789` (success), `000222222227` (insufficient funds)
+
+### Dev Seed Data (Engagement)
+
+Fake engagement data can be loaded for dashboard development. It is self-contained in two SQL scripts:
+
+**Files:**
+- `supabase/seeds/dev_engagement_seed.sql` — Inserts ~1,500-2,500 `event_views` rows using real event/user IDs, refreshes the cache
+- `supabase/seeds/cleanup_engagement_seed.sql` — Truncates all engagement tables, removes marker
+
+**How to identify dev data:**
+- A marker row in `analytics_cache_meta` with `key = 'dev_seed_marker'` indicates seed data is present
+- Query: `SELECT 1 FROM analytics_cache_meta WHERE key = 'dev_seed_marker'`
+
+**How to run:** Paste `dev_engagement_seed.sql` into Supabase SQL Editor and execute. Idempotent — won't double-insert if marker exists.
+
+**How to clean up:** Run `cleanup_engagement_seed.sql` in SQL Editor, or before production: `TRUNCATE event_views, analytics_engagement_daily; DELETE FROM analytics_cache_meta WHERE key = 'dev_seed_marker';`
+
+### Cardano (ADA) Wallet — Phase 1 (Completed)
+
+Auto-created Cardano HD wallet on Preview testnet. Wallet is created transparently on first wallet screen visit — no seed phrase UI. Mnemonic synced to Supabase `user_wallets` table for cross-device restore, cached locally in `flutter_secure_storage`. View ADA balance, receive/send ADA, browse Cardano transaction history. Blockfrost API called directly from Flutter.
+
+**Dependencies:**
+- `cardano_flutter_sdk: ^4.0.0` — HD wallet, address derivation, tx signing (pure Dart)
+- `cardano_dart_types: ^3.0.0` — Cardano data types and serialization
+- `bip39_plus: ^1.1.1` — BIP39 mnemonic generation/validation
+- `flutter_secure_storage: ^9.2.4` — Encrypted mnemonic storage (Keychain/Keystore/DPAPI/libsecret)
+- `flutter_stripe` upgraded to `^12.3.0` (resolved `freezed_annotation` conflict)
+
+**Environment:**
+- `BLOCKFROST_PROJECT_ID` in `tickety_app/.env` (Preview testnet: `previewVA5jY9V686T1apRZItmlqZUf5jOEpNqB`)
+- `EnvConfig.blockfrostProjectId` getter in `core/config/env_config.dart`
+
+**Database:**
+- `user_wallets` table — Stores mnemonic + cardano_address per user. RLS: users can SELECT/INSERT own row only. Migration: `20260304100001_create_user_wallets.sql`
+
+**Services:**
+- `BlockfrostService` (`core/services/blockfrost_service.dart`) — REST client for Cardano Preview testnet API. Methods: getAddressInfo, getAddressUtxos, getAddressTransactions, getTransactionDetails, getTransactionUtxos, submitTransaction, getProtocolParameters, getLatestBlock
+- `CardanoWalletService` (`core/services/cardano_wallet_service.dart`) — HD wallet manager with Supabase sync. `ensureWallet()` resolves: local cache → Supabase → generate new. CIP-1852 derivation (m/1852'/1815'/0'/0/0). Keys derived client-side only.
+
+**Models:**
+- `wallet/models/cardano_balance.dart` — CardanoBalance (lovelace, assets, ada, formattedAda, hasFunds) + CardanoAsset
+- `wallet/models/cardano_transaction.dart` — CardanoTransaction (txHash, lovelaceAmount, fees, timestamp, direction, counterparty) + CardanoTxDirection enum
+
+**Data/Providers:**
+- `wallet/data/cardano_repository.dart` — Orchestrates BlockfrostService + CardanoWalletService. Includes minimal CBOR encoder for building simple ADA transfer transactions.
+- `core/providers/cardano_wallet_provider.dart` — CardanoWalletNotifier with ensureWallet, loadBalance, loadTransactions, sendAda, refresh, deleteWallet. Convenience providers: cardanoBalanceProvider, cardanoAddressProvider, cardanoHasWalletProvider, cardanoTransactionsProvider
+
+**Errors:**
+- `CardanoException` in `core/errors/app_exception.dart` — Factories: walletNotFound, invalidMnemonic, insufficientFunds, txSubmissionFailed, networkError
+
+**UI Screens:**
+- `cardano_receive_screen.dart` — QR code + bech32 address + copy/share buttons
+- `cardano_send_screen.dart` — Address input (paste + QR scan), amount input with MAX button, fee estimate, confirmation dialog, success screen with CardanoScan link
+
+**Modified Screens:**
+- `wallet_screen.dart` — `initState` calls `ensureWallet()` (auto-creates if needed); crypto card always shows balance (loading → ADA amount); Receive/Send buttons visible once wallet ready
+- `transactions_screen.dart` — Crypto filter shows Cardano transactions; empty state just says "No Cardano transactions yet"
+- `transaction_detail_sheet.dart` — showCardanoTransactionDetailSheet() with direction, amount, fee, addresses, tx hash, CardanoScan link
+
+**Key Design Decisions:**
+1. Auto-creation — Wallet created lazily on first wallet screen visit, no user interaction required. No seed phrase backup UI.
+2. Supabase sync — Mnemonic stored in `user_wallets` table (RLS-protected). New device login pulls mnemonic from Supabase → caches locally → same address.
+3. Local cache — `flutter_secure_storage` used for fast reads. Supabase is fallback, not primary.
+4. Non-custodial — Platform holds backup mnemonic but keys are only derived client-side. Blockfrost project_id is a read/submit key.
+5. Preview testnet only — All addresses `addr_test1...`. Switch to mainnet = change Blockfrost base URL + project ID.
+6. Single address — `m/1852'/1815'/0'/0/0`. Multi-address is a future enhancement.
+7. Transaction building — Minimal CBOR encoder builds simple ADA transfers. Complex transactions (native assets, smart contracts) need a full tx builder in Phase 2.
+
+**Blockfrost Test:** Get tADA from [Cardano Preview Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/)
+
+## Future: Cardano Phase 2
+
+- NFT-based ticket ownership (mint tickets as CIP-68 NFTs)
+- Decentralized ticket resale marketplace
+- Multi-address derivation for privacy
+- Store public address in user profile for NFT delivery
+- Mainnet deployment

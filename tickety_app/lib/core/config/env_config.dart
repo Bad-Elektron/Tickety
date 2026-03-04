@@ -52,6 +52,18 @@ abstract class EnvConfig {
     return key;
   }
 
+  /// The Blockfrost project ID for Cardano API access.
+  static String get blockfrostProjectId {
+    final key = dotenv.env['BLOCKFROST_PROJECT_ID'];
+    if (key == null || key.isEmpty) {
+      throw StateError(
+        'BLOCKFROST_PROJECT_ID is not configured. '
+        'Please update your .env file with your Blockfrost project ID.',
+      );
+    }
+    return key;
+  }
+
   /// Loads environment variables from the .env file.
   ///
   /// Call this once at app startup before accessing any env values.

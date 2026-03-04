@@ -38,6 +38,10 @@ serve(async (req) => {
         await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent)
         break
 
+      case 'payment_intent.processing':
+        await handlePaymentProcessing(event.data.object as Stripe.PaymentIntent)
+        break
+
       case 'payment_intent.payment_failed':
         await handlePaymentFailed(event.data.object as Stripe.PaymentIntent)
         break
@@ -158,6 +162,12 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     if (insertError) {
       console.error('Failed to insert payment record from webhook:', insertError)
     }
+  }
+
+  // Handle wallet top-up settlement (ACH succeeded)
+  if (type === 'wallet_top_up') {
+    await handleWalletTopUpSucceeded(paymentIntent)
+    return
   }
 
   // Skip ticket creation for test events (non-UUID event IDs)
@@ -315,8 +325,108 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   }
 }
 
+async function handlePaymentProcessing(paymentIntent: Stripe.PaymentIntent) {
+  const { type } = paymentIntent.metadata
+  console.log(`Payment processing: ${paymentIntent.id}, type: ${type}`)
+
+  // ACH payments go through a processing state before succeeding
+  if (type === 'wallet_top_up') {
+    console.log(`ACH top-up processing for user ${paymentIntent.metadata.supabase_user_id}`)
+  }
+}
+
+async function handleWalletTopUpSucceeded(paymentIntent: Stripe.PaymentIntent) {
+  const userId = paymentIntent.metadata.supabase_user_id
+  const creditAmountCents = parseInt(paymentIntent.metadata.credit_amount_cents || '0', 10)
+  const achFeeCents = parseInt(paymentIntent.metadata.ach_fee_cents || '0', 10)
+
+  console.log(`Wallet top-up succeeded: ${paymentIntent.id}, credit: ${creditAmountCents} cents for user ${userId}`)
+
+  if (!userId || !creditAmountCents) {
+    console.error('Missing metadata in wallet top-up PaymentIntent:', paymentIntent.id)
+    return
+  }
+
+  // Move funds from pending_cents to available_cents
+  const { data: wallet, error: walletError } = await supabase
+    .from('wallet_balances')
+    .select('available_cents, pending_cents')
+    .eq('user_id', userId)
+    .single()
+
+  if (walletError || !wallet) {
+    console.error('Wallet not found for top-up settlement:', userId)
+    return
+  }
+
+  const newAvailable = wallet.available_cents + creditAmountCents
+  const newPending = Math.max(0, wallet.pending_cents - creditAmountCents)
+
+  const { error: updateError } = await supabase
+    .from('wallet_balances')
+    .update({
+      available_cents: newAvailable,
+      pending_cents: newPending,
+    })
+    .eq('user_id', userId)
+
+  if (updateError) {
+    console.error('Failed to update wallet balance on top-up settlement:', updateError)
+    return
+  }
+
+  // Update wallet transaction: change from pending to completed
+  await supabase
+    .from('wallet_transactions')
+    .update({
+      type: 'ach_top_up',
+      balance_after_cents: newAvailable,
+      description: `ACH top-up of $${(creditAmountCents / 100).toFixed(2)} (settled)`,
+    })
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+
+  console.log(`Wallet top-up settled for user ${userId}: +${creditAmountCents} cents, new available: ${newAvailable}`)
+}
+
+async function handleWalletTopUpFailed(paymentIntent: Stripe.PaymentIntent) {
+  const userId = paymentIntent.metadata.supabase_user_id
+  const creditAmountCents = parseInt(paymentIntent.metadata.credit_amount_cents || '0', 10)
+
+  console.log(`Wallet top-up failed: ${paymentIntent.id} for user ${userId}`)
+
+  if (!userId) return
+
+  // Remove from pending_cents
+  const { data: wallet } = await supabase
+    .from('wallet_balances')
+    .select('pending_cents')
+    .eq('user_id', userId)
+    .single()
+
+  if (wallet) {
+    const newPending = Math.max(0, wallet.pending_cents - creditAmountCents)
+    await supabase
+      .from('wallet_balances')
+      .update({ pending_cents: newPending })
+      .eq('user_id', userId)
+  }
+
+  // Delete the failed wallet transaction
+  await supabase
+    .from('wallet_transactions')
+    .delete()
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+
+  console.log(`Cleaned up failed wallet top-up for user ${userId}`)
+}
+
 async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
   console.log(`Payment failed: ${paymentIntent.id}`)
+
+  // Handle wallet top-up failure
+  if (paymentIntent.metadata?.type === 'wallet_top_up') {
+    await handleWalletTopUpFailed(paymentIntent)
+  }
 
   // Find the payment first so we can cancel referral earnings
   const { data: failedPayment } = await supabase

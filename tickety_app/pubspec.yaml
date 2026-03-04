@@ -62,7 +62,7 @@ dependencies:
   flutter_nfc_hce: ^0.1.8
 
   # Stripe payments
-  flutter_stripe: ^11.3.0
+  flutter_stripe: ^12.3.0
 
   # URL launcher for Stripe Connect onboarding
   url_launcher: ^6.2.5
@@ -81,6 +81,14 @@ dependencies:
 
   # Share content via native share sheet
   share_plus: ^10.1.4
+
+  # Cardano blockchain (HD wallet, address derivation, tx building/signing)
+  cardano_flutter_sdk: ^4.0.0
+  cardano_dart_types: ^3.0.0
+  bip39_plus: ^1.1.1
+
+  # Encrypted storage for wallet mnemonic (Keychain/Keystore/DPAPI/libsecret)
+  flutter_secure_storage: ^9.2.4
 
   # Permissions handling (for notification permissions)
   permission_handler: ^11.0.0

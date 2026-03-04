@@ -14,6 +14,18 @@ import '../models/event_model.dart';
 import '../models/ticket_availability.dart';
 import 'report_event_sheet.dart';
 
+/// Session-level dedup set for event views (avoids redundant inserts).
+final _recentlyViewedEvents = <String>{};
+
+/// Provider that logs a view for engagement analytics (once per session).
+final _logEventViewProvider =
+    FutureProvider.autoDispose.family<void, String>((ref, eventId) async {
+  if (_recentlyViewedEvents.contains(eventId)) return;
+  _recentlyViewedEvents.add(eventId);
+  final repo = ref.read(eventRepositoryProvider);
+  await repo.logEventView(eventId, source: 'direct');
+});
+
 /// Provider that checks if the current user owns a ticket for a given event.
 final _userHasTicketProvider =
     FutureProvider.autoDispose.family<bool, String>((ref, eventId) async {
@@ -60,6 +72,9 @@ class EventDetailsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Log view for engagement analytics (fire-and-forget, session deduped)
+    ref.watch(_logEventViewProvider(event.id));
+
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();

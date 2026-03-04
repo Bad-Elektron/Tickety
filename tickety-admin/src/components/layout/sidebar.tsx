@@ -18,6 +18,7 @@ import {
   Flag,
   Megaphone,
   AlertTriangle,
+  Activity,
 } from "lucide-react";
 
 const navItems = [
@@ -30,6 +31,7 @@ const navItems = [
   { label: "Resale", href: "/dashboard/resale", icon: Repeat },
   { label: "Referrals", href: "/dashboard/referrals", icon: Share2 },
   { label: "Reports", href: "/dashboard/reports", icon: AlertTriangle },
+  { label: "Engagement", href: "/dashboard/engagement", icon: Activity },
   { label: "Audit Log", href: "/dashboard/audit-log", icon: FileText },
   { label: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
   { label: "Edge Functions", href: "/dashboard/edge-functions", icon: Zap },

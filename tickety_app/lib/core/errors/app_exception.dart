@@ -383,6 +383,41 @@ class PaymentException extends AppException {
       );
 }
 
+/// Cardano blockchain errors (wallet, transactions, network).
+class CardanoException extends AppException {
+  const CardanoException(
+    super.message, {
+    super.technicalDetails,
+    super.cause,
+  });
+
+  factory CardanoException.walletNotFound() => const CardanoException(
+        'No Cardano wallet found. Please create or restore a wallet.',
+        technicalDetails: 'No mnemonic in secure storage',
+      );
+
+  factory CardanoException.invalidMnemonic() => const CardanoException(
+        'Invalid recovery phrase. Please check your 24 words and try again.',
+        technicalDetails: 'Mnemonic validation failed',
+      );
+
+  factory CardanoException.insufficientFunds() => const CardanoException(
+        'Insufficient ADA balance for this transaction.',
+        technicalDetails: 'UTxO balance too low',
+      );
+
+  factory CardanoException.txSubmissionFailed([String? reason]) =>
+      CardanoException(
+        reason ?? 'Transaction submission failed. Please try again.',
+        technicalDetails: 'Blockfrost tx submit error: $reason',
+      );
+
+  factory CardanoException.networkError([String? details]) => CardanoException(
+        'Unable to reach Cardano network. Please check your connection.',
+        technicalDetails: details ?? 'Blockfrost API error',
+      );
+}
+
 /// Subscription-related errors (upgrade failed, cancellation failed, etc.).
 class SubscriptionException extends AppException {
   const SubscriptionException(

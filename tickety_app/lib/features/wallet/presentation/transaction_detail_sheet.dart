@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../payments/models/payment.dart';
+import '../models/cardano_transaction.dart';
 
 /// Shows the transaction detail bottom sheet for a given [payment].
 void showTransactionDetailSheet(BuildContext context, Payment payment) {
@@ -190,6 +191,10 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Subscription';
       case PaymentType.favorTicketPurchase:
         return 'Favor Ticket';
+      case PaymentType.walletPurchase:
+        return 'Wallet Purchase';
+      case PaymentType.walletTopUp:
+        return 'Wallet Top-Up';
     }
   }
 
@@ -205,6 +210,10 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.workspace_premium;
       case PaymentType.favorTicketPurchase:
         return Icons.card_giftcard;
+      case PaymentType.walletPurchase:
+        return Icons.account_balance_wallet;
+      case PaymentType.walletTopUp:
+        return Icons.add_circle;
     }
   }
 
@@ -378,5 +387,245 @@ class _StatusBadge extends StatelessWidget {
       case PaymentStatus.refunded:
         return (Colors.blue, 'Refunded');
     }
+  }
+}
+
+// ============================================================
+// CARDANO TRANSACTION DETAIL SHEET
+// ============================================================
+
+/// Shows a bottom sheet with Cardano transaction details.
+void showCardanoTransactionDetailSheet(
+  BuildContext context,
+  CardanoTransaction tx,
+) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (_) => _CardanoTransactionDetailSheet(tx: tx),
+  );
+}
+
+class _CardanoTransactionDetailSheet extends StatelessWidget {
+  final CardanoTransaction tx;
+
+  const _CardanoTransactionDetailSheet({required this.tx});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isReceived = tx.direction == CardanoTxDirection.received;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Header
+              Center(
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: (isReceived ? Colors.green : Colors.orange)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        isReceived ? Icons.arrow_downward : Icons.arrow_upward,
+                        color: isReceived ? Colors.green : Colors.orange,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      tx.formattedAmount,
+                      style: theme.textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isReceived ? Colors.green : null,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (isReceived ? Colors.green : Colors.orange)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        isReceived ? 'Received' : 'Sent',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: isReceived ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Details
+              _DetailRow(label: 'Direction', value: isReceived ? 'Received' : 'Sent'),
+              const SizedBox(height: 12),
+              _DetailRow(label: 'Fee', value: tx.formattedFee),
+              const SizedBox(height: 12),
+              _DetailRow(label: 'Block', value: tx.blockHeight.toString()),
+              const SizedBox(height: 12),
+              _DetailRow(
+                label: 'Time',
+                value: _formatDateTime(tx.timestamp),
+              ),
+
+              const Divider(height: 24),
+
+              // Counterparty address
+              if (tx.counterpartyAddress != null) ...[
+                Text(
+                  isReceived ? 'From' : 'To',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _CopyableText(text: tx.counterpartyAddress!),
+                const SizedBox(height: 16),
+              ],
+
+              // Tx hash
+              Text(
+                'Transaction Hash',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              _CopyableText(text: tx.txHash),
+
+              const SizedBox(height: 20),
+
+              // View on explorer
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    launchUrl(
+                      Uri.parse(
+                        'https://preview.cardanoscan.io/transaction/${tx.txHash}',
+                      ),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('View on CardanoScan'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour = date.hour > 12
+        ? date.hour - 12
+        : (date.hour == 0 ? 12 : date.hour);
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '${months[date.month - 1]} ${date.day}, ${date.year} at $hour:$minute $period';
+  }
+}
+
+/// A copyable text field with tap-to-copy and truncated display.
+class _CopyableText extends StatelessWidget {
+  final String text;
+
+  const _CopyableText({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final truncated = text.length > 24
+        ? '${text.substring(0, 16)}...${text.substring(text.length - 8)}'
+        : text;
+
+    return InkWell(
+      onTap: () {
+        Clipboard.setData(ClipboardData(text: text));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Copied to clipboard'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                truncated,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.copy,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

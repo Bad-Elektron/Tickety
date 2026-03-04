@@ -9,12 +9,12 @@ import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../analytics/analytics.dart';
-import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../staff/data/ticket_repository.dart';
 import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../../staff/presentation/manage_staff_screen.dart';
 import '../models/event_model.dart';
+import 'create_event_screen.dart';
 import 'event_data_screen.dart';
 import 'manage_tickets_screen.dart';
 
@@ -270,21 +270,6 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   ),
                   const SizedBox(height: 12),
                   _AdminActionCard(
-                    icon: Icons.card_giftcard,
-                    title: 'Favor Tickets',
-                    subtitle: 'Send comp or gift tickets',
-                    color: Colors.teal,
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              CreateFavorTicketScreen(event: event),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _AdminActionCard(
                     icon: Icons.content_cut,
                     customIcon: const _TicketTearIcon(size: 28),
                     title: 'Manage Staff',
@@ -298,13 +283,17 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                     title: 'Edit Event',
                     subtitle: 'Update event details',
                     color: colorScheme.secondary,
-                    onTap: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Coming soon'),
-                          behavior: SnackBarBehavior.floating,
+                    onTap: () async {
+                      final result = await Navigator.of(context).push<bool>(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              CreateEventScreen(editingEvent: event),
                         ),
                       );
+                      if (result == true && mounted) {
+                        // Refresh event data
+                        ref.read(ticketProvider.notifier).loadStats(event.id);
+                      }
                     },
                   ),
                   const SizedBox(height: 12),

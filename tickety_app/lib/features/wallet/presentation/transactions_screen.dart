@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/providers/cardano_wallet_provider.dart';
 import '../../../core/providers/payment_provider.dart';
 import '../../payments/models/payment.dart';
+import '../models/cardano_transaction.dart';
 import 'transaction_detail_sheet.dart';
 
 /// Filter for transaction currency type.
@@ -55,9 +57,10 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     super.initState();
     _currencyFilter = widget.initialCurrencyFilter;
 
-    // Load payment history
+    // Load payment history and Cardano transactions
     Future.microtask(() {
       ref.read(paymentHistoryProvider.notifier).load();
+      ref.read(cardanoWalletProvider.notifier).loadTransactions();
     });
 
     // Set up infinite scroll
@@ -231,60 +234,104 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
           ),
         ],
       ),
-      body: state.isLoading && state.payments.isEmpty
-          ? const Center(child: CircularProgressIndicator())
-          : state.error != null && state.payments.isEmpty
-              ? _ErrorView(
-                  error: state.error!,
-                  onRetry: () =>
-                      ref.read(paymentHistoryProvider.notifier).load(),
-                )
-              : filteredPayments.isEmpty
-                  ? RefreshIndicator(
-                      onRefresh: () => ref
-                          .read(paymentHistoryProvider.notifier)
-                          .refresh(),
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(
-                            height: MediaQuery.of(context).size.height * 0.6,
-                            child: _EmptyView(currencyFilter: _currencyFilter),
-                          ),
-                        ],
-                      ),
+      body: _currencyFilter == TransactionCurrencyFilter.crypto
+          ? _buildCryptoBody(context, ref)
+          : state.isLoading && state.payments.isEmpty
+              ? const Center(child: CircularProgressIndicator())
+              : state.error != null && state.payments.isEmpty
+                  ? _ErrorView(
+                      error: state.error!,
+                      onRetry: () =>
+                          ref.read(paymentHistoryProvider.notifier).load(),
                     )
-                  : RefreshIndicator(
-                      onRefresh: () => ref
-                          .read(paymentHistoryProvider.notifier)
-                          .refresh(),
-                      child: ListView.builder(
-                        controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.all(16),
-                        itemCount: filteredPayments.length +
-                            (state.isLoadingMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          if (index == filteredPayments.length) {
-                            return const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(
-                                child: CircularProgressIndicator(),
+                  : filteredPayments.isEmpty
+                      ? RefreshIndicator(
+                          onRefresh: () => ref
+                              .read(paymentHistoryProvider.notifier)
+                              .refresh(),
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              SizedBox(
+                                height: MediaQuery.of(context).size.height * 0.6,
+                                child: _EmptyView(currencyFilter: _currencyFilter),
                               ),
-                            );
-                          }
-                          final payment = filteredPayments[index];
-                          return _TransactionCard(
-                            payment: payment,
-                            showDate: index == 0 ||
-                                !_isSameDay(
-                                  payment.createdAt,
-                                  filteredPayments[index - 1].createdAt,
-                                ),
-                          );
-                        },
-                      ),
-                    ),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: () => ref
+                              .read(paymentHistoryProvider.notifier)
+                              .refresh(),
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: filteredPayments.length +
+                                (state.isLoadingMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == filteredPayments.length) {
+                                return const Padding(
+                                  padding: EdgeInsets.all(16),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
+                                );
+                              }
+                              final payment = filteredPayments[index];
+                              return _TransactionCard(
+                                payment: payment,
+                                showDate: index == 0 ||
+                                    !_isSameDay(
+                                      payment.createdAt,
+                                      filteredPayments[index - 1].createdAt,
+                                    ),
+                              );
+                            },
+                          ),
+                        ),
+    );
+  }
+
+  Widget _buildCryptoBody(BuildContext context, WidgetRef ref) {
+    final cardanoState = ref.watch(cardanoWalletProvider);
+
+    if (cardanoState.isLoading && cardanoState.transactions.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final txs = cardanoState.transactions;
+    if (txs.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => ref.read(cardanoWalletProvider.notifier).loadTransactions(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(
+              height: MediaQuery.of(context).size.height * 0.6,
+              child: const _EmptyView(currencyFilter: TransactionCurrencyFilter.crypto),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => ref.read(cardanoWalletProvider.notifier).loadTransactions(),
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: txs.length,
+        itemBuilder: (context, index) {
+          final tx = txs[index];
+          return _CardanoTransactionCard(
+            transaction: tx,
+            showDate: index == 0 ||
+                !_isSameDay(tx.timestamp, txs[index - 1].timestamp),
+          );
+        },
+      ),
     );
   }
 
@@ -304,6 +351,10 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         return 'Subscription';
       case PaymentType.favorTicketPurchase:
         return 'Favor Ticket';
+      case PaymentType.walletPurchase:
+        return 'Wallet Purchase';
+      case PaymentType.walletTopUp:
+        return 'Wallet Top-Up';
     }
   }
 
@@ -474,6 +525,10 @@ class _TransactionCard extends StatelessWidget {
         return Icons.workspace_premium;
       case PaymentType.favorTicketPurchase:
         return Icons.card_giftcard;
+      case PaymentType.walletPurchase:
+        return Icons.account_balance_wallet;
+      case PaymentType.walletTopUp:
+        return Icons.add_circle;
     }
   }
 
@@ -489,6 +544,10 @@ class _TransactionCard extends StatelessWidget {
         return 'Subscription';
       case PaymentType.favorTicketPurchase:
         return 'Favor Ticket';
+      case PaymentType.walletPurchase:
+        return 'Wallet Purchase';
+      case PaymentType.walletTopUp:
+        return 'Wallet Top-Up';
     }
   }
 
@@ -512,6 +571,132 @@ class _TransactionCard extends StatelessWidget {
       return colorScheme.tertiary;
     }
     return colorScheme.onSurface;
+  }
+}
+
+/// Cardano transaction card.
+class _CardanoTransactionCard extends StatelessWidget {
+  final CardanoTransaction transaction;
+  final bool showDate;
+
+  const _CardanoTransactionCard({
+    required this.transaction,
+    required this.showDate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isReceived = transaction.direction == CardanoTxDirection.received;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showDate) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 12),
+            child: Text(
+              _formatDate(transaction.timestamp),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Material(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => showCardanoTransactionDetailSheet(context, transaction),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: (isReceived ? Colors.green : Colors.orange)
+                            .withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        isReceived ? Icons.arrow_downward : Icons.arrow_upward,
+                        color: isReceived ? Colors.green : Colors.orange,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isReceived ? 'Received ADA' : 'Sent ADA',
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            transaction.shortTxHash,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      transaction.formattedAmount,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: isReceived ? Colors.green : colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    if (date.year == now.year && date.month == now.month && date.day == now.day) {
+      return 'Today';
+    }
+    final yesterday = now.subtract(const Duration(days: 1));
+    if (date.year == yesterday.year &&
+        date.month == yesterday.month &&
+        date.day == yesterday.day) {
+      return 'Yesterday';
+    }
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
 }
 
@@ -617,7 +802,7 @@ class _EmptyView extends StatelessWidget {
         return (
           Icons.currency_bitcoin,
           'No Crypto Transactions',
-          'Crypto payments are coming soon. Stay tuned!',
+          'Your Cardano transactions will appear here.',
         );
       case TransactionCurrencyFilter.fiat:
         return (

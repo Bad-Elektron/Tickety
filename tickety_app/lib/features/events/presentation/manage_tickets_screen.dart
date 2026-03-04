@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
 import '../data/supabase_event_repository.dart';
 import '../models/event_model.dart';
 import '../models/ticket_type.dart';
@@ -64,6 +65,17 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
     final config = widget.event.getNoiseConfig();
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => CreateFavorTicketScreen(event: widget.event),
+            ),
+          );
+        },
+        icon: const Icon(Icons.card_giftcard),
+        label: const Text('Favor Ticket'),
+      ),
       body: CustomScrollView(
         slivers: [
           SliverAppBar(

@@ -12,7 +12,6 @@ import '../../auth/auth.dart';
 import '../../notifications/notifications.dart';
 import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
-import '../../payments/payments.dart';
 import '../../analytics/analytics.dart';
 import '../../referral/referral.dart';
 import '../../wallet/wallet.dart';
@@ -160,18 +159,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const SubscriptionScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.credit_card_outlined,
-                  title: 'Payment Methods',
-                  subtitle: 'Cards and wallets',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const PaymentMethodsScreen(),
                       ),
                     );
                   },

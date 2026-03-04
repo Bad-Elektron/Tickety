@@ -13,3 +13,4 @@ dump_*.sql
 .env
 .env.local
 .env.*.local
+.claude/settings.local.json

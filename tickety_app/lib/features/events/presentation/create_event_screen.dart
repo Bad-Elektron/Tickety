@@ -17,13 +17,16 @@ import '../../auth/auth.dart';
 import '../../profile/presentation/verification_screen.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
+import '../models/event_model.dart';
 import '../models/event_tag.dart';
 import '../../../core/state/app_state.dart';
 import '../../subscriptions/models/tier_limits.dart';
 
-/// Screen for creating a new event.
+/// Screen for creating a new event, or editing an existing one.
 class CreateEventScreen extends ConsumerStatefulWidget {
-  const CreateEventScreen({super.key});
+  final EventModel? editingEvent;
+
+  const CreateEventScreen({super.key, this.editingEvent});
 
   @override
   ConsumerState<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -80,6 +83,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
   final _repository = SupabaseEventRepository();
 
+  bool get isEditing => widget.editingEvent != null;
+
   // Google Places selection
   PlaceDetails? _selectedPlace;
 
@@ -124,11 +129,80 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   @override
   void initState() {
     super.initState();
-    _noiseSeed = Random().nextInt(10000);
+
+    final event = widget.editingEvent;
+    if (event != null) {
+      // Pre-populate fields from existing event
+      _nameController.text = event.title;
+      _subtitleController.text = event.subtitle;
+      _descriptionController.text = event.description ?? '';
+      _selectedDate = event.date;
+      _selectedTime = TimeOfDay(hour: event.date.hour, minute: event.date.minute);
+      _isPublic = !event.isPrivate;
+      _hideLocation = event.hideLocation;
+      _noiseSeed = event.noiseSeed;
+
+      // Resolve tags from IDs
+      _selectedTags = event.tags
+          .map((id) {
+            try {
+              return PredefinedTags.all.firstWhere((t) => t.id == id);
+            } catch (_) {
+              return EventTag.custom(id);
+            }
+          })
+          .toSet();
+
+      // Build PlaceDetails stub from event location data
+      if (event.venue != null || event.formattedAddress != null) {
+        _selectedPlace = PlaceDetails(
+          placeId: '',
+          formattedAddress: event.formattedAddress ?? event.displayLocation ?? '',
+          name: event.venue ?? '',
+          lat: event.latitude ?? 0,
+          lng: event.longitude ?? 0,
+          city: event.city,
+          country: event.country,
+        );
+      }
+
+      // Start with empty ticket types; will be loaded async
+      _ticketTypes = [];
+      _loadExistingTicketTypes(event.id);
+    } else {
+      _noiseSeed = Random().nextInt(10000);
+      // Initialize with default General Admission ticket
+      _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
+    }
+
     _fromColorIndex = Random().nextInt(_colorSchemes.length);
     _toColorIndex = (_fromColorIndex + 1) % _colorSchemes.length;
-    // Initialize with default General Admission ticket
-    _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
+  }
+
+  Future<void> _loadExistingTicketTypes(String eventId) async {
+    try {
+      final types = await _repository.getEventTicketTypes(eventId);
+      if (mounted) {
+        setState(() {
+          _ticketTypes = types.map((t) => _TicketType(
+            name: t.name,
+            description: t.description ?? '',
+            price: t.priceInCents / 100.0,
+            quantity: t.maxQuantity ?? 0,
+          )).toList();
+          if (_ticketTypes.isEmpty) {
+            _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
+          }
+        });
+      }
+    } catch (_) {
+      // If ticket types can't be loaded, keep the default
+      if (mounted && _ticketTypes.isEmpty) {
+        setState(() {
+          _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
+        });
+      }
+    }
   }
 
   @override
@@ -347,38 +421,82 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final city = _selectedPlace?.city;
       final country = _selectedPlace?.country;
 
-      await _repository.createEventWithTicketTypes(
-        title: sanitizedTitle,
-        subtitle: sanitizedSubtitle.isNotEmpty
-            ? sanitizedSubtitle
-            : 'An exciting event',
-        description: sanitizedDescription.isNotEmpty
-            ? sanitizedDescription
-            : null,
-        date: eventDateTime,
-        venue: venue,
-        city: city,
-        country: country,
-        ticketTypes: ticketTypeInputs,
-        tags: tagIds,
-        noiseSeed: _noiseSeed,
-        hideLocation: _hideLocation,
-        isPrivate: !_isPublic,
-        latitude: _selectedPlace?.lat,
-        longitude: _selectedPlace?.lng,
-        formattedAddress: _selectedPlace?.formattedAddress,
-      );
+      // Use the lowest NON-ZERO ticket price as the event's display price
+      final nonZeroPrices = ticketTypeInputs
+          .where((t) => t.priceCents > 0)
+          .map((t) => t.priceCents);
+      final lowestPrice = ticketTypeInputs.isEmpty
+          ? null
+          : nonZeroPrices.isEmpty
+              ? 0
+              : nonZeroPrices.reduce((a, b) => a < b ? a : b);
+
+      if (isEditing) {
+        // Update existing event
+        final updatedEvent = widget.editingEvent!.copyWith(
+          title: sanitizedTitle,
+          subtitle: sanitizedSubtitle.isNotEmpty
+              ? sanitizedSubtitle
+              : 'An exciting event',
+          description: sanitizedDescription.isNotEmpty
+              ? sanitizedDescription
+              : null,
+          date: eventDateTime,
+          venue: venue,
+          city: city,
+          country: country,
+          tags: tagIds,
+          noiseSeed: _noiseSeed,
+          hideLocation: _hideLocation,
+          isPrivate: !_isPublic,
+          latitude: _selectedPlace?.lat,
+          longitude: _selectedPlace?.lng,
+          formattedAddress: _selectedPlace?.formattedAddress,
+          priceInCents: lowestPrice,
+        );
+
+        await _repository.updateEvent(updatedEvent);
+        await _repository.updateEventTicketTypes(
+          widget.editingEvent!.id,
+          ticketTypeInputs,
+        );
+      } else {
+        // Create new event
+        await _repository.createEventWithTicketTypes(
+          title: sanitizedTitle,
+          subtitle: sanitizedSubtitle.isNotEmpty
+              ? sanitizedSubtitle
+              : 'An exciting event',
+          description: sanitizedDescription.isNotEmpty
+              ? sanitizedDescription
+              : null,
+          date: eventDateTime,
+          venue: venue,
+          city: city,
+          country: country,
+          ticketTypes: ticketTypeInputs,
+          tags: tagIds,
+          noiseSeed: _noiseSeed,
+          hideLocation: _hideLocation,
+          isPrivate: !_isPublic,
+          latitude: _selectedPlace?.lat,
+          longitude: _selectedPlace?.lng,
+          formattedAddress: _selectedPlace?.formattedAddress,
+        );
+      }
 
       HapticFeedback.mediumImpact();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Event created successfully!'),
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(isEditing
+                    ? 'Event updated successfully!'
+                    : 'Event created successfully!'),
               ],
             ),
             backgroundColor: Colors.green,
@@ -391,7 +509,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to create event: $e'),
+            content: Text(isEditing
+                ? 'Failed to update event: $e'
+                : 'Failed to create event: $e'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -567,7 +687,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                           ),
                         )
                       : Text(
-                          _currentStep < 2 ? 'Continue' : 'Create Event',
+                          _currentStep < 2
+                              ? 'Continue'
+                              : isEditing
+                                  ? 'Update Event'
+                                  : 'Create Event',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

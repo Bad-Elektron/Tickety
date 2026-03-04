@@ -98,4 +98,10 @@ abstract class EventRepository {
   ///
   /// Returns null if no event matches the code.
   Future<EventModel?> getEventByInviteCode(String code);
+
+  /// Logs a view for engagement analytics.
+  ///
+  /// [source] indicates where the user navigated from.
+  /// Silently ignores errors (dedup violations, missing table, etc).
+  Future<void> logEventView(String eventId, {String source = 'direct'});
 }

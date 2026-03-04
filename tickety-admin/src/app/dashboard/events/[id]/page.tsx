@@ -21,6 +21,19 @@ import type { Event, EventTicketType, EventStaff, Profile } from "@/types/databa
 import { ArrowLeft, ShieldCheck, Ban, CheckCircle } from "lucide-react";
 import Link from "next/link";
 
+interface EventEngagement {
+  total_views: number;
+  unique_viewers: number;
+  views_7d: number;
+  views_30d: number;
+  conversion_rate: number;
+  unique_purchasers: number;
+  viewer_avg_ticket_price_cents: number;
+  viewer_avg_monthly_purchases: number;
+  daily_views: { date: string; views: number }[];
+  source_breakdown: { source: string; count: number }[];
+}
+
 interface EventDetail {
   event: Event;
   organizer: Profile | null;
@@ -39,6 +52,7 @@ export default function EventDetailPage() {
   const params = useParams();
   const eventId = params.id as string;
   const [data, setData] = useState<EventDetail | null>(null);
+  const [engagement, setEngagement] = useState<EventEngagement | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [suspendOpen, setSuspendOpen] = useState(false);
@@ -47,13 +61,16 @@ export default function EventDetailPage() {
   useEffect(() => {
     async function fetchEvent() {
       try {
-        const res = await fetch(`/api/admin/events/${eventId}`);
-        if (!res.ok) {
-          setLoading(false);
-          return;
+        const [eventRes, engagementRes] = await Promise.all([
+          fetch(`/api/admin/events/${eventId}`),
+          fetch(`/api/admin/engagement/${eventId}`),
+        ]);
+        if (eventRes.ok) {
+          setData(await eventRes.json());
         }
-        const json = await res.json();
-        setData(json);
+        if (engagementRes.ok) {
+          setEngagement(await engagementRes.json());
+        }
       } catch {
         // Fetch failed
       }
@@ -292,6 +309,77 @@ export default function EventDetailPage() {
           </Card>
         )}
       </div>
+
+      {/* Engagement Analytics */}
+      {engagement && engagement.total_views > 0 && (
+        <Card className="border-zinc-800 bg-zinc-900">
+          <CardHeader>
+            <CardTitle className="text-sm text-zinc-400">
+              Engagement Analytics
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <p className="text-xs text-zinc-500">Total Views</p>
+                <p className="text-lg font-bold text-white">{engagement.total_views.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Unique Viewers</p>
+                <p className="text-lg font-bold text-white">{engagement.unique_viewers.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Conversion Rate</p>
+                <p className="text-lg font-bold text-white">{engagement.conversion_rate}%</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Purchasers</p>
+                <p className="text-lg font-bold text-white">{engagement.unique_purchasers.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Views (7d)</p>
+                <p className="text-lg font-bold text-white">{engagement.views_7d.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Views (30d)</p>
+                <p className="text-lg font-bold text-white">{engagement.views_30d.toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Viewer Avg Ticket</p>
+                <p className="text-lg font-bold text-white">
+                  {engagement.viewer_avg_ticket_price_cents > 0
+                    ? `$${(engagement.viewer_avg_ticket_price_cents / 100).toFixed(2)}`
+                    : "-"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-zinc-500">Viewer Avg Monthly</p>
+                <p className="text-lg font-bold text-white">
+                  {engagement.viewer_avg_monthly_purchases > 0
+                    ? `${engagement.viewer_avg_monthly_purchases}/mo`
+                    : "-"}
+                </p>
+              </div>
+            </div>
+            {/* Source Breakdown */}
+            {engagement.source_breakdown.length > 0 && (
+              <div className="mt-4 border-t border-zinc-800 pt-4">
+                <p className="mb-2 text-xs text-zinc-500">Traffic Sources</p>
+                <div className="flex flex-wrap gap-2">
+                  {engagement.source_breakdown.map((s) => (
+                    <span
+                      key={s.source}
+                      className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-300"
+                    >
+                      {s.source.replace(/_/g, " ")} ({s.count})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Ticket Types */}
       {ticketTypes.length > 0 && (

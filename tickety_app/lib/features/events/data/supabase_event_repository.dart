@@ -357,7 +357,13 @@ class SupabaseEventRepository implements EventRepository {
 
     final allItems = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
-        .toList();
+        .toList()
+      // Sort by creation date descending (newest first)
+      ..sort((a, b) {
+        final aDate = a.createdAt ?? DateTime(2000);
+        final bDate = b.createdAt ?? DateTime(2000);
+        return bDate.compareTo(aDate);
+      });
 
     final hasMore = allItems.length > pageSize;
     final events = hasMore ? allItems.take(pageSize).toList() : allItems;
@@ -470,6 +476,23 @@ class SupabaseEventRepository implements EventRepository {
       debugPrint('Stack: $stack');
       rethrow;
     }
+  }
+
+  /// Delete existing ticket types for an event and re-insert new ones.
+  Future<List<TicketType>> updateEventTicketTypes(
+    String eventId,
+    List<TicketTypeInput> ticketTypes,
+  ) async {
+    AppLogger.debug('Updating ticket types for event: $eventId', tag: _tag);
+
+    // Delete existing active ticket types
+    await _client
+        .from('event_ticket_types')
+        .delete()
+        .eq('event_id', eventId);
+
+    // Re-insert with the new list
+    return createTicketTypes(eventId, ticketTypes);
   }
 
   /// Find events with similar titles (for duplicate/impersonation detection).
@@ -590,6 +613,22 @@ class SupabaseEventRepository implements EventRepository {
     }
 
     return event;
+  }
+
+  @override
+  Future<void> logEventView(String eventId, {String source = 'direct'}) async {
+    final userId = SupabaseService.instance.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      await _client.from('event_views').insert({
+        'event_id': eventId,
+        'viewer_id': userId,
+        'source': source,
+      });
+    } catch (_) {
+      // Silently ignore dedup violations / missing table
+    }
   }
 
   @override
