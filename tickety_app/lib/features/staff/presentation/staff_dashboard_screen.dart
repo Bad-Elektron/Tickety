@@ -8,6 +8,7 @@ import '../../events/data/data.dart';
 import '../../events/models/event_model.dart';
 import '../data/ticket_repository.dart';
 import '../models/staff_role.dart';
+import '../../events/presentation/usher_event_screen.dart';
 import 'vendor_pos_screen.dart';
 
 /// Dashboard for staff members to access their assigned events.
@@ -103,11 +104,9 @@ class _StaffDashboardScreenState extends ConsumerState<StaffDashboardScreen> {
   }
 
   void _navigateToCheckTickets(EventModel event) {
-    // TODO: Navigate to ticket check screen
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Ticket scanning coming soon'),
-        behavior: SnackBarBehavior.floating,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UsherEventScreen(event: event),
       ),
     );
   }

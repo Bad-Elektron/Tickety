@@ -82,12 +82,11 @@ class SettingsScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.currency_exchange_outlined,
                 title: 'Currency',
-                subtitle: 'USD (\$)',
+                subtitle: 'Change in Wallet',
                 onTap: () {
-                  // TODO: Implement currency selection
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Coming soon'),
+                      content: Text('Currency can be changed from the Wallet screen'),
                       behavior: SnackBarBehavior.floating,
                     ),
                   );

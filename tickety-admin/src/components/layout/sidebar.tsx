@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
+  BarChart3,
   Users,
   Calendar,
   Ticket,
@@ -18,11 +18,11 @@ import {
   Flag,
   Megaphone,
   AlertTriangle,
-  Activity,
+  Wallet,
 } from "lucide-react";
 
 const navItems = [
-  { label: "Overview", href: "/dashboard/overview", icon: LayoutDashboard },
+  { label: "Analytics", href: "/dashboard/overview", icon: BarChart3 },
   { label: "Users", href: "/dashboard/users", icon: Users },
   { label: "Events", href: "/dashboard/events", icon: Calendar },
   { label: "Tickets", href: "/dashboard/tickets", icon: Ticket },
@@ -31,12 +31,12 @@ const navItems = [
   { label: "Resale", href: "/dashboard/resale", icon: Repeat },
   { label: "Referrals", href: "/dashboard/referrals", icon: Share2 },
   { label: "Reports", href: "/dashboard/reports", icon: AlertTriangle },
-  { label: "Engagement", href: "/dashboard/engagement", icon: Activity },
   { label: "Audit Log", href: "/dashboard/audit-log", icon: FileText },
   { label: "Webhooks", href: "/dashboard/webhooks", icon: Webhook },
   { label: "Edge Functions", href: "/dashboard/edge-functions", icon: Zap },
   { label: "Feature Flags", href: "/dashboard/feature-flags", icon: Flag },
   { label: "Announcements", href: "/dashboard/announcements", icon: Megaphone },
+  { label: "NFT Wallet", href: "/dashboard/nft-wallet", icon: Wallet },
 ];
 
 export function Sidebar() {

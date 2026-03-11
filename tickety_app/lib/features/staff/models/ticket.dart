@@ -126,6 +126,12 @@ class Ticket {
   final bool nftMinted;
   final String? nftAssetId;
   final DateTime? nftMintedAt;
+  final String? nftPolicyId;
+  final String? nftTxHash;
+  final String? nftTransferTxHash;
+  final bool nftBurned;
+  final DateTime? nftBurnedAt;
+  final String? nftBurnTxHash;
 
   // ─────────────────────────────────────────────────────────────────
   // Ticket mode (standard/private/public)
@@ -162,6 +168,12 @@ class Ticket {
     required this.nftMinted,
     this.nftAssetId,
     this.nftMintedAt,
+    this.nftPolicyId,
+    this.nftTxHash,
+    this.nftTransferTxHash,
+    this.nftBurned = false,
+    this.nftBurnedAt,
+    this.nftBurnTxHash,
     this.ticketMode = TicketMode.standard,
     this.listingStatus = ListingStatus.none,
     this.listingPriceCents,
@@ -196,6 +208,14 @@ class Ticket {
       nftMintedAt: json['nft_minted_at'] != null
           ? DateTime.parse(json['nft_minted_at'] as String)
           : null,
+      nftPolicyId: json['nft_policy_id'] as String?,
+      nftTxHash: json['nft_tx_hash'] as String?,
+      nftTransferTxHash: json['nft_transfer_tx_hash'] as String?,
+      nftBurned: json['nft_burned'] as bool? ?? false,
+      nftBurnedAt: json['nft_burned_at'] != null
+          ? DateTime.parse(json['nft_burned_at'] as String)
+          : null,
+      nftBurnTxHash: json['nft_burn_tx_hash'] as String?,
       ticketMode: TicketMode.fromString(json['ticket_mode'] as String?),
       listingStatus: ListingStatus.fromString(json['listing_status'] as String?),
       listingPriceCents: json['listing_price_cents'] as int?,
@@ -241,7 +261,13 @@ class Ticket {
   bool get isListedForSale => listingStatus == ListingStatus.listed;
 
   /// Whether ticket can be listed for resale.
-  bool get canBeResold => ticketMode.canResale && isValid && !isListedForSale;
+  bool get canBeResold =>
+      ticketMode.canResale && isValid && !isListedForSale && !isAwaitingMint && !nftBurned;
+
+  /// Whether ticket is on an NFT-enabled event but hasn't been minted yet.
+  bool get isAwaitingMint =>
+      (eventData?['nft_enabled'] == true || ticketMode == TicketMode.public_) &&
+      nftMinted == false;
 
   // ─────────────────────────────────────────────────────────────────
   // Validation for check-in (computed, not stored)
@@ -358,6 +384,11 @@ class Ticket {
     bool? nftMinted,
     String? nftAssetId,
     DateTime? nftMintedAt,
+    String? nftPolicyId,
+    String? nftTxHash,
+    bool? nftBurned,
+    DateTime? nftBurnedAt,
+    String? nftBurnTxHash,
     TicketMode? ticketMode,
     ListingStatus? listingStatus,
     int? listingPriceCents,
@@ -382,6 +413,11 @@ class Ticket {
       nftMinted: nftMinted ?? this.nftMinted,
       nftAssetId: nftAssetId ?? this.nftAssetId,
       nftMintedAt: nftMintedAt ?? this.nftMintedAt,
+      nftPolicyId: nftPolicyId ?? this.nftPolicyId,
+      nftTxHash: nftTxHash ?? this.nftTxHash,
+      nftBurned: nftBurned ?? this.nftBurned,
+      nftBurnedAt: nftBurnedAt ?? this.nftBurnedAt,
+      nftBurnTxHash: nftBurnTxHash ?? this.nftBurnTxHash,
       ticketMode: ticketMode ?? this.ticketMode,
       listingStatus: listingStatus ?? this.listingStatus,
       listingPriceCents: listingPriceCents ?? this.listingPriceCents,

@@ -1,6 +1,7 @@
 import '../../../core/errors/errors.dart';
 import '../../../core/services/services.dart';
 import '../models/market_snapshot.dart';
+import '../models/platform_engagement.dart';
 import '../models/tag_weekly_stats.dart';
 import '../models/trending_tag.dart';
 import 'i_analytics_repository.dart';
@@ -14,6 +15,27 @@ const _tag = 'AnalyticsRepository';
 /// All reads are simple SELECTs from pre-computed cache tables.
 class AnalyticsRepository implements IAnalyticsRepository {
   final _client = SupabaseService.instance.client;
+
+  @override
+  Future<PlatformEngagement> getPlatformEngagement({String? city}) async {
+    AppLogger.debug(
+      'Fetching platform engagement${city != null ? ' for city: $city' : ''}',
+      tag: _tag,
+    );
+
+    try {
+      final response = await _client.rpc(
+        'get_platform_engagement_summary',
+        params: {'p_city': city},
+      );
+
+      if (response == null) return PlatformEngagement.empty;
+      return PlatformEngagement.fromJson(response as Map<String, dynamic>);
+    } catch (e, s) {
+      AppLogger.error('Failed to fetch platform engagement', error: e, stackTrace: s, tag: _tag);
+      rethrow;
+    }
+  }
 
   @override
   Future<List<TrendingTag>> getTrendingTags({String? city}) async {

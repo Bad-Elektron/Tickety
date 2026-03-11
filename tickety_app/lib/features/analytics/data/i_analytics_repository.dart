@@ -1,9 +1,12 @@
 import '../models/market_snapshot.dart';
+import '../models/platform_engagement.dart';
 import '../models/tag_weekly_stats.dart';
 import '../models/trending_tag.dart';
 
 /// Abstract repository interface for platform analytics.
 abstract class IAnalyticsRepository {
+  /// Get platform-wide engagement summary (views, conversion, top events).
+  Future<PlatformEngagement> getPlatformEngagement({String? city});
   /// Get trending tags, optionally filtered by city.
   Future<List<TrendingTag>> getTrendingTags({String? city});
 

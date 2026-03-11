@@ -73,4 +73,10 @@ abstract class ITicketRepository {
     int page = 0,
     int pageSize = 20,
   });
+
+  /// Get full door list for an event (all valid/used tickets).
+  ///
+  /// Returns all tickets for offline check-in caching. Not paginated —
+  /// the full list is needed for O(1) HashMap lookups when offline.
+  Future<List<Map<String, dynamic>>> getEventDoorList(String eventId);
 }

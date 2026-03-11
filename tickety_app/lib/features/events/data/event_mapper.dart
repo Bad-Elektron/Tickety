@@ -40,7 +40,7 @@ abstract class EventMapper {
       currency: json['currency'] as String? ?? 'USD',
       hideLocation: json['hide_location'] as bool? ?? false,
       maxTickets: json['max_tickets'] as int?,
-      cashSalesEnabled: json['cash_sales_enabled'] as bool? ?? false,
+      cashSalesEnabled: json['cash_sales_enabled'] as bool? ?? true,
       organizerName: organizer?['display_name'] as String?,
       organizerHandle: organizer?['handle'] as String?,
       organizerVerified: organizerVerificationStatus == 'verified',
@@ -51,6 +51,8 @@ abstract class EventMapper {
       formattedAddress: json['formatted_address'] as String?,
       isPrivate: json['is_private'] as bool? ?? false,
       inviteCode: json['invite_code'] as String?,
+      nftEnabled: json['nft_enabled'] as bool? ?? true,
+      nftPolicyId: json['nft_policy_id'] as String?,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
           : null,
@@ -81,6 +83,7 @@ abstract class EventMapper {
       'cash_sales_enabled': event.cashSalesEnabled,
       // Only include is_private when true (column may not exist yet on older DBs)
       if (event.isPrivate) 'is_private': event.isPrivate,
+      'nft_enabled': true,
       // Only include location coordinates when present (columns may not exist yet)
       if (event.latitude != null) 'latitude': event.latitude,
       if (event.longitude != null) 'longitude': event.longitude,

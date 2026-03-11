@@ -3,6 +3,8 @@ library;
 
 export 'analytics_provider.dart';
 export 'auth_provider.dart';
+export 'offline_checkin_provider.dart';
+export 'currency_provider.dart';
 export 'cardano_wallet_provider.dart';
 export 'events_provider.dart';
 export 'favor_ticket_provider.dart';

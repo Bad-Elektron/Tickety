@@ -1,0 +1,297 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../models/nft_ticket.dart';
+
+/// Detail screen for a CIP-68 NFT ticket.
+class NftTicketDetailScreen extends StatelessWidget {
+  final NftTicket nft;
+
+  const NftTicketDetailScreen({super.key, required this.nft});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('NFT Ticket'),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // NFT Badge + Name
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    colorScheme.primary,
+                    colorScheme.primary.withValues(alpha: 0.7),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.token_rounded,
+                      color: Colors.white,
+                      size: 48,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    nft.displayName,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (nft.eventTitle != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      nft.eventTitle!,
+                      style: theme.textTheme.bodyLarge?.copyWith(
+                        color: Colors.white.withValues(alpha: 0.9),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.verified, color: Colors.white, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'CIP-68 NFT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Event details (if available)
+            if (nft.eventTitle != null ||
+                nft.ticketNumber != null ||
+                nft.eventDate != null ||
+                nft.venue != null)
+              _Section(
+                title: 'Event Details',
+                children: [
+                  if (nft.ticketNumber != null)
+                    _DetailRow(label: 'Ticket', value: nft.ticketNumber!),
+                  if (nft.eventDate != null)
+                    _DetailRow(label: 'Date', value: nft.eventDate!),
+                  if (nft.venue != null)
+                    _DetailRow(label: 'Venue', value: nft.venue!),
+                ],
+              ),
+
+            const SizedBox(height: 16),
+
+            // On-chain details
+            _Section(
+              title: 'On-Chain Details',
+              children: [
+                _CopyableRow(
+                  label: 'Policy ID',
+                  value: nft.policyId,
+                ),
+                _CopyableRow(
+                  label: 'Asset Name',
+                  value: nft.assetName,
+                ),
+                if (nft.initialMintTxHash != null)
+                  _CopyableRow(
+                    label: 'Mint Tx',
+                    value: nft.initialMintTxHash!,
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Action buttons
+            FilledButton.icon(
+              onPressed: () => _openUrl(nft.cardanoScanUrl),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('View on CardanoScan'),
+            ),
+            if (nft.mintTxUrl != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _openUrl(nft.mintTxUrl!),
+                icon: const Icon(Icons.receipt_long),
+                label: const Text('View Mint Transaction'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+}
+
+class _Section extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _Section({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CopyableRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _CopyableRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final truncated = value.length > 24
+        ? '${value.substring(0, 12)}...${value.substring(value.length - 12)}'
+        : value;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              truncated,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+                fontSize: 12,
+              ),
+            ),
+          ),
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: value));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('$label copied'),
+                  duration: const Duration(seconds: 1),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: Icon(
+              Icons.copy_rounded,
+              size: 16,
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

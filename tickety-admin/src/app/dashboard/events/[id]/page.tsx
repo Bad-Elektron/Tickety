@@ -18,7 +18,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { formatCents, formatDate, formatDateTime } from "@/lib/utils/format";
 import type { Event, EventTicketType, EventStaff, Profile } from "@/types/database";
-import { ArrowLeft, ShieldCheck, Ban, CheckCircle } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Ban, CheckCircle, RefreshCw, ExternalLink, Coins } from "lucide-react";
 import Link from "next/link";
 
 interface EventEngagement {
@@ -32,6 +32,23 @@ interface EventEngagement {
   viewer_avg_monthly_purchases: number;
   daily_views: { date: string; views: number }[];
   source_breakdown: { source: string; count: number }[];
+}
+
+interface NftQueueEntry {
+  id: string;
+  ticket_id: string;
+  status: string;
+  tx_hash: string | null;
+  error_message: string | null;
+  retry_count: number;
+  action: string;
+  created_at: string;
+}
+
+interface NftEventStats {
+  queue: Record<string, number>;
+  policyId: string | null;
+  entries: NftQueueEntry[];
 }
 
 interface EventDetail {
@@ -53,10 +70,24 @@ export default function EventDetailPage() {
   const eventId = params.id as string;
   const [data, setData] = useState<EventDetail | null>(null);
   const [engagement, setEngagement] = useState<EventEngagement | null>(null);
+  const [nftStats, setNftStats] = useState<NftEventStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [retryLoading, setRetryLoading] = useState<string | null>(null);
   const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
+
+  const fetchNftStats = async () => {
+    try {
+      const res = await fetch(`/api/admin/nft-wallet?event_id=${eventId}`);
+      if (res.ok) {
+        const json = await res.json();
+        setNftStats(json.eventNft ?? null);
+      }
+    } catch {
+      // NFT stats non-critical
+    }
+  };
 
   useEffect(() => {
     async function fetchEvent() {
@@ -66,7 +97,12 @@ export default function EventDetailPage() {
           fetch(`/api/admin/engagement/${eventId}`),
         ]);
         if (eventRes.ok) {
-          setData(await eventRes.json());
+          const eventData = await eventRes.json();
+          setData(eventData);
+          // Fetch NFT stats if event has NFT enabled
+          if (eventData.event?.nft_enabled) {
+            fetchNftStats();
+          }
         }
         if (engagementRes.ok) {
           setEngagement(await engagementRes.json());
@@ -78,6 +114,23 @@ export default function EventDetailPage() {
     }
     fetchEvent();
   }, [eventId]);
+
+  const handleRetryMint = async (queueId: string) => {
+    setRetryLoading(queueId);
+    try {
+      const res = await fetch(`/api/admin/nft-wallet`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "retry", queue_id: queueId }),
+      });
+      if (res.ok) {
+        // Refresh NFT stats
+        await fetchNftStats();
+      }
+    } finally {
+      setRetryLoading(null);
+    }
+  };
 
   const handleEventAction = async (action: string, reason?: string) => {
     setActionLoading(action);
@@ -375,6 +428,134 @@ export default function EventDetailPage() {
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tickets Minted */}
+      {event.nft_enabled && nftStats && (
+        <Card className="border-zinc-800 bg-zinc-900">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm text-zinc-400">
+              <Coins className="h-4 w-4" />
+              Tickets Minted
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={fetchNftStats}
+              className="text-zinc-400 hover:text-white"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+              {["minted", "queued", "minting", "failed", "skipped"].map((status) => (
+                <div key={status}>
+                  <p className="text-xs text-zinc-500 capitalize">{status}</p>
+                  <p className={`text-lg font-bold ${
+                    status === "minted" ? "text-emerald-400" :
+                    status === "failed" ? "text-red-400" :
+                    status === "minting" ? "text-amber-400" :
+                    status === "queued" ? "text-blue-400" : "text-zinc-400"
+                  }`}>
+                    {nftStats.queue[status] ?? 0}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* Policy ID */}
+            {nftStats.policyId && (
+              <div className="flex items-center gap-2 rounded bg-zinc-800 px-3 py-2">
+                <span className="text-xs text-zinc-500">Policy:</span>
+                <code className="flex-1 truncate font-mono text-xs text-zinc-300">
+                  {nftStats.policyId}
+                </code>
+                <a
+                  href={`https://preview.cardanoscan.io/tokenPolicy/${nftStats.policyId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 hover:text-indigo-300"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+
+            {/* Failed entries with retry */}
+            {nftStats.entries.filter(e => e.status === "failed").length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-red-400">Failed</p>
+                {nftStats.entries
+                  .filter(e => e.status === "failed")
+                  .map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between rounded-lg border border-red-500/20 bg-red-950/20 p-3"
+                    >
+                      <div>
+                        <span className="font-mono text-xs text-zinc-300">
+                          {entry.ticket_id.slice(0, 8)}...
+                        </span>
+                        {entry.error_message && (
+                          <p className="mt-1 max-w-sm truncate text-xs text-red-400">
+                            {entry.error_message}
+                          </p>
+                        )}
+                        <p className="text-xs text-zinc-600">
+                          {entry.retry_count > 0 && `${entry.retry_count} retries · `}
+                          {entry.action}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRetryMint(entry.id)}
+                        disabled={retryLoading === entry.id}
+                        className="border-amber-500/30 text-amber-400 hover:bg-amber-950/30"
+                      >
+                        {retryLoading === entry.id ? (
+                          <RefreshCw className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Retry"
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+              </div>
+            )}
+
+            {/* Recent successful mints */}
+            {nftStats.entries.filter(e => e.status === "minted" && e.tx_hash).length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-500">Recent</p>
+                {nftStats.entries
+                  .filter(e => e.status === "minted" && e.tx_hash)
+                  .slice(0, 5)
+                  .map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between rounded-lg border border-zinc-800 p-2"
+                    >
+                      <span className="font-mono text-xs text-zinc-400">
+                        {entry.ticket_id.slice(0, 8)}...
+                      </span>
+                      <a
+                        href={`https://preview.cardanoscan.io/transaction/${entry.tx_hash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-xs text-indigo-400 hover:underline"
+                      >
+                        {entry.tx_hash!.slice(0, 12)}...
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                  ))}
               </div>
             )}
           </CardContent>

@@ -25,11 +25,11 @@ interface PaymentIntentRequest {
   metadata?: Record<string, unknown>
 }
 
-// Fee constants — must match client-side ServiceFeeCalculator exactly
+// Fee constants — must match client-side ServiceFeeCalculator exactly (v2: mint fee)
 const PLATFORM_FEE_RATE = 0.05
 const STRIPE_FEE_RATE = 0.029
 const STRIPE_FEE_FIXED_CENTS = 30
-const MINT_FEE_CENTS = 0
+const MINT_FEE_CENTS = 25
 
 function calculateFees(baseCents: number) {
   if (baseCents <= 0) {
@@ -64,6 +64,8 @@ function calculateFees(baseCents: number) {
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
 serve(async (req) => {
+  console.log(`[create-payment-intent] BOOT — MINT_FEE_CENTS=${MINT_FEE_CENTS}, PLATFORM_FEE_RATE=${PLATFORM_FEE_RATE}, STRIPE_FEE_RATE=${STRIPE_FEE_RATE}, STRIPE_FEE_FIXED_CENTS=${STRIPE_FEE_FIXED_CENTS}`)
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -142,7 +144,8 @@ serve(async (req) => {
       if (type === 'primary_purchase' && event.price_in_cents) {
         const baseCents = event.price_in_cents * quantity
         const fees = calculateFees(baseCents)
-        if (amount_cents !== fees.total_cents) {
+        console.log(`[fee-check] baseCents=${baseCents}, MINT_FEE_CENTS=${MINT_FEE_CENTS}, platform=${fees.platform_fee_cents}, mint=${fees.mint_fee_cents}, stripe=${fees.stripe_fee_cents}, total=${fees.total_cents}, client_sent=${amount_cents}`)
+      if (amount_cents !== fees.total_cents) {
           console.log(`Price mismatch: expected ${fees.total_cents} (base: ${baseCents}, fee: ${fees.service_fee_cents}), got ${amount_cents}`)
           return new Response(
             JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),

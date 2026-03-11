@@ -149,10 +149,10 @@ class ResaleRepository implements IResaleRepository {
       tag: _tag,
     );
 
-    // Check if the ticket is private (cannot be resold)
+    // Check if the ticket is private (cannot be resold), awaiting mint, or burned
     final ticketData = await _client
         .from('tickets')
-        .select('ticket_mode')
+        .select('ticket_mode, nft_minted, nft_burned, events!inner(nft_enabled)')
         .eq('id', ticketId)
         .single();
 
@@ -163,11 +163,29 @@ class ResaleRepository implements IResaleRepository {
       );
     }
 
-    // Check if user has a seller account (NOT full onboarding required!)
-    // This allows sellers to list immediately; they complete bank setup when withdrawing
+    if (ticketData['nft_burned'] == true) {
+      throw PaymentException(
+        'This ticket\u2019s NFT has expired and cannot be resold.',
+        technicalDetails: 'Ticket $ticketId NFT has been burned',
+      );
+    }
+
+    final eventNftEnabled =
+        (ticketData['events'] as Map<String, dynamic>?)?['nft_enabled'] == true;
+    final isPublicMode = ticketData['ticket_mode'] == 'public';
+
+    if ((eventNftEnabled || isPublicMode) && ticketData['nft_minted'] != true) {
+      throw PaymentException(
+        'This ticket is still being prepared. Please try again shortly.',
+        technicalDetails: 'Ticket $ticketId awaiting NFT mint',
+      );
+    }
+
+    // Auto-create seller account if needed (no separate setup step required)
     final hasSeller = await hasSellerAccount();
     if (!hasSeller) {
-      throw PaymentException.connectAccountRequired();
+      AppLogger.info('No seller account found, auto-creating...', tag: _tag);
+      await createSellerAccount();
     }
 
     // Check for existing active listing (prevent duplicate constraint error)
@@ -347,14 +365,15 @@ class ResaleRepository implements IResaleRepository {
       return true;
     }
 
-    // Fall back to profiles (legacy)
+    // Fall back to profiles (legacy) — only count if fully onboarded
     final profileResponse = await _client
         .from('profiles')
-        .select('stripe_connect_account_id')
+        .select('stripe_connect_account_id, stripe_connect_onboarded')
         .eq('id', userId)
         .single();
 
-    final hasAccount = profileResponse['stripe_connect_account_id'] != null;
+    final hasAccount = profileResponse['stripe_connect_account_id'] != null &&
+        profileResponse['stripe_connect_onboarded'] == true;
     AppLogger.debug('Seller account from profiles: $hasAccount', tag: _tag);
     return hasAccount;
   }

@@ -33,15 +33,23 @@ export async function GET(
     .eq("id", event.organizer_id)
     .single();
 
-  // Try to get analytics via RPC
+  // Unified event dashboard: tickets + check-ins + engagement in one call
   let analytics: Record<string, unknown> | null = null;
   try {
-    const { data: analyticsData } = await admin.rpc("get_event_analytics", {
+    const { data: dashData } = await admin.rpc("get_event_dashboard", {
       p_event_id: eventId,
     });
-    if (analyticsData) analytics = analyticsData;
+    if (dashData) analytics = dashData;
   } catch {
-    // RPC may not exist
+    // Fallback: try legacy RPC if new one not deployed yet
+    try {
+      const { data: legacyData } = await admin.rpc("get_event_analytics", {
+        p_event_id: eventId,
+      });
+      if (legacyData) analytics = legacyData;
+    } catch {
+      // RPC may not exist
+    }
   }
 
   const staff = (staffRes.data ?? []).map((s) => {

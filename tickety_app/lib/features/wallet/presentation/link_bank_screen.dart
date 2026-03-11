@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 
-import '../../../core/errors/errors.dart';
-import '../../../core/providers/wallet_balance_provider.dart';
 import '../data/wallet_repository.dart';
 
 /// Screen for linking a bank account via Stripe Financial Connections.
@@ -80,12 +78,9 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
       // ignore: avoid_print
       print('[LinkBank] Step 3 OK');
 
-      // 4. Refresh wallet balance (which includes bank accounts)
+      // 4. Bank linked successfully
       // ignore: avoid_print
-      print('[LinkBank] Step 4: refresh...');
-      await ref.read(walletBalanceProvider.notifier).refresh();
-      // ignore: avoid_print
-      print('[LinkBank] Step 4 OK');
+      print('[LinkBank] Step 4: Done');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -155,7 +150,7 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Link your bank account to fund your Tickety Wallet via ACH transfer. Lower fees than card payments.',
+                      'Link your bank account to pay for tickets directly via ACH. Lower fees than card payments.',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -172,8 +167,8 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                     const SizedBox(height: 16),
                     _BenefitItem(
                       icon: Icons.bolt_outlined,
-                      title: 'Instant Purchases',
-                      description: 'Once funded, buy tickets instantly from your wallet balance.',
+                      title: 'Instant Tickets',
+                      description: 'Get your tickets immediately. Bank payment settles in 4-5 days.',
                     ),
                     const SizedBox(height: 16),
                     _BenefitItem(

@@ -11,11 +11,13 @@ class PaymentSuccessScreen extends StatefulWidget {
     required this.event,
     required this.amountCents,
     required this.quantity,
+    this.isACH = false,
   });
 
   final EventModel event;
   final int amountCents;
   final int quantity;
+  final bool isACH;
 
   @override
   State<PaymentSuccessScreen> createState() => _PaymentSuccessScreenState();
@@ -226,6 +228,39 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                   ),
                 ),
               ),
+
+              // ACH settlement note
+              if (widget.isACH) ...[
+                const SizedBox(height: 12),
+                FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.schedule,
+                          size: 20,
+                          color: Colors.orange.shade700,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Your bank payment will settle in 4-5 business days. Your tickets are ready to use now.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
 
               const Spacer(),
 

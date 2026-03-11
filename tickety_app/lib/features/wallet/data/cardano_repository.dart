@@ -5,6 +5,7 @@ import '../../../core/services/blockfrost_service.dart';
 import '../../../core/services/cardano_wallet_service.dart';
 import '../models/cardano_balance.dart';
 import '../models/cardano_transaction.dart';
+import '../models/nft_ticket.dart';
 
 /// Orchestrates [BlockfrostService] + [CardanoWalletService] for
 /// all Cardano wallet operations.
@@ -139,6 +140,47 @@ class CardanoRepository {
       throw CardanoException.txSubmissionFailed(e.body);
     } catch (e) {
       throw CardanoException.txSubmissionFailed(e.toString());
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // NFT Tickets
+  // ---------------------------------------------------------------
+
+  /// Fetch all CIP-68 ticket NFTs (user tokens with `000de140` prefix)
+  /// held at the user's address.
+  Future<List<NftTicket>> getTicketNfts() async {
+    try {
+      final address = await _walletService.getAddress();
+      final assets = await _blockfrost.getAddressAssets(address);
+
+      final nfts = <NftTicket>[];
+      for (final asset in assets) {
+        final unit = asset['unit'] as String;
+        // CIP-68 user tokens have the 000de140 label prefix
+        if (!unit.contains('000de140')) continue;
+
+        final info = await _blockfrost.getAssetInfo(unit);
+        if (info == null) continue;
+
+        nfts.add(NftTicket.fromBlockfrost(info));
+      }
+      return nfts;
+    } on BlockfrostException catch (e) {
+      if (e.statusCode == 404) return [];
+      throw CardanoException.networkError(e.toString());
+    }
+  }
+
+  /// Fetch details for a single NFT asset.
+  Future<NftTicket?> getNftDetails(String assetId) async {
+    try {
+      final info = await _blockfrost.getAssetInfo(assetId);
+      if (info == null) return null;
+      return NftTicket.fromBlockfrost(info);
+    } on BlockfrostException catch (e) {
+      if (e.statusCode == 404) return null;
+      throw CardanoException.networkError(e.toString());
     }
   }
 

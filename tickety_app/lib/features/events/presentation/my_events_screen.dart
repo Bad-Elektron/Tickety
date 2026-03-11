@@ -704,6 +704,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             badgeIcon: Icons.badge_outlined,
             badgeColor: Theme.of(context).colorScheme.tertiary,
             showRoleSwitch: data.canSell,
+            showDoorListStatus: true,
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
@@ -814,6 +815,7 @@ class _MyEventCard extends ConsumerWidget {
   final Color? badgeColor;
   final VoidCallback onTap;
   final bool showRoleSwitch;
+  final bool showDoorListStatus;
 
   const _MyEventCard({
     required this.event,
@@ -822,6 +824,7 @@ class _MyEventCard extends ConsumerWidget {
     required this.onTap,
     this.badgeColor,
     this.showRoleSwitch = false,
+    this.showDoorListStatus = false,
   });
 
   @override
@@ -948,18 +951,19 @@ class _MyEventCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     // Stats row
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         _StatChip(
                           icon: Icons.confirmation_number_outlined,
                           label: soldCountAsync.when(
                             data: (count) => '$count sold',
                             loading: () => '... sold',
-                            error: (_, __) => '-- sold',
+                            error: (_, _) => '-- sold',
                           ),
                           color: colorScheme.primary,
                         ),
-                        const SizedBox(width: 12),
                         _StatChip(
                           icon: Icons.calendar_today_outlined,
                           label: _formatDate(event.date),
@@ -967,6 +971,8 @@ class _MyEventCard extends ConsumerWidget {
                               ? colorScheme.error
                               : (badgeColor ?? colorScheme.tertiary),
                         ),
+                        if (showDoorListStatus)
+                          _DoorListChip(eventId: event.id),
                       ],
                     ),
                   ],
@@ -1041,6 +1047,48 @@ class _StatChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Shows whether the door list is cached locally for offline check-in.
+class _DoorListChip extends ConsumerWidget {
+  final String eventId;
+
+  const _DoorListChip({required this.eventId});
+
+  static String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final info = ref.watch(doorListCachedProvider(eventId));
+
+    return info.when(
+      data: (data) => _StatChip(
+        icon: data.cached
+            ? Icons.cloud_done_outlined
+            : Icons.cloud_download_outlined,
+        label: data.cached
+            ? data.ticketCount == 0
+                ? 'Offline · No guests'
+                : 'Offline · ${_formatSize(data.sizeBytes)}'
+            : 'Tap to Download',
+        color: data.cached ? const Color(0xFF4CAF50) : Colors.grey,
+      ),
+      loading: () => const _StatChip(
+        icon: Icons.cloud_outlined,
+        label: 'Checking...',
+        color: Colors.grey,
+      ),
+      error: (_, _) => const _StatChip(
+        icon: Icons.cloud_off,
+        label: 'Unknown',
+        color: Colors.grey,
       ),
     );
   }

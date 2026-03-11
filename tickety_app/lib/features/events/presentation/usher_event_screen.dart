@@ -4,18 +4,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/providers/ticket_provider.dart';
+import '../../../core/providers/offline_checkin_provider.dart';
 import '../../../core/services/nfc_service.dart';
 import '../../../shared/widgets/widgets.dart';
-import '../../staff/models/ticket.dart';
 import '../models/event_model.dart';
+import '../widgets/connectivity_indicator.dart';
 import '../widgets/qr_scanner_view.dart';
-import '../widgets/ticket_info_card.dart';
+import '../widgets/verification_card.dart';
 import 'vendor_event_screen.dart';
 
 /// Screen for ushers to scan and validate tickets at an event.
 ///
-/// NFC-first design with hold-to-scan and optional continuous mode.
+/// Features offline check-in with 3-tier verification:
+/// 1. Offline Cache — instant HashMap lookup
+/// 2. Blockchain — NFT ownership verification
+/// 3. Database — live status confirmation
+///
+/// Door list is auto-downloaded on screen open. Background sync
+/// pushes local check-ins to Supabase every 7 seconds when online.
 class UsherEventScreen extends ConsumerStatefulWidget {
   const UsherEventScreen({
     super.key,
@@ -32,10 +38,6 @@ class UsherEventScreen extends ConsumerStatefulWidget {
 
 class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     with SingleTickerProviderStateMixin {
-  Ticket? _scannedTicket;
-  CheckInValidationStatus? _validationStatus;
-  bool _isLoading = false;
-  bool _isCheckingIn = false;
   int _sessionCheckedIn = 0;
 
   // NFC state
@@ -48,6 +50,9 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
   // Camera state
   bool _showCamera = false;
 
+  // Check-in state
+  bool _isCheckingIn = false;
+
   // Animation
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
@@ -55,9 +60,11 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
   @override
   void initState() {
     super.initState();
-    // Load real stats for this event
-    Future.microtask(() {
-      ref.read(ticketProvider.notifier).loadStats(widget.event.id);
+
+    // Auto-download door list, then invalidate cache provider for My Events chips
+    Future.microtask(() async {
+      await ref.read(offlineCheckInProvider.notifier).downloadDoorList(widget.event.id);
+      ref.invalidate(doorListCachedProvider(widget.event.id));
     });
 
     // Check NFC availability
@@ -99,9 +106,8 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
 
     await _nfcService.startReading(
       onTagRead: (payload) {
-        // Check if the scanned ticket is for this event
         if (payload.eventId == widget.event.id) {
-          _lookupTicket(payload.ticketId);
+          _verifyTicket(payload.ticketId);
         } else {
           _showError('Ticket is for a different event');
           HapticFeedback.heavyImpact();
@@ -124,13 +130,13 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
   }
 
   void _onHoldStart() {
-    if (_nfcContinuousMode) return; // Already scanning continuously
+    if (_nfcContinuousMode) return;
     setState(() => _isHoldingButton = true);
     unawaited(_startNfcScanning());
   }
 
   void _onHoldEnd() {
-    if (_nfcContinuousMode) return; // Keep scanning in continuous mode
+    if (_nfcContinuousMode) return;
     setState(() => _isHoldingButton = false);
     unawaited(_stopNfcScanning());
   }
@@ -155,111 +161,63 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     setState(() => _showCamera = false);
   }
 
-  /// Look up a ticket by ID or number.
-  Future<void> _lookupTicket(String ticketIdOrNumber) async {
+  /// Run 3-tier verification pipeline for a scanned ticket.
+  Future<void> _verifyTicket(String ticketIdOrNumber) async {
     if (ticketIdOrNumber.trim().isEmpty) {
       _showError('Please enter a ticket number');
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-      _scannedTicket = null;
-      _validationStatus = null;
-    });
+    HapticFeedback.mediumImpact();
 
-    try {
-      final ticket = await ref.read(ticketProvider.notifier).findTicket(
-            widget.event.id,
-            ticketIdOrNumber.trim(),
-          );
+    // Close camera if open
+    if (_showCamera) _closeCamera();
 
-      if (!mounted) return;
+    final result = await ref
+        .read(offlineCheckInProvider.notifier)
+        .verifyTicket(ticketIdOrNumber.trim(), widget.event.id);
 
-      if (ticket == null) {
-        setState(() {
-          _isLoading = false;
-          _validationStatus = CheckInValidationStatus.notFound;
-        });
-        HapticFeedback.heavyImpact();
-        _showError('Ticket not found');
-        return;
-      }
+    if (!mounted) return;
 
-      // Check if ticket is for this event
-      if (ticket.eventId != widget.event.id) {
-        setState(() {
-          _isLoading = false;
-          _scannedTicket = ticket;
-          _validationStatus = CheckInValidationStatus.wrongEvent;
-        });
-        HapticFeedback.heavyImpact();
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-        _scannedTicket = ticket;
-        _validationStatus = CheckInValidationStatus.fromTicket(ticket);
-      });
-
-      // Haptic feedback based on validity
-      if (ticket.isValid) {
-        HapticFeedback.mediumImpact();
-      } else {
-        HapticFeedback.heavyImpact();
-      }
-
-      // Close camera if open
-      if (_showCamera) {
-        _closeCamera();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      _showError('Error looking up ticket: $e');
+    // Haptic feedback based on result
+    if (result.isAdmittable) {
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.heavyImpact();
     }
   }
 
-  /// Check in the currently scanned ticket.
+  /// Confirm check-in for the verified ticket.
   Future<void> _confirmCheckIn() async {
-    if (_scannedTicket == null) return;
+    final verification = ref.read(offlineCheckInProvider).currentVerification;
+    final ticket = verification?.ticket;
+    if (ticket == null) return;
 
     setState(() => _isCheckingIn = true);
 
-    try {
-      final success = await ref
-          .read(ticketProvider.notifier)
-          .checkInTicket(_scannedTicket!.id);
+    final success = await ref
+        .read(offlineCheckInProvider.notifier)
+        .confirmCheckIn(ticket.ticketId);
 
-      if (!mounted) return;
+    if (!mounted) return;
 
-      if (success) {
-        setState(() {
-          _sessionCheckedIn++;
-          _scannedTicket = null;
-          _validationStatus = null;
-          _isCheckingIn = false;
-        });
-        HapticFeedback.heavyImpact();
-        _showSuccess('Ticket checked in!');
-      } else {
-        setState(() => _isCheckingIn = false);
-        _showError('Failed to check in ticket');
-      }
-    } catch (e) {
-      if (!mounted) return;
+    if (success) {
+      setState(() {
+        _sessionCheckedIn++;
+        _isCheckingIn = false;
+      });
+      ref.read(offlineCheckInProvider.notifier).clearVerification();
+      HapticFeedback.heavyImpact();
+      _showSuccess('Ticket checked in!');
+    } else {
       setState(() => _isCheckingIn = false);
-      _showError('Error checking in ticket: $e');
+      _showError('Failed to check in ticket');
     }
   }
 
-  /// Dismiss the current ticket result.
-  void _dismissTicket() {
-    setState(() {
-      _scannedTicket = null;
-      _validationStatus = null;
-    });
+  /// Dismiss the current verification result.
+  void _dismissVerification() {
+    ref.read(offlineCheckInProvider.notifier).clearVerification();
   }
 
   void _showError(String message) {
@@ -292,13 +250,13 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final config = widget.event.getNoiseConfig();
-    final stats = ref.watch(ticketStatsProvider);
+    final offlineState = ref.watch(offlineCheckInProvider);
 
     // Show camera view if open
     if (_showCamera) {
       return _CameraOverlay(
         event: widget.event,
-        onScanned: _lookupTicket,
+        onScanned: _verifyTicket,
         onClose: _closeCamera,
         onError: _showError,
       );
@@ -368,7 +326,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                   ),
                 ),
               ),
-              // Role switch button (if user has both roles)
+              // Role switch button
               if (widget.canSwitchToSelling)
                 Container(
                   margin: const EdgeInsets.only(right: 8),
@@ -447,6 +405,18 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
             ],
           ),
 
+          // Connectivity banner
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: ConnectivityIndicator(
+                isOnline: offlineState.isOnline,
+                pendingSyncCount: offlineState.pendingSyncCount,
+                expanded: true,
+              ),
+            ),
+          ),
+
           // Stats bar
           SliverToBoxAdapter(
             child: Container(
@@ -456,47 +426,95 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                 color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+              child: Column(
                 children: [
-                  _StatItem(
-                    icon: Icons.login,
-                    value: '${stats?.checkedIn ?? 0}',
-                    label: 'Checked In',
-                    color: Colors.green,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _StatItem(
+                        icon: Icons.login,
+                        value: '${offlineState.checkedInCount}',
+                        label: 'Checked In',
+                        color: Colors.green,
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: colorScheme.outline.withValues(alpha: 0.3),
+                      ),
+                      _StatItem(
+                        icon: Icons.confirmation_number_outlined,
+                        value: '${offlineState.totalTickets}',
+                        label: 'Total',
+                        color: colorScheme.tertiary,
+                      ),
+                      Container(
+                        width: 1,
+                        height: 40,
+                        color: colorScheme.outline.withValues(alpha: 0.3),
+                      ),
+                      _StatItem(
+                        icon: Icons.nfc_rounded,
+                        value: '$_sessionCheckedIn',
+                        label: 'This Session',
+                        color: colorScheme.primary,
+                      ),
+                      if (offlineState.pendingSyncCount > 0) ...[
+                        Container(
+                          width: 1,
+                          height: 40,
+                          color: colorScheme.outline.withValues(alpha: 0.3),
+                        ),
+                        _StatItem(
+                          icon: Icons.sync,
+                          value: '${offlineState.pendingSyncCount}',
+                          label: 'Pending',
+                          color: Colors.amber.shade700,
+                        ),
+                      ],
+                    ],
                   ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: colorScheme.outline.withValues(alpha: 0.3),
-                  ),
-                  _StatItem(
-                    icon: Icons.confirmation_number_outlined,
-                    value: '${stats?.totalSold ?? 0}',
-                    label: 'Total Sold',
-                    color: colorScheme.tertiary,
-                  ),
-                  Container(
-                    width: 1,
-                    height: 40,
-                    color: colorScheme.outline.withValues(alpha: 0.3),
-                  ),
-                  _StatItem(
-                    icon: Icons.nfc_rounded,
-                    value: '$_sessionCheckedIn',
-                    label: 'This Session',
-                    color: colorScheme.primary,
-                  ),
+                  // Door list freshness
+                  if (offlineState.doorListDownloadedAt != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _formatDoorListAge(offlineState.doorListDownloadedAt!),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ),
 
+          // Door list download progress
+          if (offlineState.isDownloading)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Downloading door list...',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+
           // Main content
           SliverFillRemaining(
             hasScrollBody: false,
-            child: _scannedTicket != null || _validationStatus != null
-                ? _buildTicketResult()
+            child: offlineState.currentVerification != null
+                ? _buildVerificationResult(offlineState)
                 : _buildNfcScanView(),
           ),
         ],
@@ -504,9 +522,26 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     );
   }
 
+  String _formatDoorListAge(DateTime downloadedAt) {
+    final diff = DateTime.now().difference(downloadedAt);
+    final offlineState = ref.read(offlineCheckInProvider);
+
+    String age;
+    if (diff.inSeconds < 60) {
+      age = 'just now';
+    } else if (diff.inMinutes < 60) {
+      age = '${diff.inMinutes}m ago';
+    } else {
+      age = '${diff.inHours}h ago';
+    }
+
+    return 'Door list downloaded $age — ${offlineState.totalTickets} tickets';
+  }
+
   Widget _buildNfcScanView() {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final offlineState = ref.watch(offlineCheckInProvider);
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -599,7 +634,9 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                 ? 'NFC not available. Use QR scanner instead.'
                 : _isNfcScanning
                     ? 'Hold device near attendee\'s phone'
-                    : 'Hold the button to activate NFC scanning',
+                    : offlineState.isDoorListLoaded
+                        ? 'Hold the button to activate NFC scanning'
+                        : 'Downloading door list...',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -649,7 +686,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
           const Spacer(),
 
           // Loading indicator
-          if (_isLoading)
+          if (offlineState.isVerifying)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Row(
@@ -665,7 +702,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Looking up ticket...',
+                    'Verifying ticket...',
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],
@@ -701,7 +738,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
           ),
           onSubmitted: (value) {
             Navigator.pop(context);
-            _lookupTicket(value);
+            _verifyTicket(value);
           },
         ),
         actions: [
@@ -712,7 +749,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
-              _lookupTicket(controller.text);
+              _verifyTicket(controller.text);
             },
             child: const Text('Look Up'),
           ),
@@ -721,24 +758,15 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     );
   }
 
-  Widget _buildTicketResult() {
-    // Show error state if no ticket but have validation status
-    if (_scannedTicket == null && _validationStatus != null) {
-      return _ErrorResultView(
-        status: _validationStatus!,
-        onDismiss: _dismissTicket,
-      );
-    }
-
+  Widget _buildVerificationResult(OfflineCheckInState offlineState) {
     return SingleChildScrollView(
-      key: const ValueKey('result'),
+      key: const ValueKey('verification_result'),
       padding: const EdgeInsets.only(bottom: 32),
-      child: TicketInfoCard(
-        ticket: _scannedTicket!,
-        validationStatus: _validationStatus,
-        onDismiss: _dismissTicket,
+      child: VerificationCard(
+        result: offlineState.currentVerification!,
+        onDismiss: _dismissVerification,
         onCheckIn: _confirmCheckIn,
-        isLoading: _isCheckingIn,
+        isCheckingIn: _isCheckingIn,
       ),
     );
   }
@@ -793,7 +821,6 @@ class _CameraOverlay extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      // Close button
                       Material(
                         color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(12),
@@ -872,96 +899,6 @@ class _CameraOverlay extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-/// Error result view for ticket not found.
-class _ErrorResultView extends StatelessWidget {
-  const _ErrorResultView({
-    required this.status,
-    required this.onDismiss,
-  });
-
-  final CheckInValidationStatus status;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Center(
-      child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: status.color.withValues(alpha: 0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: status.color.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                status.icon,
-                size: 48,
-                color: status.color,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              status.label,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: status.color,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _getMessage(status),
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: onDismiss,
-                child: const Text('Try Again'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getMessage(CheckInValidationStatus status) {
-    return switch (status) {
-      CheckInValidationStatus.notFound =>
-        'This ticket number was not found. Please check and try again.',
-      CheckInValidationStatus.wrongEvent =>
-        'This ticket is for a different event.',
-      CheckInValidationStatus.alreadyUsed =>
-        'This ticket has already been checked in.',
-      CheckInValidationStatus.cancelled => 'This ticket has been cancelled.',
-      CheckInValidationStatus.refunded => 'This ticket has been refunded.',
-      CheckInValidationStatus.valid => '',
-    };
   }
 }
 

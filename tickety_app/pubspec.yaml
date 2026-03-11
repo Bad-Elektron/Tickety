@@ -93,6 +93,14 @@ dependencies:
   # Permissions handling (for notification permissions)
   permission_handler: ^11.0.0
 
+  # SQLite for offline check-in door list cache
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.0+2
+  path: ^1.9.0
+
+  # Network state detection for offline sync
+  connectivity_plus: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

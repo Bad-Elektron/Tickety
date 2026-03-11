@@ -136,7 +136,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                       ),
                     ),
                     Text(
-                      balance?.formattedAda ?? '0 ADA',
+                      balance?.formattedAvailableAda ?? '0 ADA',
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -199,9 +199,9 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                   suffixText: 'ADA',
                   suffixIcon: TextButton(
                     onPressed: () {
-                      if (balance != null && balance.ada > 0.2) {
+                      if (balance != null && balance.availableAda > 0.2) {
                         _amountController.text =
-                            (balance.ada - 0.2).toStringAsFixed(2);
+                            (balance.availableAda - 0.2).toStringAsFixed(2);
                       }
                     },
                     child: const Text('MAX'),
@@ -220,7 +220,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                   if (amount < 1.0) {
                     return 'Minimum 1 ADA';
                   }
-                  final maxSendable = (balance?.ada ?? 0) - 0.2;
+                  final maxSendable = (balance?.availableAda ?? 0) - 0.2;
                   if (amount > maxSendable) {
                     return 'Insufficient balance (need ~0.2 ADA for fee)';
                   }

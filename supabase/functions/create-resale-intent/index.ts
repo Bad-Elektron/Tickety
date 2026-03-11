@@ -105,13 +105,17 @@ serve(async (req) => {
     }
 
     // Get seller's Stripe Connect account from profiles (separate query)
+    // Only use legacy account if fully onboarded (has transfers capability)
     const { data: sellerProfile } = await supabaseAdmin
       .from('profiles')
-      .select('stripe_connect_account_id')
+      .select('stripe_connect_account_id, stripe_connect_onboarded')
       .eq('id', listing.seller_id)
       .single()
 
-    console.log(`Seller profile lookup:`, { sellerId: listing.seller_id, hasAccount: !!sellerProfile?.stripe_connect_account_id })
+    const legacyAccountId = sellerProfile?.stripe_connect_onboarded
+      ? sellerProfile.stripe_connect_account_id
+      : null
+    console.log(`Seller profile lookup:`, { sellerId: listing.seller_id, legacyAccount: legacyAccountId, onboarded: sellerProfile?.stripe_connect_onboarded })
 
     // Verify listing is still active
     if (listing.status !== 'active') {
@@ -136,7 +140,7 @@ serve(async (req) => {
       .eq('user_id', listing.seller_id)
       .single()
 
-    const sellerAccountId = sellerBalance?.stripe_account_id || sellerProfile?.stripe_connect_account_id
+    const sellerAccountId = sellerBalance?.stripe_account_id || legacyAccountId
 
     // Verify seller has a Stripe account (no longer require full onboarding!)
     if (!sellerAccountId) {
@@ -204,26 +208,18 @@ serve(async (req) => {
       { apiVersion: '2023-10-16' }
     )
 
-    // Create PaymentIntent using on_behalf_of
-    // This creates a "direct charge" on the connected account
-    // Funds stay in seller's Stripe balance until they withdraw
-    // Platform fee is collected separately via application_fee_amount
+    // Create PaymentIntent using Separate Charges and Transfers pattern.
+    // We charge the buyer on the platform account (no transfer_data),
+    // then create a Transfer to the seller in the webhook after payment succeeds.
+    // This avoids requiring active `transfers` capability on the seller's
+    // Express account at charge time (capability may still be pending verification).
+    const sellerAmountCents = amount_cents - platformFeeCents
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amount_cents,
       currency,
       customer: customerId,
       automatic_payment_methods: { enabled: true },
-      // Enable saving payment methods for future use
       setup_future_usage: 'off_session',
-      // Use application_fee_amount with on_behalf_of for separate charges
-      application_fee_amount: platformFeeCents,
-      // on_behalf_of creates a direct charge - funds go to seller's Stripe balance
-      // NOT their bank account. They can withdraw when they add bank details.
-      on_behalf_of: sellerAccountId,
-      // Transfer to seller's connected account
-      transfer_data: {
-        destination: sellerAccountId,
-      },
       metadata: {
         resale_listing_id,
         ticket_id: listing.ticket_id,
@@ -233,13 +229,13 @@ serve(async (req) => {
         type: 'resale_purchase',
         event_title: listing.tickets.events?.title,
         platform_fee_cents: platformFeeCents.toString(),
+        seller_amount_cents: sellerAmountCents.toString(),
         seller_account_id: sellerAccountId,
       },
-      // On successful payment, this will:
-      // 1. Charge the buyer
-      // 2. Transfer (amount - platform_fee) to seller's Stripe balance (NOT bank)
-      // 3. Platform keeps the application_fee_amount
-      // 4. Seller can withdraw when they add bank details
+      // Webhook will:
+      // 1. Transfer seller_amount_cents to seller's Stripe account
+      // 2. Platform keeps platform_fee_cents
+      // 3. Seller can withdraw when they add bank details
     })
 
     // Create pending payment record

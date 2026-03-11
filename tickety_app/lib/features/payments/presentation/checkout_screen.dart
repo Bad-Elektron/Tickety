@@ -3,14 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
+import '../../wallet/data/wallet_repository.dart';
+import '../../wallet/models/linked_bank_account.dart';
 import '../models/payment.dart';
 import 'payment_success_screen.dart';
 
 /// Checkout screen for purchasing tickets.
 ///
 /// Supports primary purchase, resale purchase, and vendor POS payments.
-/// When the user has sufficient wallet balance, offers a "Tickety Wallet"
-/// payment option with lower fees (5% platform only, no Stripe processing).
+/// When the user has a linked bank account, offers an "ACH Bank Payment"
+/// option with lower fees (5% platform + 0.8% ACH, no Stripe card processing).
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({
     super.key,
@@ -37,14 +39,16 @@ class CheckoutScreen extends ConsumerStatefulWidget {
   ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
 }
 
-enum _PaymentMethod { wallet, card }
+enum _PaymentMethod { bank, card }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   bool _isInitializing = false;
   bool _isPaymentReady = false;
   bool _isOwnListing = false;
-  bool _isWalletPurchasing = false;
+  bool _isBankPurchasing = false;
   _PaymentMethod _selectedMethod = _PaymentMethod.card;
+  List<LinkedBankAccount> _bankAccounts = [];
+  bool _isBankLoading = true;
 
   @override
   void initState() {
@@ -53,8 +57,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isOwnListing) {
         _initializePayment();
-        // Load wallet balance to check if wallet payment is available
-        ref.read(walletBalanceProvider.notifier).loadBalance();
+        _loadBankAccounts();
       }
     });
   }
@@ -69,17 +72,39 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  /// Whether wallet payment is available for this purchase type.
-  bool get _canUseWallet =>
+  Future<void> _loadBankAccounts() async {
+    try {
+      final repo = WalletRepository();
+      final accounts = await repo.getBankAccounts();
+      if (mounted) {
+        setState(() {
+          _bankAccounts = accounts;
+          _isBankLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isBankLoading = false);
+    }
+  }
+
+  /// Whether bank payment is available for this purchase type.
+  bool get _canUseBank =>
       widget.paymentType == PaymentType.primaryPurchase &&
       widget.event.priceInCents != null &&
       widget.event.priceInCents! > 0;
 
-  /// The total for a wallet purchase (5% platform fee only).
-  WalletFeeBreakdown get _walletFees {
+  /// Whether user has a linked bank account.
+  bool get _hasLinkedBank => _bankAccounts.isNotEmpty;
+
+  /// Get the default bank account.
+  LinkedBankAccount? get _defaultBank =>
+      _bankAccounts.isEmpty ? null : _bankAccounts.first;
+
+  /// The total for a bank (ACH) purchase.
+  ACHPurchaseFeeBreakdown get _bankFees {
     final baseCents = (widget.baseUnitPriceCents ?? widget.event.priceInCents ?? 0) *
         widget.quantity;
-    return WalletFeeCalculator.calculate(baseCents);
+    return ACHPurchaseFeeCalculator.calculate(baseCents);
   }
 
   /// The total for a card purchase (existing fee structure).
@@ -89,8 +114,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     return ServiceFeeCalculator.calculate(baseCents);
   }
 
-  /// The savings when using wallet vs card.
-  int get _walletSavings => _cardFees.totalCents - _walletFees.totalCents;
+  /// The savings when using bank vs card.
+  int get _bankSavings => _cardFees.totalCents - _bankFees.totalCents;
 
   Future<void> _initializePayment() async {
     if (_isOwnListing) return;
@@ -105,6 +130,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         success = await notifier.initializePrimaryPurchase(
           eventId: widget.event.id,
           amountCents: widget.amountCents,
+          currency: ref.read(currencyCodeProvider),
           quantity: widget.quantity,
           metadata: widget.metadata,
         );
@@ -116,6 +142,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         success = await notifier.initializeResalePurchase(
           resaleListingId: widget.resaleListingId!,
           amountCents: widget.amountCents,
+          currency: ref.read(currencyCodeProvider),
         );
       case PaymentType.vendorPos:
         success = await notifier.initializeVendorPOS(
@@ -137,6 +164,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       case PaymentType.subscription:
       case PaymentType.walletPurchase:
       case PaymentType.walletTopUp:
+      case PaymentType.achPurchase:
         success = false;
     }
 
@@ -149,8 +177,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Future<void> _handlePay() async {
-    if (_selectedMethod == _PaymentMethod.wallet) {
-      await _handleWalletPay();
+    if (_selectedMethod == _PaymentMethod.bank) {
+      await _handleBankPay();
     } else {
       await _handleCardPay();
     }
@@ -173,27 +201,44 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
-  Future<void> _handleWalletPay() async {
-    setState(() => _isWalletPurchasing = true);
+  Future<void> _handleBankPay() async {
+    final bank = _defaultBank;
+    if (bank == null) return;
 
-    final walletNotifier = ref.read(walletBalanceProvider.notifier);
-    final result = await walletNotifier.purchaseFromWallet(
-      eventId: widget.event.id,
-      quantity: widget.quantity,
-    );
+    setState(() => _isBankPurchasing = true);
 
-    if (result != null && mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (_) => PaymentSuccessScreen(
-            event: widget.event,
-            amountCents: _walletFees.totalCents,
-            quantity: widget.quantity,
-          ),
-        ),
+    try {
+      final repo = WalletRepository();
+      await repo.purchaseWithBank(
+        eventId: widget.event.id,
+        quantity: widget.quantity,
+        paymentMethodId: bank.stripePaymentMethodId,
+        amountCents: _bankFees.totalCents,
       );
-    } else if (mounted) {
-      setState(() => _isWalletPurchasing = false);
+
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => PaymentSuccessScreen(
+              event: widget.event,
+              amountCents: _bankFees.totalCents,
+              quantity: widget.quantity,
+              isACH: true,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isBankPurchasing = false);
     }
   }
 
@@ -202,18 +247,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final paymentState = ref.watch(paymentProcessProvider);
-    final walletState = ref.watch(walletBalanceProvider);
 
-    final walletAvailable = walletState.availableCents;
-    final walletHasFunds = _canUseWallet && walletAvailable >= _walletFees.totalCents;
+    final bankAvailable = _canUseBank && _hasLinkedBank && !_isBankLoading;
 
-    // Auto-select wallet if it has enough funds
-    if (walletHasFunds && _selectedMethod == _PaymentMethod.card && !_isInitializing) {
-      // Don't auto-switch during init, let user see both options
-    }
-
-    final isWalletSelected = _selectedMethod == _PaymentMethod.wallet;
-    final displayTotal = isWalletSelected ? _walletFees.totalCents : widget.amountCents;
+    final isBankSelected = _selectedMethod == _PaymentMethod.bank;
+    final displayTotal = isBankSelected ? _bankFees.totalCents : widget.amountCents;
 
     return Scaffold(
       appBar: AppBar(
@@ -242,8 +280,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Payment method selector (only for primary purchases with wallet funds)
-                    if (_canUseWallet && walletHasFunds) ...[
+                    // Payment method selector (only for primary purchases with linked bank)
+                    if (bankAvailable) ...[
                       Text(
                         'Payment Method',
                         style: theme.textTheme.titleMedium?.copyWith(
@@ -253,8 +291,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       const SizedBox(height: 12),
                       _PaymentMethodSelector(
                         selectedMethod: _selectedMethod,
-                        walletBalance: walletState.balance?.formattedAvailable ?? '\$0.00',
-                        savings: _walletSavings,
+                        bankName: _defaultBank?.displayName ?? 'Bank Account',
+                        savings: _bankSavings,
                         onSelect: (method) =>
                             setState(() => _selectedMethod = method),
                       ),
@@ -270,13 +308,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    if (isWalletSelected)
-                      _WalletOrderSummaryCard(
+                    if (isBankSelected)
+                      _BankOrderSummaryCard(
                         quantity: widget.quantity,
                         unitPriceCents: widget.baseUnitPriceCents ??
                             widget.event.priceInCents ??
                             0,
-                        walletFees: _walletFees,
+                        bankFees: _bankFees,
                         cardTotal: _cardFees.totalCents,
                       )
                     else
@@ -291,7 +329,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     const SizedBox(height: 24),
 
                     // Payment method info (only show for card)
-                    if (!isWalletSelected)
+                    if (!isBankSelected)
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -349,19 +387,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       ),
 
                     // Error messages
-                    if (paymentState.hasError && !isWalletSelected) ...[
+                    if (paymentState.hasError && !isBankSelected) ...[
                       const SizedBox(height: 16),
                       _ErrorBanner(
                         message: paymentState.error!,
                         onRetry: _initializePayment,
-                      ),
-                    ],
-                    if (walletState.hasError && isWalletSelected) ...[
-                      const SizedBox(height: 16),
-                      _ErrorBanner(
-                        message: walletState.error!,
-                        onRetry: () =>
-                            ref.read(walletBalanceProvider.notifier).refresh(),
                       ),
                     ],
                   ],
@@ -451,7 +481,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       width: double.infinity,
                       child: FilledButton(
                         onPressed: _getPayButtonHandler(
-                            isWalletSelected, paymentState),
+                            isBankSelected, paymentState),
                         style: FilledButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -460,7 +490,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                         child: _isInitializing ||
                                 paymentState.isLoading ||
-                                _isWalletPurchasing
+                                _isBankPurchasing
                             ? SizedBox(
                                 width: 20,
                                 height: 20,
@@ -470,8 +500,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                 ),
                               )
                             : Text(
-                                isWalletSelected
-                                    ? 'Pay from Wallet ${_formatAmount(displayTotal)}'
+                                isBankSelected
+                                    ? 'Pay with Bank ${_formatAmount(displayTotal)}'
                                     : 'Pay ${_formatAmount(displayTotal)}',
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.bold,
@@ -485,16 +515,16 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          isWalletSelected
-                              ? Icons.bolt
+                          isBankSelected
+                              ? Icons.account_balance
                               : Icons.lock_outline,
                           size: 14,
                           color: colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          isWalletSelected
-                              ? 'Instant from wallet balance'
+                          isBankSelected
+                              ? 'ACH bank transfer \u2022 Settles in 4-5 days'
                               : 'Secured by Stripe',
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
@@ -513,9 +543,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   VoidCallback? _getPayButtonHandler(
-      bool isWallet, PaymentProcessState paymentState) {
-    if (isWallet) {
-      return _isWalletPurchasing ? null : _handlePay;
+      bool isBank, PaymentProcessState paymentState) {
+    if (isBank) {
+      return _isBankPurchasing ? null : _handlePay;
     }
     return (_isInitializing || paymentState.isLoading || !_isPaymentReady)
         ? null
@@ -534,13 +564,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
 class _PaymentMethodSelector extends StatelessWidget {
   final _PaymentMethod selectedMethod;
-  final String walletBalance;
+  final String bankName;
   final int savings;
   final void Function(_PaymentMethod) onSelect;
 
   const _PaymentMethodSelector({
     required this.selectedMethod,
-    required this.walletBalance,
+    required this.bankName,
     required this.savings,
     required this.onSelect,
   });
@@ -551,13 +581,13 @@ class _PaymentMethodSelector extends StatelessWidget {
 
     return Column(
       children: [
-        // Wallet option
+        // Bank option
         _MethodTile(
-          icon: Icons.account_balance_wallet,
-          title: 'Tickety Wallet',
-          subtitle: 'Balance: $walletBalance',
-          isSelected: selectedMethod == _PaymentMethod.wallet,
-          onTap: () => onSelect(_PaymentMethod.wallet),
+          icon: Icons.account_balance,
+          title: 'Bank Transfer',
+          subtitle: bankName,
+          isSelected: selectedMethod == _PaymentMethod.bank,
+          onTap: () => onSelect(_PaymentMethod.bank),
           trailing: savings > 0
               ? Container(
                   padding:
@@ -691,19 +721,19 @@ class _MethodTile extends StatelessWidget {
 }
 
 // ============================================================
-// WALLET ORDER SUMMARY (5% platform fee only)
+// BANK ORDER SUMMARY (5% platform + 0.8% ACH fee)
 // ============================================================
 
-class _WalletOrderSummaryCard extends StatelessWidget {
+class _BankOrderSummaryCard extends StatelessWidget {
   final int quantity;
   final int unitPriceCents;
-  final WalletFeeBreakdown walletFees;
+  final ACHPurchaseFeeBreakdown bankFees;
   final int cardTotal;
 
-  const _WalletOrderSummaryCard({
+  const _BankOrderSummaryCard({
     required this.quantity,
     required this.unitPriceCents,
-    required this.walletFees,
+    required this.bankFees,
     required this.cardTotal,
   });
 
@@ -711,7 +741,7 @@ class _WalletOrderSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final savings = cardTotal - walletFees.totalCents;
+    final savings = cardTotal - bankFees.totalCents;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -723,12 +753,18 @@ class _WalletOrderSummaryCard extends StatelessWidget {
         children: [
           _SummaryRow(
             label: 'Ticket ${quantity > 1 ? "x$quantity" : ""}',
-            amount: _formatAmount(walletFees.baseCents),
+            amount: _formatAmount(bankFees.baseCents),
           ),
           const SizedBox(height: 8),
           _SummaryRow(
             label: 'Platform fee (5%)',
-            amount: _formatAmount(walletFees.platformFeeCents),
+            amount: _formatAmount(bankFees.platformFeeCents),
+            isSubtle: true,
+          ),
+          const SizedBox(height: 4),
+          _SummaryRow(
+            label: 'ACH processing (0.8%)',
+            amount: _formatAmount(bankFees.achFeeCents),
             isSubtle: true,
           ),
           const SizedBox(height: 12),
@@ -736,7 +772,7 @@ class _WalletOrderSummaryCard extends StatelessWidget {
           const SizedBox(height: 12),
           _SummaryRow(
             label: 'Total',
-            amount: _formatAmount(walletFees.totalCents),
+            amount: _formatAmount(bankFees.totalCents),
             isBold: true,
           ),
           if (savings > 0) ...[

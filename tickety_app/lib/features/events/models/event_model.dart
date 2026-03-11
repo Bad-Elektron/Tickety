@@ -106,6 +106,12 @@ class EventModel {
   /// Unique 8-char invite code for private events (generated server-side).
   final String? inviteCode;
 
+  /// Whether NFT ticket minting is enabled for this event.
+  final bool nftEnabled;
+
+  /// Cardano policy ID for this event's NFT tickets.
+  final String? nftPolicyId;
+
   /// When this event was created in the database.
   final DateTime? createdAt;
 
@@ -128,7 +134,7 @@ class EventModel {
     this.currency = 'USD',
     this.hideLocation = false,
     this.maxTickets,
-    this.cashSalesEnabled = false,
+    this.cashSalesEnabled = true,
     this.organizerName,
     this.organizerHandle,
     this.organizerVerified = false,
@@ -139,6 +145,8 @@ class EventModel {
     this.formattedAddress,
     this.isPrivate = false,
     this.inviteCode,
+    this.nftEnabled = false,
+    this.nftPolicyId,
     this.createdAt,
   });
 
@@ -267,6 +275,8 @@ class EventModel {
     String? formattedAddress,
     bool? isPrivate,
     String? inviteCode,
+    bool? nftEnabled,
+    String? nftPolicyId,
     DateTime? createdAt,
   }) {
     return EventModel(
@@ -299,6 +309,8 @@ class EventModel {
       formattedAddress: formattedAddress ?? this.formattedAddress,
       isPrivate: isPrivate ?? this.isPrivate,
       inviteCode: inviteCode ?? this.inviteCode,
+      nftEnabled: nftEnabled ?? this.nftEnabled,
+      nftPolicyId: nftPolicyId ?? this.nftPolicyId,
       createdAt: createdAt ?? this.createdAt,
     );
   }

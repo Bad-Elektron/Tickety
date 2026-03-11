@@ -135,6 +135,54 @@ class BlockfrostService {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  /// GET `/addresses/{address}/assets` → native assets at this address.
+  Future<List<Map<String, dynamic>>> getAddressAssets(String address) async {
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/addresses/$address/assets'),
+      headers: _headers,
+    );
+    if (response.statusCode == 404) return [];
+    if (response.statusCode != 200) {
+      throw BlockfrostException(response.statusCode, response.body);
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list.cast<Map<String, dynamic>>();
+  }
+
+  /// GET `/assets/{asset}` → asset info (policy, name, metadata, mint tx).
+  Future<Map<String, dynamic>?> getAssetInfo(String unit) async {
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/assets/$unit'),
+      headers: _headers,
+    );
+    if (response.statusCode == 404) return null;
+    if (response.statusCode != 200) {
+      throw BlockfrostException(response.statusCode, response.body);
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  /// GET `/assets/{asset}/transactions` → transaction list for this asset.
+  Future<List<Map<String, dynamic>>> getAssetTransactions(
+    String unit, {
+    int page = 1,
+    int count = 20,
+  }) async {
+    final response = await _client.get(
+      Uri.parse(
+        '$_baseUrl/assets/$unit/transactions'
+        '?page=$page&count=$count&order=desc',
+      ),
+      headers: _headers,
+    );
+    if (response.statusCode == 404) return [];
+    if (response.statusCode != 200) {
+      throw BlockfrostException(response.statusCode, response.body);
+    }
+    final list = jsonDecode(response.body) as List<dynamic>;
+    return list.cast<Map<String, dynamic>>();
+  }
+
   void dispose() {
     _client.close();
   }

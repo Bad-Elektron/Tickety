@@ -10,8 +10,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// [flutter_secure_storage] as local cache, and [Supabase] `user_wallets`
 /// table for cross-device sync. Private keys are derived client-side only.
 class CardanoWalletService {
-  static const _mnemonicKey = 'cardano_mnemonic';
-  static const _addressCacheKey = 'cardano_address_cache';
+  // Storage keys are scoped by user ID to prevent cross-user wallet leaks
+  static const _mnemonicKeyPrefix = 'cardano_mnemonic_';
+  static const _addressCacheKeyPrefix = 'cardano_address_cache_';
+  // Legacy keys (pre-fix) — checked once for migration, then deleted
+  static const _legacyMnemonicKey = 'cardano_mnemonic';
+  static const _legacyAddressCacheKey = 'cardano_address_cache';
 
   final FlutterSecureStorage _storage;
   String? _cachedAddress;
@@ -19,28 +23,40 @@ class CardanoWalletService {
   CardanoWalletService({FlutterSecureStorage? storage})
       : _storage = storage ?? const FlutterSecureStorage();
 
+  String get _userId {
+    final id = Supabase.instance.client.auth.currentUser?.id;
+    if (id == null) throw StateError('No authenticated user');
+    return id;
+  }
+
+  String get _mnemonicKey => '$_mnemonicKeyPrefix$_userId';
+  String get _addressCacheKey => '$_addressCacheKeyPrefix$_userId';
+
   /// Ensure a wallet exists. Creates one if needed.
   ///
   /// Resolution order:
-  /// 1. Local secure storage (fast path)
-  /// 2. Supabase `user_wallets` table (cross-device restore)
-  /// 3. Generate new wallet (first time)
+  /// 1. Local secure storage (scoped by user ID)
+  /// 2. Migrate from legacy unscoped key (one-time)
+  /// 3. Supabase `user_wallets` table (cross-device restore)
+  /// 4. Generate new wallet (first time)
   ///
   /// Returns the bech32 payment address.
   Future<String> ensureWallet() async {
-    // 1. Check local cache
+    // 1. Check user-scoped local cache
     final localMnemonic = await _storage.read(key: _mnemonicKey);
     if (localMnemonic != null && localMnemonic.isNotEmpty) {
       return getAddress();
     }
 
-    // 2. Check Supabase
+    // 2. Check Supabase (authoritative per-user data)
     final remote = await _fetchFromSupabase();
     if (remote != null) {
-      // Cache locally
+      // Cache locally under user-scoped key
       await _storage.write(key: _mnemonicKey, value: remote.mnemonic);
       await _storage.write(key: _addressCacheKey, value: remote.address);
       _cachedAddress = remote.address;
+      // Clean up legacy keys if they exist
+      await _cleanupLegacyKeys();
       return remote.address;
     }
 
@@ -48,7 +64,7 @@ class CardanoWalletService {
     final mnemonic = bip39.generateMnemonic(strength: 256);
     final address = await _deriveAddress(mnemonic.split(' '));
 
-    // Store locally
+    // Store locally under user-scoped key
     await _storage.write(key: _mnemonicKey, value: mnemonic);
     await _storage.write(key: _addressCacheKey, value: address);
     _cachedAddress = address;
@@ -56,10 +72,13 @@ class CardanoWalletService {
     // Sync to Supabase
     await _syncToSupabase(mnemonic, address);
 
+    // Clean up legacy keys
+    await _cleanupLegacyKeys();
+
     return address;
   }
 
-  /// Whether a wallet exists locally.
+  /// Whether a wallet exists locally for the current user.
   Future<bool> hasWallet() async {
     final mnemonic = await _storage.read(key: _mnemonicKey);
     return mnemonic != null && mnemonic.isNotEmpty;
@@ -115,11 +134,24 @@ class CardanoWalletService {
     return signedTx.serializeHexString();
   }
 
-  /// Delete the wallet from secure storage.
+  /// Delete the wallet from secure storage for the current user.
   Future<void> deleteWallet() async {
     await _storage.delete(key: _mnemonicKey);
     await _storage.delete(key: _addressCacheKey);
     _cachedAddress = null;
+  }
+
+  /// Clear in-memory cache (call on logout so next user gets fresh state).
+  void clearCache() {
+    _cachedAddress = null;
+  }
+
+  /// Remove legacy unscoped storage keys from before the per-user fix.
+  Future<void> _cleanupLegacyKeys() async {
+    try {
+      await _storage.delete(key: _legacyMnemonicKey);
+      await _storage.delete(key: _legacyAddressCacheKey);
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------

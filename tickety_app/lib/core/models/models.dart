@@ -4,3 +4,4 @@
 library;
 
 export 'paginated_result.dart';
+export 'verification_result.dart';

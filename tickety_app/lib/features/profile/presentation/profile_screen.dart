@@ -1,9 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
-import '../../../core/debug/debug.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
@@ -52,6 +50,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     // Watch auth state - auto rebuilds when auth changes
     final authState = ref.watch(authProvider);
 
+    final isSignedIn = authState.isAuthenticated;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profile'),
@@ -65,118 +65,118 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               authState: authState,
               tier: _appState.tier,
             ),
-            const ProfileSectionHeader(title: 'Account'),
-            ProfileMenuCard(
-              children: [
-                ProfileMenuItem(
-                  icon: Icons.verified_user_outlined,
-                  title: 'Identity Verification',
-                  subtitle: 'Verify to create large events',
-                  trailing: authState.isAuthenticated
-                      ? const _VerificationStatusIndicator()
-                      : null,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const VerificationScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.settings_outlined,
-                  title: 'Settings',
-                  subtitle: 'App preferences',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const SettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.notifications_outlined,
-                  title: 'Notifications',
-                  subtitle: 'Manage alerts',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationSettingsScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.lock_outline,
-                  title: 'Privacy',
-                  subtitle: 'Data and permissions',
-                ),
-                ProfileMenuItem(
-                  icon: Icons.card_giftcard_outlined,
-                  title: 'Referral',
-                  subtitle: 'Share and earn',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ReferralScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.analytics_outlined,
-                  title: 'Market Analytics',
-                  subtitle: _appState.tier == AccountTier.enterprise
-                      ? 'Platform trends & insights'
-                      : 'Enterprise plan required',
-                  onTap: () {
-                    if (_appState.tier == AccountTier.enterprise) {
+            if (isSignedIn) ...[
+              const ProfileSectionHeader(title: 'Account'),
+              ProfileMenuCard(
+                children: [
+                  ProfileMenuItem(
+                    icon: Icons.verified_user_outlined,
+                    title: 'Identity Verification',
+                    subtitle: 'Verify to create large events',
+                    trailing: const _VerificationStatusIndicator(),
+                    onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => const AnalyticsDashboardScreen(),
+                          builder: (_) => const VerificationScreen(),
                         ),
                       );
-                    } else {
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.settings_outlined,
+                    title: 'Settings',
+                    subtitle: 'App preferences',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.notifications_outlined,
+                    title: 'Notifications',
+                    subtitle: 'Manage alerts',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationSettingsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.lock_outline,
+                    title: 'Privacy',
+                    subtitle: 'Data and permissions',
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.card_giftcard_outlined,
+                    title: 'Referral',
+                    subtitle: 'Share and earn',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ReferralScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.analytics_outlined,
+                    title: 'Market Analytics',
+                    subtitle: _appState.tier == AccountTier.enterprise
+                        ? 'Platform trends & insights'
+                        : 'Enterprise plan required',
+                    onTap: () {
+                      if (_appState.tier == AccountTier.enterprise) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const AnalyticsDashboardScreen(),
+                          ),
+                        );
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SubscriptionScreen(),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const ProfileSectionHeader(title: 'Payments'),
+              ProfileMenuCard(
+                children: [
+                  ProfileMenuItem(
+                    icon: _appState.tier.icon,
+                    title: 'Manage Subscription',
+                    subtitle: '${_appState.tier.label} Plan',
+                    onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const SubscriptionScreen(),
                         ),
                       );
-                    }
-                  },
-                ),
-              ],
-            ),
-            const ProfileSectionHeader(title: 'Payments'),
-            ProfileMenuCard(
-              children: [
-                ProfileMenuItem(
-                  icon: _appState.tier.icon,
-                  title: 'Manage Subscription',
-                  subtitle: '${_appState.tier.label} Plan',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const SubscriptionScreen(),
-                      ),
-                    );
-                  },
-                ),
-                ProfileMenuItem(
-                  icon: Icons.history_outlined,
-                  title: 'Transactions',
-                  subtitle: 'Purchases and receipts',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const TransactionsScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.history_outlined,
+                    title: 'Transactions',
+                    subtitle: 'Purchases and receipts',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const TransactionsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
             const ProfileSectionHeader(title: 'Support'),
             ProfileMenuCard(
               children: [
@@ -185,17 +185,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   title: 'Help Center',
                   subtitle: 'FAQs and guides',
                 ),
-                ProfileMenuItem(
-                  icon: Icons.chat_bubble_outline,
-                  title: 'Contact Us',
-                  subtitle: 'Get in touch',
-                ),
+                if (isSignedIn)
+                  ProfileMenuItem(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'Contact Us',
+                    subtitle: 'Get in touch',
+                  ),
               ],
             ),
-            if (kDebugMode) ...[
-              const ProfileSectionHeader(title: 'Developer'),
-              _DeveloperSection(appState: _appState),
-            ],
             const SizedBox(height: 32),
             _LogoutButton(authState: authState),
             const SizedBox(height: 40),
@@ -402,134 +399,6 @@ class _ProfileHeader extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-}
-
-class _DeveloperSection extends StatelessWidget {
-  const _DeveloperSection({required this.appState});
-
-  final AppState appState;
-
-  @override
-  Widget build(BuildContext context) {
-    // Only show in debug builds
-    if (!kDebugMode) {
-      return const SizedBox.shrink();
-    }
-
-    final theme = Theme.of(context);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Card(
-        elevation: 0,
-        color: Colors.orange.withValues(alpha: 0.1),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Colors.orange.withValues(alpha: 0.3),
-          ),
-        ),
-        child: InkWell(
-          onTap: () => DebugMenu.show(context),
-          borderRadius: BorderRadius.circular(16),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.bug_report,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Debug Menu',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'FPS overlay, test screens, dev tools',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // Quick status indicators
-                      Row(
-                        children: [
-                          _StatusChip(
-                            label: 'FPS ${appState.debugMode ? "ON" : "OFF"}',
-                            isActive: appState.debugMode,
-                          ),
-                          const SizedBox(width: 8),
-                          _StatusChip(
-                            label: appState.tier.label,
-                            isActive: appState.tier != AccountTier.base,
-                            color: Color(appState.tier.color),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.label,
-    required this.isActive,
-    this.color,
-  });
-
-  final String label;
-  final bool isActive;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final chipColor = color ?? (isActive ? Colors.green : Colors.grey);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: chipColor.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: chipColor,
-        ),
       ),
     );
   }

@@ -30,6 +30,18 @@ serve(async (req) => {
 
     console.log('Analytics cache refreshed successfully')
 
+    // Chain: refresh engagement cache (runs after main analytics)
+    try {
+      const { error: engErr } = await supabase.rpc('refresh_engagement_cache')
+      if (engErr) {
+        console.error('Failed to refresh engagement cache:', engErr)
+      } else {
+        console.log('Engagement cache refreshed successfully')
+      }
+    } catch (err) {
+      console.error('Error refreshing engagement cache:', err)
+    }
+
     // Fire-and-forget: chain-call market analytics refresh
     try {
       const marketUrl = `${supabaseUrl}/functions/v1/refresh-market-analytics`
@@ -46,6 +58,24 @@ serve(async (req) => {
       })
     } catch (err) {
       console.error('Error triggering market analytics refresh:', err)
+    }
+
+    // Fire-and-forget: process any queued NFT burns (enqueued by daily pg_cron)
+    try {
+      fetch(`${supabaseUrl}/functions/v1/burn-expired-nfts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ enqueue: true }),
+      }).then((res) => {
+        console.log(`NFT burn processing triggered: ${res.status}`)
+      }).catch((err) => {
+        console.error('Failed to trigger NFT burn processing:', err)
+      })
+    } catch (err) {
+      console.error('Error triggering NFT burn processing:', err)
     }
 
     return new Response(

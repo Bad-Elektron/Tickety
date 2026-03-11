@@ -195,6 +195,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Wallet Purchase';
       case PaymentType.walletTopUp:
         return 'Wallet Top-Up';
+      case PaymentType.achPurchase:
+        return 'Bank Purchase';
     }
   }
 
@@ -214,6 +216,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.account_balance_wallet;
       case PaymentType.walletTopUp:
         return Icons.add_circle;
+      case PaymentType.achPurchase:
+        return Icons.account_balance;
     }
   }
 

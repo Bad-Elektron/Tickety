@@ -26,16 +26,26 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
   bool _agreedToTerms = false;
   bool _isSellerOnboarded = false;
   bool _isCheckingOnboarding = true;
+  bool _isCancelling = false;
+
+  /// Whether the ticket is already listed when we opened this screen.
+  bool get _isAlreadyListed => widget.ticket.isListedForSale;
 
   @override
   void initState() {
     super.initState();
-    // Pre-fill with original price as suggestion
-    if (widget.ticket.pricePaidCents > 0) {
-      final dollars = widget.ticket.pricePaidCents / 100;
-      _priceController.text = dollars.toStringAsFixed(2);
+    if (_isAlreadyListed) {
+      // Already listed — no need to check onboarding
+      _isCheckingOnboarding = false;
+      _isSellerOnboarded = true;
+    } else {
+      // Pre-fill with original price as suggestion
+      if (widget.ticket.pricePaidCents > 0) {
+        final dollars = widget.ticket.pricePaidCents / 100;
+        _priceController.text = dollars.toStringAsFixed(2);
+      }
+      _checkOnboardingStatus();
     }
-    _checkOnboardingStatus();
   }
 
   @override
@@ -142,6 +152,212 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
     }
   }
 
+  Widget _buildManageView(ThemeData theme, ColorScheme colorScheme) {
+    final listingPrice = widget.ticket.formattedListingPrice ?? 'Price TBD';
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Manage Listing'),
+        centerTitle: true,
+      ),
+      body: Column(
+        children: [
+          _TicketPreviewHeader(ticket: widget.ticket),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  // Active listing info
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Colors.orange.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(
+                          Icons.storefront_rounded,
+                          size: 48,
+                          color: Colors.orange.shade600,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Listed for Sale',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          listingPrice,
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Your ticket is visible on the marketplace',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Fee reminder
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20, color: colorScheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'When sold, you\'ll receive 95% of the sale price',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Cancel listing button
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _isCancelling ? null : _cancelListing,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      icon: _isCancelling
+                          ? const SizedBox(
+                              width: 20, height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.cancel_outlined),
+                      label: Text(
+                        _isCancelling ? 'Cancelling...' : 'Cancel Listing',
+                        style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Go back button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text('Go Back'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelListing() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Cancel Listing'),
+        content: const Text(
+          'Are you sure you want to remove this ticket from the marketplace?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep Listed'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Cancel Listing'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+
+    try {
+      final repository = ref.read(resaleRepositoryProvider);
+      // Find the active listing for this ticket
+      final listings = await repository.getEventListings(
+        widget.ticket.eventId,
+        page: 0,
+        pageSize: 100,
+      );
+      final myListing = listings.items.where(
+        (l) => l.ticketId == widget.ticket.id,
+      );
+      if (myListing.isNotEmpty) {
+        await repository.cancelListing(myListing.first.id);
+      }
+
+      HapticFeedback.mediumImpact();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white),
+                SizedBox(width: 12),
+                Text('Listing cancelled'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        );
+        Navigator.of(context).pop(true);
+      }
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      _showError(appError.userMessage);
+    } finally {
+      if (mounted) setState(() => _isCancelling = false);
+    }
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -158,6 +374,10 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    if (_isAlreadyListed) {
+      return _buildManageView(theme, colorScheme);
+    }
 
     return Scaffold(
       appBar: AppBar(

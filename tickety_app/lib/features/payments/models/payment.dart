@@ -30,7 +30,8 @@ enum PaymentType {
   subscription('subscription'),
   favorTicketPurchase('favor_ticket_purchase'),
   walletPurchase('wallet_purchase'),
-  walletTopUp('wallet_top_up');
+  walletTopUp('wallet_top_up'),
+  achPurchase('ach_purchase');
 
   final String value;
   const PaymentType(this.value);
@@ -217,7 +218,7 @@ class ServiceFeeCalculator {
   static const double _platformFeeRate = 0.05;
   static const double _stripeFeeRate = 0.029;
   static const int _stripeFeeFixedCents = 30;
-  static const int _mintFeeCents = 0;
+  static const int _mintFeeCents = 25;
 
   static FeeBreakdown calculate(int baseCents) {
     if (baseCents <= 0) {
@@ -346,6 +347,45 @@ class ACHFeeCalculator {
 
   static bool isValidAmount(int cents) =>
       cents >= minTopUpCents && cents <= maxTopUpCents;
+}
+
+/// Fee breakdown for a direct ACH ticket purchase.
+typedef ACHPurchaseFeeBreakdown = ({
+  int baseCents,
+  int platformFeeCents,
+  int achFeeCents,
+  int totalCents,
+});
+
+/// Calculates fees for direct ACH ticket purchases.
+///
+/// 5% platform fee + 0.8% ACH fee (capped at $5).
+/// Must match server-side create-ach-payment-intent exactly.
+class ACHPurchaseFeeCalculator {
+  ACHPurchaseFeeCalculator._();
+
+  static const double _platformFeeRate = 0.05;
+  static const double _achFeeRate = 0.008;
+  static const int _achFeeCapCents = 500;
+
+  static ACHPurchaseFeeBreakdown calculate(int baseCents) {
+    if (baseCents <= 0) {
+      return (baseCents: 0, platformFeeCents: 0, achFeeCents: 0, totalCents: 0);
+    }
+
+    final platformFeeCents = (baseCents * _platformFeeRate).ceil();
+    final subtotal = baseCents + platformFeeCents;
+    final achFeeCents =
+        (subtotal * _achFeeRate).ceil().clamp(0, _achFeeCapCents);
+    final totalCents = subtotal + achFeeCents;
+
+    return (
+      baseCents: baseCents,
+      platformFeeCents: platformFeeCents,
+      achFeeCents: achFeeCents,
+      totalCents: totalCents,
+    );
+  }
 }
 
 /// Response from creating a payment intent.

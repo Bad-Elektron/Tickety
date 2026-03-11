@@ -33,6 +33,10 @@ export interface Event {
   hide_location: boolean;
   max_tickets: number | null;
   cash_sales_enabled: boolean;
+  status: "active" | "pending_review" | "suspended" | null;
+  status_reason: string | null;
+  nft_enabled: boolean;
+  nft_policy_id: string | null;
   deleted_at: string | null;
   // Joined fields
   organizer?: Profile;

@@ -748,23 +748,26 @@ class _InfoChip extends StatelessWidget {
 }
 
 /// Individual ticket item in the expanded list.
-class _TicketListItem extends StatelessWidget {
+class _TicketListItem extends ConsumerWidget {
   const _TicketListItem({required this.ticket});
 
   final Ticket ticket;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return InkWell(
-      onTap: () {
-        Navigator.of(context).push(
+      onTap: () async {
+        final result = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
             builder: (_) => TicketScreen(ticket: ticket),
           ),
         );
+        if (result == true) {
+          ref.read(myTicketsProvider.notifier).refresh();
+        }
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

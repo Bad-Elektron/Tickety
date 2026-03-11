@@ -18,19 +18,43 @@ class CardanoBalance {
   /// Balance in ADA (decimal).
   double get ada => lovelace / 1000000;
 
-  /// Formatted ADA string (e.g. "125.50 ADA").
-  String get formattedAda {
-    final value = ada;
-    // Show up to 6 decimal places, trimming trailing zeros
+  /// Number of NFTs (quantity-1 native assets) held.
+  int get nftCount => assets.where((a) => a.quantity == 1).length;
+
+  /// Estimated lovelace locked as min UTXO with NFTs (~1.5 ADA each).
+  /// This ADA cannot be spent without also moving the NFT.
+  int get lockedLovelace => nftCount * 1500000;
+
+  /// Lovelace available to spend freely (not locked with NFTs).
+  int get availableLovelace => (lovelace - lockedLovelace).clamp(0, lovelace);
+
+  /// Available ADA (not locked with NFTs).
+  double get availableAda => availableLovelace / 1000000;
+
+  /// Locked ADA (held with NFTs).
+  double get lockedAda => lockedLovelace / 1000000;
+
+  /// Formatted total ADA string (e.g. "9 ADA").
+  String get formattedAda => _formatAda(ada);
+
+  /// Formatted available ADA string (e.g. "0 ADA").
+  String get formattedAvailableAda => _formatAda(availableAda);
+
+  /// Formatted locked ADA string (e.g. "9 ADA").
+  String get formattedLockedAda => _formatAda(lockedAda);
+
+  static String _formatAda(double value) {
     if (value == value.truncateToDouble()) {
       return '${value.toStringAsFixed(0)} ADA';
     }
-    // Show 2 decimal places for readability
     return '${value.toStringAsFixed(2)} ADA';
   }
 
   /// Whether the wallet has any ADA.
   bool get hasFunds => lovelace > 0;
+
+  /// Whether the wallet has ADA available to spend (not locked with NFTs).
+  bool get hasAvailableFunds => availableLovelace > 0;
 
   /// Parse from Blockfrost `/addresses/{address}` response.
   factory CardanoBalance.fromBlockfrost(Map<String, dynamic> json) {

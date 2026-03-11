@@ -170,6 +170,13 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     return
   }
 
+  // Handle ACH direct purchase settlement — tickets already created, just mark completed
+  if (type === 'ach_purchase') {
+    console.log(`ACH purchase settled: ${paymentIntent.id} for event ${event_id}`)
+    // Payment already updated to 'completed' above. Tickets already exist. Nothing else needed.
+    return
+  }
+
   // Skip ticket creation for test events (non-UUID event IDs)
   const isTestEvent = event_id?.startsWith('test-')
   if (isTestEvent) {
@@ -238,9 +245,172 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     }
 
     console.log(`Created ${ticketIds.length} tickets for payment ${paymentIntent.id}`)
+
+    // Enqueue NFT minting (fire-and-forget, never blocks ticket delivery)
+    if (ticketIds.length > 0 && event_id) {
+      enqueueNftMints(event_id, user_id, ticketIds).catch(err =>
+        console.error('enqueueNftMints failed (non-blocking):', err.message)
+      )
+    }
   }
 
-  // For resale purchases, transfer ticket ownership is handled by create-resale-intent
+  // For resale purchases: transfer ticket ownership + mark listing sold + enqueue NFT transfer
+  if (type === 'resale_purchase') {
+    const resaleListingId = paymentIntent.metadata.resale_listing_id
+    const ticketId = paymentIntent.metadata.ticket_id
+    const buyerId = paymentIntent.metadata.buyer_id
+    const sellerId = paymentIntent.metadata.seller_id
+
+    if (!resaleListingId || !ticketId || !buyerId) {
+      console.error('Missing resale metadata:', { resaleListingId, ticketId, buyerId })
+      return
+    }
+
+    // Get buyer info
+    const { data: buyerProfile } = await supabase
+      .from('profiles')
+      .select('email, display_name')
+      .eq('id', buyerId)
+      .single()
+
+    const { data: buyerAuth } = await supabase.auth.admin.getUserById(buyerId)
+    const buyerEmail = buyerProfile?.email || buyerAuth?.user?.email || null
+    const buyerName = buyerProfile?.display_name || null
+
+    // Transfer ticket ownership
+    const { error: ticketError } = await supabase
+      .from('tickets')
+      .update({
+        sold_by: buyerId,
+        owner_email: buyerEmail,
+        owner_name: buyerName,
+        listing_status: 'none',
+        listing_price_cents: null,
+      })
+      .eq('id', ticketId)
+
+    if (ticketError) {
+      console.error('Failed to transfer ticket ownership:', ticketError)
+    } else {
+      console.log(`Ticket ${ticketId} ownership transferred from ${sellerId} to ${buyerId}`)
+    }
+
+    // Mark listing as sold
+    const { error: listingError } = await supabase
+      .from('resale_listings')
+      .update({ status: 'sold' })
+      .eq('id', resaleListingId)
+
+    if (listingError) {
+      console.error('Failed to mark listing as sold:', listingError)
+    }
+
+    // Transfer funds to seller's Stripe account (Separate Charges and Transfers pattern)
+    // The charge was made on the platform account, now we transfer the seller's portion.
+    //
+    // Currency handling: The platform settles in EUR. When a USD charge is made,
+    // Stripe converts to EUR for the platform's balance. source_transaction Transfers
+    // must use the balance transaction's currency (EUR), not the charge currency (USD).
+    // We read the balance transaction to get the correct settlement currency and amount,
+    // then calculate the seller's share proportionally.
+    const sellerAccountId = paymentIntent.metadata.seller_account_id
+    const sellerAmountCents = parseInt(paymentIntent.metadata.seller_amount_cents || '0')
+
+    if (sellerAccountId && sellerAmountCents > 0) {
+      const chargeId = paymentIntent.latest_charge as string
+      let transferSuccess = false
+
+      if (chargeId) {
+        try {
+          // Retrieve the charge's balance transaction to get settlement currency/amount
+          const charge = await stripe.charges.retrieve(chargeId, { expand: ['balance_transaction'] })
+          const balanceTx = charge.balance_transaction as Stripe.BalanceTransaction | null
+
+          if (balanceTx && typeof balanceTx === 'object') {
+            const settlementCurrency = balanceTx.currency // e.g. 'eur'
+            const settlementAmount = balanceTx.amount      // gross amount in settlement currency
+            const stripeFee = balanceTx.fee                // Stripe's processing fee
+            const netSettlement = settlementAmount - stripeFee
+
+            // Calculate seller's share proportionally:
+            // sellerAmountCents / chargeAmount gives the seller's fraction in charge currency,
+            // apply that fraction to the net settlement amount in settlement currency
+            const chargeAmount = paymentIntent.amount
+            const sellerFraction = sellerAmountCents / chargeAmount
+            const sellerSettlementAmount = Math.round(netSettlement * sellerFraction)
+
+            console.log(`Settlement: ${settlementAmount} ${settlementCurrency} (net ${netSettlement}), seller fraction: ${sellerFraction.toFixed(4)}, seller gets: ${sellerSettlementAmount} ${settlementCurrency}`)
+
+            if (sellerSettlementAmount > 0) {
+              const transfer = await stripe.transfers.create({
+                amount: sellerSettlementAmount,
+                currency: settlementCurrency,
+                destination: sellerAccountId,
+                source_transaction: chargeId,
+                metadata: {
+                  resale_listing_id: resaleListingId,
+                  ticket_id: ticketId,
+                  buyer_id: buyerId,
+                  seller_id: sellerId,
+                  original_currency: paymentIntent.currency,
+                  original_seller_amount: String(sellerAmountCents),
+                  type: 'resale_seller_payout',
+                },
+              })
+              console.log(`Transfer ${transfer.id} created (source_transaction): ${sellerSettlementAmount} ${settlementCurrency} to ${sellerAccountId}`)
+              transferSuccess = true
+            }
+          } else {
+            console.warn('Balance transaction not available or not expanded, trying direct...')
+          }
+        } catch (err: any) {
+          console.warn(`source_transaction transfer failed (${err.code}): ${err.message}, trying direct balance...`)
+        }
+      }
+
+      // Fallback: transfer from platform available balance in charge currency (no source_transaction)
+      // This works when platform has available funds in the charge currency
+      if (!transferSuccess) {
+        try {
+          const transfer = await stripe.transfers.create({
+            amount: sellerAmountCents,
+            currency: paymentIntent.currency,
+            destination: sellerAccountId,
+            metadata: {
+              resale_listing_id: resaleListingId,
+              ticket_id: ticketId,
+              buyer_id: buyerId,
+              seller_id: sellerId,
+              payment_intent_id: paymentIntent.id,
+              type: 'resale_seller_payout',
+            },
+          })
+          console.log(`Transfer ${transfer.id} created (balance): ${sellerAmountCents} ${paymentIntent.currency} to ${sellerAccountId}`)
+          transferSuccess = true
+        } catch (err: any) {
+          console.error(`Balance transfer also failed (${err.code}): ${err.message}`)
+          // Transfer can be retried manually via debug-resale function
+        }
+      }
+    } else {
+      console.warn('Missing seller account or amount for transfer:', { sellerAccountId, sellerAmountCents })
+    }
+
+    // Enqueue NFT transfer if ticket has a minted NFT
+    const { data: ticketNft } = await supabase
+      .from('tickets')
+      .select('nft_minted, nft_policy_id, nft_asset_id')
+      .eq('id', ticketId)
+      .single()
+
+    if (ticketNft?.nft_minted) {
+      enqueueNftTransfer(ticketId, paymentIntent.metadata.event_id, buyerId, sellerId, resaleListingId).catch(err =>
+        console.error('enqueueNftTransfer failed (non-blocking):', err.message)
+      )
+    }
+
+    console.log(`Resale purchase completed: listing ${resaleListingId}, ticket ${ticketId}`)
+  }
 
   // For favor ticket purchases, create ticket and update the offer
   if (type === 'favor_ticket_purchase') {
@@ -428,6 +598,11 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
     await handleWalletTopUpFailed(paymentIntent)
   }
 
+  // Handle ACH direct purchase failure — revoke tickets
+  if (paymentIntent.metadata?.type === 'ach_purchase') {
+    await handleACHPurchaseFailed(paymentIntent)
+  }
+
   // Find the payment first so we can cancel referral earnings
   const { data: failedPayment } = await supabase
     .from('payments')
@@ -454,6 +629,64 @@ async function handlePaymentFailed(paymentIntent: Stripe.PaymentIntent) {
 
     if (earningsError) {
       console.error('Failed to cancel referral earnings:', earningsError)
+    }
+  }
+}
+
+async function handleACHPurchaseFailed(paymentIntent: Stripe.PaymentIntent) {
+  const eventId = paymentIntent.metadata.event_id
+  const userId = paymentIntent.metadata.user_id
+
+  console.log(`ACH purchase failed: ${paymentIntent.id} for event ${eventId}, user ${userId}`)
+
+  // Find tickets created for this payment
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('id')
+    .eq('stripe_payment_intent_id', paymentIntent.id)
+    .maybeSingle()
+
+  if (payment) {
+    // Find all tickets linked to this payment by matching event_id, user_id,
+    // and created around the same time as the payment
+    const { data: tickets } = await supabase
+      .from('tickets')
+      .select('id')
+      .eq('event_id', eventId)
+      .eq('sold_by', userId)
+      .eq('status', 'valid')
+
+    if (tickets && tickets.length > 0) {
+      // Revoke tickets by marking them as cancelled
+      const ticketIds = tickets.map((t: { id: string }) => t.id)
+      const { error: revokeError } = await supabase
+        .from('tickets')
+        .update({ status: 'cancelled' })
+        .in('id', ticketIds)
+
+      if (revokeError) {
+        console.error('Failed to revoke tickets for failed ACH:', revokeError)
+      } else {
+        console.log(`Revoked ${ticketIds.length} tickets for failed ACH payment ${paymentIntent.id}`)
+      }
+    }
+  }
+
+  // Create notification for the user about the failed payment
+  if (userId) {
+    try {
+      await supabase.from('notifications').insert({
+        user_id: userId,
+        type: 'payment_failed',
+        title: 'Bank Payment Failed',
+        body: `Your bank payment for ${paymentIntent.metadata.event_title || 'an event'} could not be processed. Your tickets have been cancelled.`,
+        data: {
+          event_id: eventId,
+          payment_intent_id: paymentIntent.id,
+        },
+      })
+    } catch (err) {
+      console.error('Failed to create notification:', err.message)
     }
   }
 }
@@ -838,6 +1071,159 @@ async function handleIdentityFailed(session: any) {
 
   if (error) {
     console.error('Failed to update profile verification status:', error)
+  }
+}
+
+// ============================================================
+// NFT Minting Queue
+// ============================================================
+
+async function enqueueNftMints(eventId: string, userId: string, ticketIds: string[]) {
+  try {
+    // Check if event has NFT minting enabled (all new events default to true)
+    const { data: event } = await supabase
+      .from('events')
+      .select('nft_enabled')
+      .eq('id', eventId)
+      .single()
+
+    if (event?.nft_enabled === false) return
+
+    // Look up buyer's Cardano wallet address
+    const { data: wallet } = await supabase
+      .from('user_wallets')
+      .select('cardano_address')
+      .eq('user_id', userId)
+      .single()
+
+    for (const ticketId of ticketIds) {
+      if (!wallet?.cardano_address) {
+        // No wallet — skip, user can claim later
+        await supabase.from('nft_mint_queue').insert({
+          ticket_id: ticketId,
+          event_id: eventId,
+          buyer_address: '',
+          status: 'skipped',
+          error_message: 'Buyer has no Cardano wallet',
+        })
+        console.log(`NFT mint skipped for ticket ${ticketId}: no Cardano wallet`)
+        continue
+      }
+
+      // Insert into mint queue
+      const { data: queueEntry, error: queueError } = await supabase
+        .from('nft_mint_queue')
+        .insert({
+          ticket_id: ticketId,
+          event_id: eventId,
+          buyer_address: wallet.cardano_address,
+          status: 'queued',
+        })
+        .select()
+        .single()
+
+      if (queueError) {
+        console.error(`Failed to enqueue NFT mint for ticket ${ticketId}:`, queueError)
+        continue
+      }
+
+      // Fire-and-forget: invoke the mint function
+      try {
+        const mintUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/mint-ticket-nft`
+        fetch(mintUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({ queue_id: queueEntry.id, ticket_id: ticketId }),
+        }).catch(err => console.error(`Fire-and-forget mint failed:`, err.message))
+      } catch (err) {
+        console.error(`Failed to invoke mint function:`, err.message)
+      }
+
+      console.log(`NFT mint enqueued for ticket ${ticketId}`)
+    }
+  } catch (err) {
+    console.error('enqueueNftMints error:', err.message)
+  }
+}
+
+// ============================================================
+// NFT Transfer Queue (for resale)
+// ============================================================
+
+async function enqueueNftTransfer(
+  ticketId: string, eventId: string, buyerId: string, sellerId: string, resaleListingId: string,
+) {
+  try {
+    // Look up buyer's Cardano wallet address
+    const { data: buyerWallet } = await supabase
+      .from('user_wallets')
+      .select('cardano_address')
+      .eq('user_id', buyerId)
+      .single()
+
+    if (!buyerWallet?.cardano_address) {
+      // No wallet — skip transfer, buyer can claim later
+      await supabase.from('nft_mint_queue').insert({
+        ticket_id: ticketId,
+        event_id: eventId,
+        buyer_address: '',
+        action: 'transfer',
+        status: 'skipped',
+        resale_listing_id: resaleListingId,
+        error_message: 'Buyer has no Cardano wallet',
+      })
+      console.log(`NFT transfer skipped for ticket ${ticketId}: buyer has no wallet`)
+      return
+    }
+
+    // Look up seller's Cardano address (for reference)
+    const { data: sellerWallet } = await supabase
+      .from('user_wallets')
+      .select('cardano_address')
+      .eq('user_id', sellerId)
+      .single()
+
+    // Insert into queue
+    const { data: queueEntry, error: queueError } = await supabase
+      .from('nft_mint_queue')
+      .insert({
+        ticket_id: ticketId,
+        event_id: eventId,
+        buyer_address: buyerWallet.cardano_address,
+        seller_address: sellerWallet?.cardano_address || null,
+        action: 'transfer',
+        status: 'queued',
+        resale_listing_id: resaleListingId,
+      })
+      .select()
+      .single()
+
+    if (queueError) {
+      console.error(`Failed to enqueue NFT transfer for ticket ${ticketId}:`, queueError)
+      return
+    }
+
+    // Fire-and-forget: invoke the transfer function
+    try {
+      const transferUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/transfer-ticket-nft`
+      fetch(transferUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({ queue_id: queueEntry.id, ticket_id: ticketId }),
+      }).catch(err => console.error(`Fire-and-forget transfer failed:`, err.message))
+    } catch (err) {
+      console.error(`Failed to invoke transfer function:`, err.message)
+    }
+
+    console.log(`NFT transfer enqueued for ticket ${ticketId} (resale ${resaleListingId})`)
+  } catch (err) {
+    console.error('enqueueNftTransfer error:', err.message)
   }
 }
 

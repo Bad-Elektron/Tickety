@@ -91,6 +91,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   bool _isPublic = true;
   bool _isLoading = false;
   bool _hideLocation = false;
+  bool _nftEnabled = true;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
   Set<EventTag> _selectedTags = {};
@@ -102,7 +103,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   // Ticket types
   late List<_TicketType> _ticketTypes;
 
-  // Track which step we're on (0 = basics, 1 = location & tags, 2 = tickets)
+  // Track which step we're on (0 = design, 1 = details, 2 = tags, 3 = tickets)
   int _currentStep = 0;
 
   // Noise preview state
@@ -140,6 +141,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       _selectedTime = TimeOfDay(hour: event.date.hour, minute: event.date.minute);
       _isPublic = !event.isPrivate;
       _hideLocation = event.hideLocation;
+      _nftEnabled = event.nftEnabled;
       _noiseSeed = event.noiseSeed;
 
       // Resolve tags from IDs
@@ -449,6 +451,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           noiseSeed: _noiseSeed,
           hideLocation: _hideLocation,
           isPrivate: !_isPublic,
+          nftEnabled: _nftEnabled,
           latitude: _selectedPlace?.lat,
           longitude: _selectedPlace?.lng,
           formattedAddress: _selectedPlace?.formattedAddress,
@@ -479,6 +482,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           noiseSeed: _noiseSeed,
           hideLocation: _hideLocation,
           isPrivate: !_isPublic,
+          nftEnabled: _nftEnabled,
           latitude: _selectedPlace?.lat,
           longitude: _selectedPlace?.lng,
           formattedAddress: _selectedPlace?.formattedAddress,
@@ -525,9 +529,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   }
 
   void _nextStep() {
-    if (_currentStep < 2) {
-      // Check for similar events when leaving step 0 (basics)
-      if (_currentStep == 0 && _nameController.text.trim().isNotEmpty) {
+    if (_currentStep < 3) {
+      // Check for similar events when leaving step 1 (details)
+      if (_currentStep == 1 && _nameController.text.trim().isNotEmpty) {
         _checkSimilarEvents();
       }
       setState(() => _currentStep++);
@@ -635,26 +639,12 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           key: _formKey,
           child: Column(
             children: [
-              // Step indicator dots
+              // Labeled step indicator
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (int i = 0; i < 3; i++) ...[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: i <= _currentStep
-                              ? colorScheme.primary
-                              : colorScheme.surfaceContainerHighest,
-                        ),
-                      ),
-                      if (i < 2) const SizedBox(width: 8),
-                    ],
-                  ],
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
+                child: _StepIndicator(
+                  currentStep: _currentStep,
+                  labels: const ['Design', 'Details', 'Tags', 'Tickets'],
                 ),
               ),
               Expanded(
@@ -662,6 +652,18 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 300),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0.05, 0),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    ),
                     child: _buildCurrentStep(theme, colorScheme),
                   ),
                 ),
@@ -687,7 +689,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                           ),
                         )
                       : Text(
-                          _currentStep < 2
+                          _currentStep < 3
                               ? 'Continue'
                               : isEditing
                                   ? 'Update Event'
@@ -709,19 +711,21 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   Widget _buildCurrentStep(ThemeData theme, ColorScheme colorScheme) {
     switch (_currentStep) {
       case 0:
-        return _buildBasicsStep(theme, colorScheme);
+        return _buildDesignStep(theme, colorScheme);
       case 1:
-        return _buildTagStep(theme, colorScheme);
+        return _buildDetailsStep(theme, colorScheme);
       case 2:
+        return _buildTagStep(theme, colorScheme);
+      case 3:
         return _buildTicketsStep(theme, colorScheme);
       default:
         return const SizedBox.shrink();
     }
   }
 
-  Widget _buildBasicsStep(ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildDesignStep(ThemeData theme, ColorScheme colorScheme) {
     return Column(
-      key: const ValueKey('basics'),
+      key: const ValueKey('design'),
       children: [
         // Private event info banner
         if (!_isPublic) ...[
@@ -805,55 +809,160 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           ),
           textCapitalization: TextCapitalization.sentences,
         ),
-        const SizedBox(height: 16),
-        // Location row: hint (left) + toggle (right)
-        Row(
-          children: [
-            // Hint text — always takes space, only visible when secret
-            Expanded(
-              child: AnimatedOpacity(
-                opacity: _hideLocation ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 200),
-                child: _SecretLocationHint(),
-              ),
-            ),
-            _HideLocationToggle(
-              value: _hideLocation,
-              onChanged: (value) => setState(() => _hideLocation = value),
-            ),
-          ],
-        ),
+        const SizedBox(height: 32),
+      ],
+    );
+  }
+
+  Widget _buildDetailsStep(ThemeData theme, ColorScheme colorScheme) {
+    return Column(
+      key: const ValueKey('details'),
+      children: [
         const SizedBox(height: 8),
-        // Location (Google Places autocomplete)
-        PlacesAutocompleteField(
-          onPlaceSelected: (details) {
-            setState(() => _selectedPlace = details);
-          },
-          onCleared: () {
-            setState(() => _selectedPlace = null);
-          },
+        // Location card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              // Header row: location icon + "Location" + Spacer + toggle
+              Row(
+                children: [
+                  Icon(Icons.location_on_outlined, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Location',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  _HideLocationToggle(
+                    value: _hideLocation,
+                    onChanged: (value) => setState(() => _hideLocation = value),
+                  ),
+                ],
+              ),
+              // Secret location hint (conditional)
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                child: _hideLocation
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _SecretLocationHint(),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 12),
+              // Location (Google Places autocomplete)
+              PlacesAutocompleteField(
+                onPlaceSelected: (details) {
+                  setState(() => _selectedPlace = details);
+                },
+                onCleared: () {
+                  setState(() => _selectedPlace = null);
+                },
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 16),
-        // Description
-        TextFormField(
-          controller: _descriptionController,
-          maxLines: 3,
-          decoration: const InputDecoration(
-            labelText: 'Description (optional)',
-            hintText: 'What can attendees expect?',
-            alignLabelWithHint: true,
-            border: OutlineInputBorder(),
+        // Description card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
           ),
-          textCapitalization: TextCapitalization.sentences,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.notes_outlined, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Description',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Describe your event (optional)',
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(height: 24),
-        _DateTimePicker(
-          date: _selectedDate,
-          time: _selectedTime,
-          formattedDate: _formatDate(_selectedDate),
-          formattedTime: _formatTime(_selectedTime),
-          onDateTap: _pickDate,
-          onTimeTap: _pickTime,
+        const SizedBox(height: 16),
+        // Date & Time card
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.event_outlined, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Date & Time',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  // Date picker
+                  Expanded(
+                    flex: 3,
+                    child: _PickerCard(
+                      icon: Icons.calendar_today_rounded,
+                      label: _formatDate(_selectedDate),
+                      onTap: _pickDate,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Time picker
+                  Expanded(
+                    flex: 2,
+                    child: _PickerCard(
+                      icon: Icons.access_time_rounded,
+                      label: _formatTime(_selectedTime),
+                      onTap: _pickTime,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 32),
       ],
@@ -1047,15 +1156,16 @@ class _TicketTypeRow extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: colorScheme.outlineVariant.withValues(alpha: 0.5),
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Name row with remove button
           Row(
@@ -1109,54 +1219,174 @@ class _TicketTypeRow extends StatelessWidget {
             ),
             onChanged: onDescriptionChanged,
           ),
-          const SizedBox(height: 8),
-          // Price and quantity row
+          Divider(
+            height: 20,
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+          // Price and quantity row with labels above
           Row(
             children: [
               // Price
               Expanded(
-                child: TextField(
-                  controller: ticketType.priceController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    prefixText: '\$ ',
-                    prefixStyle: TextStyle(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Price',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    hintText: '0',
-                    labelText: 'Price',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: ticketType.priceController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        prefixText: '\$ ',
+                        prefixStyle: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        hintText: '0',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                      ],
+                      onChanged: onPriceChanged,
+                    ),
                   ],
-                  onChanged: onPriceChanged,
                 ),
               ),
               const SizedBox(width: 12),
               // Quantity
               Expanded(
-                child: TextField(
-                  controller: ticketType.quantityController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: 'Quantity',
-                    hintText: '10',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Quantity',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: ticketType.quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        hintText: '10',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                      ],
+                      onChanged: onQuantityChanged,
+                    ),
                   ],
-                  onChanged: onQuantityChanged,
                 ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Labeled step indicator with circles, connecting lines, and labels.
+class _StepIndicator extends StatelessWidget {
+  final int currentStep;
+  final List<String> labels;
+
+  const _StepIndicator({
+    required this.currentStep,
+    required this.labels,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Row(
+      children: [
+        for (int i = 0; i < labels.length; i++) ...[
+          // Step circle + label
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Circle
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i < currentStep
+                        ? colorScheme.primary
+                        : i == currentStep
+                            ? colorScheme.primary
+                            : colorScheme.surfaceContainerHighest,
+                    border: i > currentStep
+                        ? Border.all(
+                            color: colorScheme.outlineVariant,
+                            width: 1.5,
+                          )
+                        : null,
+                  ),
+                  child: Center(
+                    child: i < currentStep
+                        ? Icon(
+                            Icons.check,
+                            size: 16,
+                            color: colorScheme.onPrimary,
+                          )
+                        : Text(
+                            '${i + 1}',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: i == currentStep
+                                  ? colorScheme.onPrimary
+                                  : colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // Label
+                Text(
+                  labels[i],
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: i == currentStep
+                        ? colorScheme.primary
+                        : colorScheme.onSurfaceVariant,
+                    fontWeight: i == currentStep ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Connecting line between circles
+          if (i < labels.length - 1)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: SizedBox(
+                width: 24,
+                child: Divider(
+                  thickness: 1.5,
+                  color: i < currentStep
+                      ? colorScheme.primary
+                      : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
+        ],
+      ],
     );
   }
 }
@@ -1294,66 +1524,6 @@ class _SecretLocationHint extends StatelessWidget {
           style: theme.textTheme.labelSmall?.copyWith(
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-/// Date and time picker with friendly UX.
-class _DateTimePicker extends StatelessWidget {
-  final DateTime date;
-  final TimeOfDay time;
-  final String formattedDate;
-  final String formattedTime;
-  final VoidCallback onDateTap;
-  final VoidCallback onTimeTap;
-
-  const _DateTimePicker({
-    required this.date,
-    required this.time,
-    required this.formattedDate,
-    required this.formattedTime,
-    required this.onDateTap,
-    required this.onTimeTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      children: [
-        Text(
-          'When is it happening?',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            // Date picker
-            Expanded(
-              flex: 3,
-              child: _PickerCard(
-                icon: Icons.calendar_today_rounded,
-                label: formattedDate,
-                onTap: onDateTap,
-              ),
-            ),
-            const SizedBox(width: 12),
-            // Time picker
-            Expanded(
-              flex: 2,
-              child: _PickerCard(
-                icon: Icons.access_time_rounded,
-                label: formattedTime,
-                onTap: onTimeTap,
-              ),
-            ),
-          ],
         ),
       ],
     );

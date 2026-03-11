@@ -197,6 +197,39 @@ class WalletRepository {
   }
 
   // ============================================================
+  // ACH DIRECT PURCHASE
+  // ============================================================
+
+  /// Purchase tickets directly via ACH bank transfer.
+  /// Tickets are issued immediately; ACH settles in 4-5 business days.
+  Future<Map<String, dynamic>> purchaseWithBank({
+    required String eventId,
+    required int quantity,
+    required String paymentMethodId,
+    required int amountCents,
+  }) async {
+    final response = await _client.functions.invoke(
+      'create-ach-payment-intent',
+      body: {
+        'event_id': eventId,
+        'quantity': quantity,
+        'payment_method_id': paymentMethodId,
+        'amount_cents': amountCents,
+      },
+    );
+
+    final data = _parseResponse(response.data);
+    if (response.status != 200 || data == null) {
+      throw PaymentException(
+        data?['error'] as String? ??
+            'ACH purchase failed (status=${response.status})',
+      );
+    }
+
+    return data;
+  }
+
+  // ============================================================
   // TRANSACTIONS
   // ============================================================
 

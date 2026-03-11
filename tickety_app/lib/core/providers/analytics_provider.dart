@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/analytics/data/analytics_repository.dart';
 import '../../features/analytics/models/market_snapshot.dart';
+import '../../features/analytics/models/platform_engagement.dart';
 import '../../features/analytics/models/tag_weekly_stats.dart';
 import '../../features/analytics/models/trending_tag.dart';
 import '../errors/errors.dart';
@@ -21,6 +22,8 @@ class AnalyticsState {
   final String? error;
   final List<MarketSnapshot> marketSnapshots;
   final MarketComparison? selectedTagMarketComparison;
+  final PlatformEngagement? engagement;
+  final bool isLoadingEngagement;
 
   const AnalyticsState({
     this.trendingTags = const [],
@@ -34,6 +37,8 @@ class AnalyticsState {
     this.error,
     this.marketSnapshots = const [],
     this.selectedTagMarketComparison,
+    this.engagement,
+    this.isLoadingEngagement = false,
   });
 
   AnalyticsState copyWith({
@@ -52,6 +57,8 @@ class AnalyticsState {
     List<MarketSnapshot>? marketSnapshots,
     MarketComparison? selectedTagMarketComparison,
     bool clearSelectedTagMarket = false,
+    PlatformEngagement? engagement,
+    bool? isLoadingEngagement,
   }) {
     return AnalyticsState(
       trendingTags: trendingTags ?? this.trendingTags,
@@ -67,6 +74,8 @@ class AnalyticsState {
       selectedTagMarketComparison: clearSelectedTagMarket
           ? null
           : (selectedTagMarketComparison ?? this.selectedTagMarketComparison),
+      engagement: engagement ?? this.engagement,
+      isLoadingEngagement: isLoadingEngagement ?? this.isLoadingEngagement,
     );
   }
 
@@ -128,6 +137,7 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
         _repository.getAvailableCities(),
         _repository.getLastRefreshTime(),
         _repository.getMarketSnapshots(),
+        _repository.getPlatformEngagement(city: state.selectedCity),
       ]);
 
       state = state.copyWith(
@@ -135,6 +145,7 @@ class AnalyticsNotifier extends StateNotifier<AnalyticsState> {
         availableCities: results[1] as List<String>,
         lastRefreshed: results[2] as DateTime?,
         marketSnapshots: results[3] as List<MarketSnapshot>,
+        engagement: results[4] as PlatformEngagement,
         isLoading: false,
       );
 

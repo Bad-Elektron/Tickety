@@ -303,77 +303,56 @@ Events use Google Places Autocomplete for reliable location input with coordinat
 - Legacy `location` column auto-populated from `displayLocation` in `toJson` for backward compat
 - Mapper uses `if (value != null)` collection-if for new fields so inserts don't fail on DBs without the columns
 
-### Analytics Consolidation (TODO)
+### Analytics Consolidation (Completed)
 
-The analytics system is scattered across multiple surfaces with inconsistent patterns. Needs a consolidation pass to unify into a coherent architecture.
+**Completed:**
+1. **Unified `get_event_dashboard(event_id)` RPC** — Migration `20260307200001_analytics_consolidation.sql`. Returns tickets + check-ins + engagement in one call. Used by admin event detail API with fallback to legacy `get_event_analytics()`.
+2. **Unified cache refresh** — `refresh-analytics` edge function now chains `refresh_engagement_cache()` after main cache refresh. One cron job refreshes everything.
+3. **Merged admin Overview + Engagement** — `dashboard/overview/page.tsx` now has Overview | Engagement tabs. Engagement page redirects to overview. Sidebar renamed "Overview" → "Analytics" with `BarChart3` icon.
+4. **Flutter analytics engagement** — `PlatformEngagement` model + `getPlatformEngagement()` in analytics repository. Provider loads engagement in parallel with dashboard. Dashboard screen shows Views/Unique/Conversion KPIs, weekly views bar chart, and top events by views.
+5. **Dropped `get_ticket_stats()` callers** — `ticket_repository.dart` now calls `get_event_dashboard` RPC and parses the `tickets` section. Legacy `get_ticket_stats` SQL function remains (unused, no harm).
 
-**Current state (6 cache tables, 5 RPC functions, 2 edge functions, 2 dashboards):**
+### ACH Direct Bank Payment (Completed)
 
-| Surface | Location | Problem |
-|---------|----------|---------|
-| `analytics_tag_weekly` | SQL cache table | Overlaps with engagement daily cache; both aggregate by tag |
-| `analytics_trending_tags` | SQL cache table | Derived from tag_weekly; could be a view or computed in the summary RPC |
-| `analytics_market_snapshot` | SQL cache table | External data (Ticketmaster/SeatGeek); separate concern but shares `analytics_cache_meta` |
-| `analytics_engagement_daily` | SQL cache table | Newest; only covers views, not revenue/tickets |
-| `get_event_analytics()` | RPC (live) | Returns ticket stats + check-ins; ignores views entirely |
-| `get_ticket_stats()` | RPC (live) | Lightweight subset of `get_event_analytics()`; redundant |
-| `get_event_engagement()` | RPC (live) | Returns views + conversion; doesn't include revenue/check-in data |
-| `refresh-analytics` | Edge function | Chains `refresh-market-analytics`; `refresh_engagement_cache()` is NOT chained in |
-| Flutter Analytics Dashboard | `features/analytics/` | Enterprise-tier only; shows market/tag trends but no engagement data |
-| Admin Overview | `dashboard/overview/` | KPIs via live queries in `/api/admin/stats`; no caching |
-| Admin Engagement | `dashboard/engagement/` | Separate page; should be part of a unified analytics view |
+Users can pay for tickets directly from their linked bank account via ACH at checkout. Tickets are issued immediately; ACH settles in 4-5 business days. If ACH fails, tickets are revoked. Cheaper than card: a $50 ticket costs $52.92 via ACH vs $54.58 via card.
 
-**Consolidation goals:**
-1. **Unify per-event analytics**: Merge `get_event_analytics()`, `get_ticket_stats()`, and `get_event_engagement()` into a single `get_event_dashboard(event_id)` RPC that returns tickets + check-ins + views + conversion in one call
-2. **Unify cache refresh**: Chain `refresh_engagement_cache()` into the existing `refresh-analytics` edge function so one cron job refreshes everything
-3. **Merge admin pages**: Consider combining Overview + Engagement into a single analytics dashboard with tabs (Revenue, Engagement, Market)
-4. **Flutter analytics screen**: Add engagement data (views, conversion) alongside existing market/tag trends
-5. **Drop redundant functions**: Remove `get_ticket_stats()` (subset of event analytics) once callers are updated
-6. **Consistent naming**: All cache tables should follow `analytics_{domain}_{granularity}` pattern (already mostly true)
-
-### ACH Bank Transfer + Tickety Wallet System (Completed)
-
-Users can fund a Tickety Wallet via ACH bank transfer (0.8% fee, capped at $5), then buy tickets instantly from wallet balance with only a 5% platform fee (no Stripe processing fee). A $50 ticket costs $52.50 from wallet vs $54.33 via card.
+**Replaced the Tickety Wallet system** — no more pre-funding a wallet balance. Users link their bank once, then choose "Bank Transfer" at checkout alongside "Card Payment".
 
 **Database:**
-- `wallet_balances` - Per-user available + pending cents, auto-created on first access
-- `wallet_transactions` - Double-entry ledger (ach_top_up, ach_top_up_pending, ticket_purchase, refund_credit, admin_adjustment)
 - `linked_bank_accounts` - Cached bank account info (Stripe Financial Connections)
-- `purchase_from_wallet()` SQL function - Atomic purchase with `FOR UPDATE` row lock to prevent double-spend
-- Migration: `20260301100001_create_wallet_system.sql`
-- PaymentType constraint updated: added `wallet_purchase`, `wallet_top_up`
+- `wallet_balances`, `wallet_transactions` - Legacy tables (still exist, unused by new flow)
+- Migration: `20260301100001_create_wallet_system.sql` (original), `20260308200001_ach_direct_purchase.sql` (adds `ach_purchase` to PaymentType constraint)
 
 **Edge Functions:**
-- `get-wallet-balance` - Returns available/pending cents + linked bank accounts (auto-creates wallet)
-- `link-bank-account` - Creates Stripe SetupIntent with Financial Connections for ACH bank linking
+- `create-ach-payment-intent` - Creates ACH PaymentIntent (confirmed server-side), issues tickets immediately. Fees: 5% platform + 0.8% ACH (capped at $5)
+- `link-bank-account` - Creates Stripe SetupIntent with Financial Connections for bank linking
 - `manage-bank-accounts` - List/save/remove linked bank accounts
-- `create-wallet-top-up` - ACH PaymentIntent (0.8% fee capped at $5, min $5 / max $2,000), adds to pending_cents
-- `purchase-from-wallet` - Validates event, calls `purchase_from_wallet()` SQL function (atomic, no Stripe)
-- `stripe-webhook` - Extended: `payment_intent.processing` for ACH logging, wallet top-up settlement on `succeeded`, cleanup on `failed`
+- `stripe-webhook` - Extended: ACH purchase settlement on `succeeded` (mark completed), ticket revocation + notification on `failed`
+- Legacy: `get-wallet-balance`, `create-wallet-top-up`, `purchase-from-wallet` (still deployed, unused by new UI)
 
 **Flutter Models:**
-- `wallet/models/wallet_balance.dart` - WalletBalance with formattedAvailable, hasFunds, defaultBank
 - `wallet/models/linked_bank_account.dart` - LinkedBankAccount with displayName ("Chase ****1234")
-- `wallet/models/wallet_transaction.dart` - WalletTransaction + WalletTransactionType enum
-- `payment.dart` - Added `walletPurchase`, `walletTopUp` to PaymentType; `WalletFeeCalculator` (5% only); `ACHFeeCalculator` (0.8% capped at $5)
+- `payment.dart` - Added `achPurchase` to PaymentType; `ACHPurchaseFeeCalculator` (5% platform + 0.8% ACH capped at $5)
 
-**Flutter Data/Providers:**
-- `wallet/data/wallet_repository.dart` - All wallet edge function calls + direct transaction reads
-- `core/providers/wallet_balance_provider.dart` - WalletBalanceNotifier with loadBalance, topUp, purchaseFromWallet
+**Flutter Data:**
+- `wallet/data/wallet_repository.dart` - `purchaseWithBank()` calls `create-ach-payment-intent`; bank account CRUD methods
 
 **Flutter UI:**
-- `wallet_screen.dart` - Redesigned: Tickety Wallet card (indigo gradient, prominent) → Seller Balance + Crypto cards → Linked Banks section → Actions + Info
-- `add_funds_screen.dart` - Preset chips ($10/$25/$50/$100) + custom input, bank selector, ACH fee breakdown
-- `link_bank_screen.dart` - Stripe Financial Connections flow via `collectBankAccount()`
-- `checkout_screen.dart` - Payment method selector (Wallet vs Card) when wallet has sufficient funds; wallet shows 5%-only fee + savings badge
-- `transactions_screen.dart` + `transaction_detail_sheet.dart` - Added wallet_purchase and wallet_top_up icons/labels
+- `wallet_screen.dart` - Crypto Balance + Seller Balance + Linked Banks + Saved Cards (Tickety Wallet card removed)
+- `checkout_screen.dart` - Payment method selector (Bank Transfer vs Card) when user has linked bank; shows ACH fee breakdown + savings badge
+- `link_bank_screen.dart` - Stripe Financial Connections flow
+- `payment_success_screen.dart` - Shows ACH settlement note when `isACH: true`
+- `transactions_screen.dart` + `transaction_detail_sheet.dart` - `achPurchase` type with bank icon/label
 
-**ACH Settlement Flow:**
-1. User tops up → PaymentIntent created (processing) → pending_cents increased
-2. ACH settles (4-5 days) → webhook `payment_intent.succeeded` → pending→available move
-3. ACH fails → webhook `payment_intent.payment_failed` → pending reversed, transaction deleted
+**ACH Direct Purchase Flow:**
+1. User links bank via Stripe Financial Connections (one-time)
+2. At checkout, picks "Bank Transfer" → sees lower fee breakdown
+3. Edge function creates confirmed ACH PaymentIntent → tickets created immediately → returns success
+4. User gets tickets right away, ACH settles in 4-5 business days
+5. On settlement success: payment marked completed (tickets already valid)
+6. On settlement failure: tickets revoked (status → cancelled), user notified
 
-**No split payments in v1.** Wallet covers full amount or user pays full by card.
+**No split payments.** ACH covers full amount or user pays full by card.
 
 **Stripe Test Values:** Routing `110000000`, Account `000123456789` (success), `000222222227` (insufficient funds)
 
@@ -446,10 +425,258 @@ Auto-created Cardano HD wallet on Preview testnet. Wallet is created transparent
 
 **Blockfrost Test:** Get tADA from [Cardano Preview Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/)
 
-## Future: Cardano Phase 2
+### Cardano Phase 2A — CIP-68 NFT Ticket Minting (Completed)
 
-- NFT-based ticket ownership (mint tickets as CIP-68 NFTs)
-- Decentralized ticket resale marketplace
+When an organizer enables "NFT Tickets" on an event, purchasing a ticket automatically mints a CIP-68 NFT to the buyer's Cardano wallet. Platform-controlled minting via a single minting wallet.
+
+**Architecture:**
+- Platform minting wallet (mnemonic as `PLATFORM_CARDANO_MNEMONIC` Supabase secret)
+- `NativeScript.PubKey(platformPaymentKeyHash)` minting policy (no Plutus)
+- CIP-68 dual-token: Reference NFT (`000643b0` prefix, held at platform address with inline datum) + User Token (`000de140` prefix, sent to buyer)
+- Fire-and-forget: stripe-webhook enqueues mint → `mint-ticket-nft` Edge Function builds/signs/submits tx
+
+**Database:**
+- `platform_cardano_config` table — stores platform minting address (mnemonic in secrets)
+- `nft_mint_queue` table — status queue (queued→minting→minted|failed|skipped), tx hash, policy ID, asset IDs, retry count
+- `tickets` table — added `nft_minted`, `nft_asset_id`, `nft_minted_at`, `nft_policy_id`, `nft_tx_hash` columns
+- `events` table — added `nft_enabled`, `nft_policy_id` columns
+- Migration: `20260305100001_nft_ticket_system.sql`
+
+**Edge Functions:**
+- `mint-ticket-nft` — Hand-rolled BIP32-Ed25519 key derivation + CBOR tx building + Blake2b hashing + ed25519 signing. Uses `@noble/curves`, `@noble/hashes`. Derives CIP-1852 keys from mnemonic, builds CIP-68 mint tx, submits to Blockfrost. Auto-retry on failure (max 5 retries, resets to `queued` and self-invokes). `queueEntry` scoped for catch block to prevent stuck `minting` status.
+- `stripe-webhook` — Extended: after ticket creation, checks `events.nft_enabled`, looks up buyer's Cardano address from `user_wallets`, inserts into `nft_mint_queue`, fire-and-forget invokes `mint-ticket-nft`.
+
+**Flutter Models:**
+- `NftTicket` (`wallet/models/nft_ticket.dart`) — policyId, assetName, assetId, CIP-68 metadata (name, event, ticket, venue), cardanoScanUrl
+- `EventModel` — added `nftEnabled`, `nftPolicyId` fields
+- `EventMapper` — parses/serializes `nft_enabled`, `nft_policy_id`
+- `Ticket` — added `nftPolicyId`, `nftTxHash` fields
+
+**Flutter Services:**
+- `BlockfrostService` — added `getAddressAssets()`, `getAssetInfo()`, `getAssetTransactions()`
+- `CardanoRepository` — added `getTicketNfts()`, `getNftDetails()`
+
+**Flutter Providers:**
+- `NftMintNotifier` (`nft_mint_provider.dart`) — loadNfts, pollMintStatus, getMintStatus
+- `nftMintProvider`, `nftTicketsProvider` convenience providers
+
+**Flutter UI:**
+- `NftTicketDetailScreen` — NFT badge, event details, on-chain details (policy ID, asset name, tx hash), CardanoScan links
+- `WalletScreen` — NFT Tickets horizontal scroll section after crypto card (shows CIP-68 cards)
+- `TicketScreen` — NFT status card for `public_` mode tickets (minted badge + CardanoScan link, or pending spinner)
+- `CreateEventScreen` — "Enable NFT Tickets" toggle in tickets step
+
+**Mint Flow:**
+1. Organizer creates event with `nft_enabled = true`
+2. User buys ticket → stripe-webhook creates ticket → checks nft_enabled → looks up buyer wallet → enqueues in `nft_mint_queue`
+3. `mint-ticket-nft` picks up queue entry → derives platform keys → builds CIP-68 tx (2 tokens) → signs → submits to Blockfrost
+4. On success: updates `nft_mint_queue` (minted), `tickets` (nft_minted, nft_asset_id, nft_tx_hash, nft_policy_id)
+5. If buyer has no wallet: status `skipped` (can claim later)
+
+**Platform Wallet Setup:**
+1. Generate 24-word mnemonic, derive Preview address
+2. Store as `PLATFORM_CARDANO_MNEMONIC` Supabase Edge Function secret
+3. Insert address into `platform_cardano_config` table
+4. Fund from [Cardano Preview Faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/)
+
+### Cardano Phase 2B — NFT Transfer on Resale (Completed)
+
+When a ticket is resold, the NFT user token is transferred to the new buyer on-chain. Platform mints a new user token to buyer; reference NFT datum updated with new owner.
+
+**Database:**
+- Migration: `20260306100001_nft_transfer_support.sql`
+- `nft_mint_queue` — Added `action` ('mint'|'transfer'), `seller_address`, `resale_listing_id`, status values 'transferring'/'transferred'
+- `tickets` — Added `nft_transfer_tx_hash` column
+
+**Edge Functions:**
+- `transfer-ticket-nft` — Builds CIP-68 transfer tx: updates reference NFT datum, mints new user token to buyer, submits via Blockfrost. Auto-retry with exponential backoff (max 5 retries).
+- `stripe-webhook` — Extended: on resale payment success, checks `nft_minted`, enqueues transfer via `enqueueNftTransfer()`, fire-and-forget invokes `transfer-ticket-nft`
+
+**Flutter:**
+- `Ticket.nftTransferTxHash` field — displays transfer tx hash (falls back to mint tx hash)
+- `ticket_screen.dart` — Shows latest on-chain tx (transfer or mint)
+
+### Block Resale of Unminted Tickets (Completed)
+
+Tickets on NFT-enabled events cannot be resold until minting completes. Guards at 3 layers:
+
+**Flutter:**
+- `Ticket.isAwaitingMint` — true when event has `nft_enabled` or ticket is `public_` mode and `nftMinted == false`
+- `Ticket.canBeResold` — includes `!isAwaitingMint` check; sell button auto-hides
+- `resale_repository.dart` — `createListing()` joins events to check `nft_enabled`, throws `PaymentException` if unminted
+- `ticket_screen.dart` — Shows "Preparing ticket..." spinner when awaiting mint; polls Supabase every 5s for mint status, auto-updates when complete
+
+**Database:**
+- Migration: `20260307300001_block_unminted_resale.sql` — Extends `block_private_ticket_resale()` trigger to also reject unminted public/NFT tickets from `resale_listings`
+
+### Cardano Phase 2C — Admin NFT Controls (Completed)
+
+All events have NFT tickets enabled by default — no organizer toggle needed.
+
+- Admin NFT Wallet dashboard (`/dashboard/nft-wallet`) — Platform wallet info, KPI cards (queued/minting/minted/failed/skipped), mint queue table with retry buttons
+- Per-event NFT stats in admin event detail page — Mint queue breakdown, policy ID with CardanoScan link, failed entry retry
+- `ManageTicketsScreen` — NFT mint status counts (minted/pending chips)
+- Admin sidebar "NFT Wallet" nav item
+- `CreateEventScreen` — `_nftEnabled` defaults true, no toggle exposed to organizers
+
+**Legacy dead code:**
+- `get_ticket_stats()` SQL function still exists in DB but is unused (callers migrated to `get_event_dashboard`). Can be dropped in a future migration.
+
+### Cardano Phase 2D — Automatic NFT Burn & ADA Reclaim (Completed)
+
+After an event ends + 60-day grace period, ticket NFTs are automatically burned on-chain and the locked ADA (~1.5 per NFT) is reclaimed to the platform wallet. Fully automatic — no user interaction needed because the platform holds user mnemonics in `user_wallets`.
+
+**Database:**
+- Migration: `20260308100001_nft_burn_reclaim.sql`
+- `nft_mint_queue` — Extended: action `'burn'`, statuses `'burning'`/`'burned'`
+- `tickets` — Added `nft_burned` (bool), `nft_burned_at`, `nft_burn_tx_hash`
+- `get_burn_eligible_tickets(grace_days)` SQL function — Finds tickets with minted NFTs on events ended 60+ days ago
+- `enqueue_expired_nft_burns(grace_days)` SQL function — Enqueues burn jobs for eligible tickets
+- pg_cron job `enqueue-expired-nft-burns` — Runs daily at 1am UTC
+
+**Edge Functions:**
+- `burn-expired-nfts` — Batch processor (up to 10 per invocation). For each ticket:
+  1. Derives buyer's payment key from mnemonic (CIP-1852 BIP32-Ed25519)
+  2. Finds reference NFT UTxO at platform address + user token UTxO at buyer address
+  3. Builds burn tx: spends both UTxOs, burns both CIP-68 tokens (-1 each), sends all ADA to platform
+  4. Signs with dual witnesses (platform key + buyer key)
+  5. Submits to Blockfrost, updates `nft_mint_queue` and `tickets`
+  - Handles edge cases: user token not at expected address (burns ref only), no user wallet (marks burned)
+  - Supports `{ "enqueue": true }` to also run the enqueue SQL function
+  - Self-invokes for next batch if more entries remain
+  - Max 5 retries per entry
+- `refresh-analytics` — Extended: fire-and-forget triggers `burn-expired-nfts` with enqueue=true after analytics refresh
+
+**Key Derivation (server-side, Deno):**
+- BIP39 mnemonic → PBKDF2-HMAC-SHA512 → Icarus V2 master key (96 bytes: kL+kR+chainCode)
+- CIP-1852 path: m/1852'/1815'/0'/0/0 (3 hardened + 2 normal derivations)
+- BIP32-Ed25519 child key derivation using HMAC-SHA512
+- Derives fresh each time (milliseconds) — no stored private keys
+
+**Burn Transaction Structure:**
+- Inputs: reference NFT UTxO (platform) + user token UTxO (buyer) + optional ADA-only UTxOs for fees
+- Outputs: single change output to platform address (reclaimed ADA)
+- Mint field: -1 reference NFT + -1 user token (CBOR negative integers)
+- Witnesses: platform vkey + buyer vkey + native script (policy)
+
+**Flutter:**
+- `Ticket` model — Added `nftBurned`, `nftBurnedAt`, `nftBurnTxHash` fields
+- `ticket_screen.dart` — Shows "Expired" pill (with timer_off icon) when `nftBurned == true`, tappable → CardanoScan burn tx
+
+**Admin Panel:**
+- NFT Wallet dashboard — "Burned" KPI card, burn statuses in queue table (burning/burned badges)
+- API route — Returns burn counts, handles burn action retries
+
+## Future: Cardano Phase 3
+
 - Multi-address derivation for privacy
-- Store public address in user profile for NFT delivery
-- Mainnet deployment
+- Mainnet deployment (switch Blockfrost base URL + project ID)
+- Organizer NFT customization (custom metadata fields, artwork)
+
+## Roadmap: Competitive Parity with Ticket Tailor
+
+Ticket Tailor is our closest competitor (~73K organizers, $6.6M ARR, flat $0.26/ticket). They excel at organizer tooling; we excel at buyer experience (discovery, native app, NFT tickets, built-in resale, crypto wallet). These features close the organizer-side gap.
+
+### ~~Priority 1 — Offline Check-in~~ (Completed)
+
+Ushers can check in attendees even with no connectivity. Door list auto-downloads on screen open. 3-tier verification (Offline Cache → Blockchain → Database) with real-time animated UI.
+
+**Architecture:**
+- SQLite local database (`checkin_cache.db`) with `door_list` and `sync_queue` tables
+- O(1) HashMap index: 2 keys per ticket (ticket_id + ticket_number)
+- Background sync every 7 seconds when online (via `connectivity_plus`)
+- Conflict resolution: local check-in timestamp wins for "already used"; server "cancelled" status propagated
+
+**Dependencies added:**
+- `sqflite: ^2.3.0` / `sqflite_common_ffi: ^2.3.0+2` — SQLite
+- `connectivity_plus: ^6.0.0` — Network state detection
+- `path: ^1.9.0` — Database path resolution
+
+**Core Services:**
+- `OfflineCheckInService` (`core/services/offline_checkin_service.dart`) — SQLite door list + HashMap index. Methods: downloadDoorList, lookupTicket, markCheckedIn, markUndoCheckIn, getSyncQueue, markSynced, getLocalStats
+- `CheckInSyncService` (`core/services/checkin_sync_service.dart`) — Background sync engine. Timer-based (7s), batch size 50, conflict resolution, door list refresh every 60s, DB lookup for tickets not in cache
+- `BlockchainVerifyService` (`core/services/blockchain_verify_service.dart`) — NFT ownership verification via Blockfrost. Skips non-NFT tickets
+
+**Models:**
+- `VerificationResult` (`core/models/verification_result.dart`) — 3-tier result with `VerificationTier`, `TierStatus`, `TierResult`, `DoorListEntry`, `SyncQueueEntry`, `BlockchainVerifyResult`
+
+**Provider:**
+- `OfflineCheckInNotifier` (`core/providers/offline_checkin_provider.dart`) — State management with downloadDoorList, verifyTicket (3-tier pipeline), confirmCheckIn, undoCheckIn. Providers: offlineCheckInProvider, offlineCheckInServiceProvider, checkInSyncServiceProvider, blockchainVerifyServiceProvider
+
+**Widgets:**
+- `VerificationCard` (`features/events/widgets/verification_card.dart`) — Animated 3-tier verification UI with tier rows, ticket info, admission bar, action buttons
+- `ConnectivityIndicator` (`features/events/widgets/connectivity_indicator.dart`) — Status pill (green/amber/red)
+
+**Modified Files:**
+- `usher_event_screen.dart` — Integrated offline provider, verification card, connectivity indicator. Auto-downloads door list, uses 3-tier verify pipeline, shows pending sync count and door list freshness
+- `staff_dashboard_screen.dart` — "Check Tickets" now navigates to `UsherEventScreen` (was TODO snackbar)
+- `i_ticket_repository.dart` + `ticket_repository.dart` — Added `getEventDoorList(eventId)` method
+- `services.dart`, `providers.dart`, `models.dart` — Export new files
+
+**Verification Flow:**
+1. Tier 1 (Offline, <1ms): HashMap lookup → valid/used/cancelled/notFound
+2. Tier 2 (Blockchain, 1-3s, non-blocking): Blockfrost NFT asset check (skipped for non-NFT)
+3. Tier 3 (Database, 1-3s, non-blocking): Supabase status confirmation (skipped when offline)
+4. Admission: Tier 1 is authoritative. Tiers 2-3 run in parallel for audit only.
+
+**Test Suite:** `test/offline_checkin_test.dart` — 34 tests covering HashMap index, local check-in, undo, sync queue, stats, stress (50K tickets), FIFO ordering, retry exhaustion, edge cases. Uses `sqflite_common_ffi` in-memory databases.
+
+### Priority 2 — Discount & Promo Codes
+
+Table-stakes feature every organizer expects. Percentage or fixed-amount discounts, assignable to specific ticket types, date-limited. Voucher codes that discount total order. Applied at checkout.
+
+### Priority 3 — Waitlists
+
+When tickets sell out, buyers can join a waitlist by email. Organizer can broadcast notifications when tickets become available. Per-ticket-type waitlists.
+
+### Priority 4 — Apple Wallet & Google Wallet
+
+Ticket passes delivered to native wallets. QR code embedded in the pass for check-in scanning. Pass updates pushed for event changes (time, venue).
+
+### Priority 5 — Seating Charts
+
+Drag-and-drop seating chart builder for organizers. Sections, rows, individual seats, tables, standing areas. Seat selection at checkout with visual map. Price zones (VIP section, balcony, floor, etc.). This is the largest feature — consider a phased approach: simple row/seat grid first, then full visual builder.
+
+### Priority 6 — Recurring & Series Events
+
+Repeating events with configurable schedules (daily, weekly, monthly, custom). Shared settings across occurrences (ticket types, venue, description). Per-occurrence capacity and sales tracking. Heat map showing busiest/quietest time slots.
+
+### Priority 7 — Virtual Events
+
+Integrate video conferencing (Zoom, Google Meet, or built-in via WebRTC). Ticket purchase grants access link. Access gated by ticket validation. Hybrid events: both in-person and virtual ticket types.
+
+### Priority 8 — Embeddable Checkout Widget
+
+JavaScript widget organizers drop on their own website. Pop-out checkout flow, no redirect needed. Customizable styling to match organizer's brand.
+
+### Priority 9 — Merch & Products
+
+Sell merchandise, add-ons, and digital downloads alongside or independent of events. Year-round storefront per organizer. Bundling with ticket purchases (e.g. "VIP + T-Shirt"). Inventory tracking per product variant.
+
+### Priority 10 — Localization (i18n)
+
+Multi-language checkout and app UI. Start with Spanish, French, German, Portuguese. Currency formatting per locale. RTL support for Arabic/Hebrew (later phase).
+
+### Priority 11 — White-Labeling & Custom Domains
+
+Organizers hide Tickety branding, use their own logo/colors. Custom domain for ticket pages (tickets.yourbrand.com). Branded email notifications.
+
+### Priority 12 — Public API
+
+REST API for organizers to integrate with their own systems. Endpoints: events, tickets, orders, check-ins, discount codes. API key auth, rate limiting, webhook subscriptions. Developer documentation site.
+
+### Priority 13 — Affiliate & Referral Tracking
+
+Unique referral links per sales channel. Performance dashboard showing which channels drive sales. Commission tracking for affiliates.
+
+### Not Prioritized (Tickety already ahead)
+
+- NFT tickets (CIP-68 on Cardano) — Ticket Tailor has nothing
+- Crypto wallet (ADA send/receive) — Ticket Tailor has nothing
+- Built-in resale marketplace — Ticket Tailor uses third-party Tixel
+- ACH bank payments — Ticket Tailor doesn't offer
+- Native buyer app — Ticket Tailor is web-only for buyers
+- Event discovery — Ticket Tailor has no marketplace
+- Tap-to-pay (phone-to-phone NFC) — More flexible than Ticket Tailor's Stripe Terminal approach
+- Comp/favor tickets — Not documented in Ticket Tailor
+- Organizer verification — Ticket Tailor has nothing comparable

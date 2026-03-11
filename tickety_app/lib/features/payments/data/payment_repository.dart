@@ -28,6 +28,9 @@ class PaymentRepository implements IPaymentRepository {
       tag: _tag,
     );
 
+    // Refresh session to ensure JWT is valid (prevents 401 after idle or account switch)
+    await _client.auth.refreshSession();
+
     final response = await _client.functions.invoke(
       'create-payment-intent',
       body: {
@@ -70,40 +73,72 @@ class PaymentRepository implements IPaymentRepository {
       tag: _tag,
     );
 
-    print('>>> RESALE: Calling create-resale-intent with listing=$resaleListingId, amount=$amountCents, user=$userId');
+    // Log full auth state before calling
+    final session = _client.auth.currentSession;
+    final accessToken = session?.accessToken;
+    final expiresAt = session?.expiresAt;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    print('>>> RESALE [1] userId=$userId');
+    print('>>> RESALE [2] session null=${session == null}');
+    print('>>> RESALE [3] accessToken null=${accessToken == null}, length=${accessToken?.length}');
+    print('>>> RESALE [4] expiresAt=$expiresAt, now=$now, expired=${expiresAt != null && expiresAt < now}');
+    print('>>> RESALE [5] tokenPreview=${accessToken?.substring(0, 20)}...');
 
-    final response = await _client.functions.invoke(
-      'create-resale-intent',
-      body: {
-        'resale_listing_id': resaleListingId,
-        'amount_cents': amountCents,
-        'currency': currency,
-        'user_id': userId,
-      },
-    );
-
-    print('>>> RESALE: Response status=${response.status}, data=${response.data}');
-
-    if (response.status != 200) {
-      final errorData = response.data is Map ? response.data : {};
-      final error = errorData['error'] ?? 'Unknown error';
-      final details = errorData['details'] ?? '';
-      print('>>> RESALE ERROR: status=${response.status}, error=$error, details=$details, fullData=${response.data}');
-
-      // Check for specific error types
-      if (error.toString().contains('Connect account')) {
-        throw PaymentException.connectAccountRequired();
-      }
-
-      throw PaymentException(
-        'Failed to initiate payment. Please try again.',
-        technicalDetails: 'Edge function error: $error',
-      );
+    // Try refreshing the session
+    try {
+      final refreshResult = await _client.auth.refreshSession();
+      final newToken = refreshResult.session?.accessToken;
+      final newExpires = refreshResult.session?.expiresAt;
+      print('>>> RESALE [6] refresh OK, newExpires=$newExpires, newTokenLength=${newToken?.length}');
+      print('>>> RESALE [7] newTokenPreview=${newToken?.substring(0, 20)}...');
+    } catch (e) {
+      print('>>> RESALE [6] refresh FAILED: $e');
     }
 
-    final data = response.data as Map<String, dynamic>;
-    AppLogger.info('Resale payment intent created: ${data['payment_intent_id']}', tag: _tag);
-    return PaymentIntentResponse.fromJson(data);
+    print('>>> RESALE [8] Calling create-resale-intent with listing=$resaleListingId, amount=$amountCents');
+
+    try {
+      final response = await _client.functions.invoke(
+        'create-resale-intent',
+        body: {
+          'resale_listing_id': resaleListingId,
+          'amount_cents': amountCents,
+          'currency': currency,
+          'user_id': userId,
+        },
+      );
+
+      print('>>> RESALE [9] Response status=${response.status}');
+      print('>>> RESALE [10] Response data type=${response.data.runtimeType}');
+      print('>>> RESALE [11] Response data=${response.data}');
+
+      if (response.status != 200) {
+        final errorData = response.data is Map ? response.data : {};
+        final error = errorData['error'] ?? errorData['message'] ?? 'Unknown error';
+        final details = errorData['details'] ?? errorData['code'] ?? '';
+        print('>>> RESALE [12] ERROR: status=${response.status}, error=$error, details=$details');
+
+        if (error.toString().contains('Connect account')) {
+          throw PaymentException.connectAccountRequired();
+        }
+
+        throw PaymentException(
+          'Failed to initiate payment: $error',
+          technicalDetails: 'Edge function error (${response.status}): $error | details: $details | full: ${response.data}',
+        );
+      }
+
+      final data = response.data as Map<String, dynamic>;
+      print('>>> RESALE [13] SUCCESS: paymentIntentId=${data['payment_intent_id']}');
+      return PaymentIntentResponse.fromJson(data);
+    } on PaymentException {
+      rethrow;
+    } catch (e, s) {
+      print('>>> RESALE [ERROR] Exception type=${e.runtimeType}');
+      print('>>> RESALE [ERROR] Exception=$e');
+      print('>>> RESALE [ERROR] Stack=${s.toString().split('\n').take(5).join('\n')}');
+      rethrow;
+    }
   }
 
   @override

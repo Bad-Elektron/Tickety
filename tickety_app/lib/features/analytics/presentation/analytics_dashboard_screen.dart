@@ -1,7 +1,10 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/analytics_provider.dart';
+import '../models/platform_engagement.dart';
 import '../widgets/widgets.dart';
 import 'tag_detail_screen.dart';
 
@@ -81,6 +84,14 @@ class _AnalyticsDashboardScreenState
                         // Market overview cards
                         _MarketOverview(state: state),
                         const SizedBox(height: 24),
+
+                        // Engagement section
+                        if (state.engagement != null)
+                          _EngagementSection(
+                            engagement: state.engagement!,
+                          ),
+                        if (state.engagement != null)
+                          const SizedBox(height: 24),
 
                         // Trending tags section
                         Text(
@@ -219,6 +230,240 @@ class _TrendingTagsList extends StatelessWidget {
           onTap: () => onTagTap(tag.tagId),
         );
       }).toList(),
+    );
+  }
+}
+
+class _EngagementSection extends StatelessWidget {
+  final PlatformEngagement engagement;
+
+  const _EngagementSection({required this.engagement});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Engagement',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Views and conversion over the last 30 days',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // KPI row
+        Row(
+          children: [
+            Expanded(
+              child: MetricCard(
+                label: 'Views',
+                value: _formatCompact(engagement.totalViews30d),
+                subtitle: '30 days',
+                icon: Icons.visibility,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: MetricCard(
+                label: 'Unique',
+                value: _formatCompact(engagement.uniqueViewers30d),
+                subtitle: 'viewers',
+                icon: Icons.people,
+                color: Colors.teal,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: MetricCard(
+                label: 'Conversion',
+                value: '${engagement.avgConversionRate}%',
+                subtitle: 'avg rate',
+                icon: Icons.trending_up,
+                color: Colors.green,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Weekly views bar chart
+        if (engagement.weeklyViews.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Weekly Views',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 120,
+                  child: _SimpleBarChart(
+                    values: engagement.weeklyViews
+                        .map((e) => e.views.toDouble())
+                        .toList(),
+                    labels: engagement.weeklyViews
+                        .map((e) => e.weekStart.length >= 10
+                            ? e.weekStart.substring(5, 10)
+                            : e.weekStart)
+                        .toList(),
+                    color: colorScheme.primary,
+                    labelStyle: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 10,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // Top events by views
+        if (engagement.topEvents.isNotEmpty) ...[
+          Text(
+            'Top Events by Views',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...engagement.topEvents.take(5).map(
+            (event) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        event.title,
+                        style: theme.textTheme.bodyMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${_formatCompact(event.totalViews)} views',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${event.conversionRate}%',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _formatCompact(int value) {
+    if (value >= 1000000) return '${(value / 1000000).toStringAsFixed(1)}M';
+    if (value >= 1000) return '${(value / 1000).toStringAsFixed(1)}K';
+    return value.toString();
+  }
+}
+
+class _SimpleBarChart extends StatelessWidget {
+  final List<double> values;
+  final List<String> labels;
+  final Color color;
+  final TextStyle? labelStyle;
+
+  const _SimpleBarChart({
+    required this.values,
+    required this.labels,
+    required this.color,
+    this.labelStyle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxVal = values.fold(0.0, (a, b) => math.max(a, b));
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(values.length, (i) {
+        final fraction = maxVal > 0 ? values[i] / maxVal : 0.0;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: FractionallySizedBox(
+                      heightFactor: fraction.clamp(0.05, 1.0),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  labels[i],
+                  style: labelStyle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }

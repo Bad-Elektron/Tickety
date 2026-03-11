@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
@@ -25,11 +26,13 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
   List<TicketType> _ticketTypes = [];
   bool _isLoading = true;
   String? _error;
+  Map<String, int> _nftStats = {};
 
   @override
   void initState() {
     super.initState();
     _loadTicketTypes();
+    if (widget.event.nftEnabled) _loadNftStats();
   }
 
   Future<void> _loadTicketTypes() async {
@@ -56,6 +59,21 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
         });
       }
     }
+  }
+
+  Future<void> _loadNftStats() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('nft_mint_queue')
+          .select('status')
+          .eq('event_id', widget.event.id);
+      final counts = <String, int>{};
+      for (final row in rows) {
+        final status = row['status'] as String;
+        counts[status] = (counts[status] ?? 0) + 1;
+      }
+      if (mounted) setState(() => _nftStats = counts);
+    } catch (_) {}
   }
 
   @override
@@ -180,6 +198,9 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
         ? '\$0'
         : '\$${(totalRevenue / 100).toStringAsFixed(2)}';
 
+    final mintedCount = _nftStats['minted'] ?? 0;
+    final pendingCount = (_nftStats['queued'] ?? 0) + (_nftStats['minting'] ?? 0);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Column(
@@ -213,14 +234,26 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              Expanded(
-                child: _SummaryChip(
-                  icon: Icons.style_outlined,
-                  label: 'Types',
-                  value: '${_ticketTypes.length}',
-                  color: colorScheme.tertiary,
+              if (widget.event.nftEnabled)
+                Expanded(
+                  child: _SummaryChip(
+                    icon: Icons.token_outlined,
+                    label: 'Minted',
+                    value: pendingCount > 0
+                        ? '$mintedCount (+$pendingCount)'
+                        : '$mintedCount',
+                    color: Colors.indigo,
+                  ),
+                )
+              else
+                Expanded(
+                  child: _SummaryChip(
+                    icon: Icons.style_outlined,
+                    label: 'Types',
+                    value: '${_ticketTypes.length}',
+                    color: colorScheme.tertiary,
+                  ),
                 ),
-              ),
             ],
           ),
         ],
@@ -240,7 +273,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
           _loadTicketTypes();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Minted $quantity ${ticketType.name} tickets'),
+              content: Text('Added $quantity ${ticketType.name} tickets'),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -491,8 +524,8 @@ class _TicketTypeCard extends StatelessWidget {
                 Expanded(
                   child: TextButton.icon(
                     onPressed: onMint,
-                    icon: const Icon(Icons.add_circle_outline, size: 18),
-                    label: const Text('Mint More'),
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Adjust Limit'),
                     style: TextButton.styleFrom(
                       foregroundColor: colorScheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -663,13 +696,13 @@ class _MintTicketsSheetState extends State<_MintTicketsSheet> {
           ),
           const SizedBox(height: 24),
           Icon(
-            Icons.add_circle_outline,
+            Icons.tune,
             size: 48,
             color: colorScheme.primary,
           ),
           const SizedBox(height: 16),
           Text(
-            'Mint ${widget.ticketType.name}',
+            'Adjust Limit: ${widget.ticketType.name}',
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -739,7 +772,7 @@ class _MintTicketsSheetState extends State<_MintTicketsSheet> {
               ),
             ),
             child: Text(
-              'Mint $_quantity Tickets',
+              'Add $_quantity Tickets',
               style:
                   const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),

@@ -162,17 +162,18 @@ class TicketRepository implements ITicketRepository {
   Future<TicketStats> getTicketStats(String eventId) async {
     AppLogger.debug('Fetching ticket stats for event: $eventId', tag: _tag);
 
-    // Use SQL aggregation instead of fetching all rows
+    // Use unified get_event_dashboard RPC (replaces get_ticket_stats)
     final response = await _client.rpc(
-      'get_ticket_stats',
+      'get_event_dashboard',
       params: {'p_event_id': eventId},
     );
 
     final data = response as Map<String, dynamic>?;
+    final tickets = data?['tickets'] as Map<String, dynamic>? ?? {};
 
-    final totalSold = data?['total_sold'] as int? ?? 0;
-    final checkedIn = data?['checked_in'] as int? ?? 0;
-    final totalRevenueCents = data?['revenue_cents'] as int? ?? 0;
+    final totalSold = tickets['total_sold'] as int? ?? 0;
+    final checkedIn = tickets['checked_in'] as int? ?? 0;
+    final totalRevenueCents = tickets['revenue_cents'] as int? ?? 0;
 
     AppLogger.debug(
       'Stats: $totalSold sold, $checkedIn checked in, \$${totalRevenueCents / 100} revenue',
@@ -250,6 +251,32 @@ class TicketRepository implements ITicketRepository {
       pageSize: pageSize,
       hasMore: hasMore,
     );
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> getEventDoorList(String eventId) async {
+    AppLogger.debug('Fetching door list for event: $eventId', tag: _tag);
+
+    final response = await _client
+        .from('tickets')
+        .select(
+          'id, ticket_number, event_id, status, owner_name, owner_email, '
+          'nft_asset_id, nft_policy_id, nft_tx_hash, checked_in_at, checked_in_by',
+        )
+        .eq('event_id', eventId)
+        .inFilter('status', ['valid', 'used'])
+        .order('ticket_number');
+
+    final tickets = (response as List<dynamic>)
+        .map((json) => json as Map<String, dynamic>)
+        .toList();
+
+    AppLogger.info(
+      'Door list fetched: ${tickets.length} tickets for event $eventId',
+      tag: _tag,
+    );
+
+    return tickets;
   }
 
   String _generateTicketNumber() {

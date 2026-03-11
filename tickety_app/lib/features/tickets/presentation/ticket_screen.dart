@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -7,11 +8,14 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/services/supabase_service.dart';
+
 import '../../../core/graphics/graphics.dart';
 import '../../../core/services/nfc_service.dart';
 import '../../events/data/event_mapper.dart';
 import '../../events/models/event_model.dart';
 import '../../events/presentation/event_details_screen.dart';
+import '../../favor_tickets/models/ticket_offer.dart' show TicketMode;
 import '../../staff/models/ticket.dart';
 import 'resale_listing_screen.dart';
 
@@ -32,29 +36,31 @@ class _TicketScreenState extends State<TicketScreen> {
   bool _hceAvailable = false;
   bool _nfcBroadcasting = false;
   final NfcService _nfcService = NfcService.instance;
+  Timer? _mintPollTimer;
+  late Ticket _ticket;
 
   // Helper getters to extract event data
   String get _eventTitle =>
-      widget.ticket.eventData?['title'] as String? ?? 'Unknown Event';
+      _ticket.eventData?['title'] as String? ?? 'Unknown Event';
 
   String? get _eventSubtitle =>
-      widget.ticket.eventData?['subtitle'] as String?;
+      _ticket.eventData?['subtitle'] as String?;
 
-  String? get _venue => widget.ticket.eventData?['venue'] as String?;
+  String? get _venue => _ticket.eventData?['venue'] as String?;
 
-  String? get _city => widget.ticket.eventData?['city'] as String?;
+  String? get _city => _ticket.eventData?['city'] as String?;
 
-  String? get _country => widget.ticket.eventData?['country'] as String?;
+  String? get _country => _ticket.eventData?['country'] as String?;
 
   DateTime? get _eventDate {
-    final dateStr = widget.ticket.eventData?['date'] as String?;
+    final dateStr = _ticket.eventData?['date'] as String?;
     if (dateStr == null) return null;
     return DateTime.tryParse(dateStr);
   }
 
   int get _noiseSeed =>
-      widget.ticket.eventData?['noise_seed'] as int? ??
-      widget.ticket.ticketNumber.hashCode;
+      _ticket.eventData?['noise_seed'] as int? ??
+      _ticket.ticketNumber.hashCode;
 
   String? get _fullAddress {
     final parts = <String>[];
@@ -66,7 +72,7 @@ class _TicketScreenState extends State<TicketScreen> {
 
   /// Get the EventModel from ticket's event data.
   EventModel? get _eventModel {
-    final eventData = widget.ticket.eventData;
+    final eventData = _ticket.eventData;
     if (eventData == null) return null;
     try {
       return EventMapper.fromJson(eventData);
@@ -91,16 +97,48 @@ class _TicketScreenState extends State<TicketScreen> {
   @override
   void initState() {
     super.initState();
+    _ticket = widget.ticket;
     _checkNfcAvailability();
+    _startMintPollingIfNeeded();
   }
 
   @override
   void dispose() {
-    // Stop broadcasting when screen is disposed
+    _mintPollTimer?.cancel();
     if (_nfcBroadcasting) {
       _nfcService.stopBroadcasting();
     }
     super.dispose();
+  }
+
+  void _startMintPollingIfNeeded() {
+    if (!_ticket.isAwaitingMint) return;
+    _mintPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      try {
+        final data = await SupabaseService.instance.client
+            .from('tickets')
+            .select('nft_minted, nft_asset_id, nft_tx_hash, nft_policy_id, nft_minted_at')
+            .eq('id', _ticket.id)
+            .single();
+        if (data['nft_minted'] == true && mounted) {
+          setState(() {
+            _ticket = _ticket.copyWith(
+              nftMinted: true,
+              nftAssetId: data['nft_asset_id'] as String?,
+              nftTxHash: data['nft_tx_hash'] as String?,
+              nftPolicyId: data['nft_policy_id'] as String?,
+              nftMintedAt: data['nft_minted_at'] != null
+                  ? DateTime.tryParse(data['nft_minted_at'] as String)
+                  : null,
+            );
+          });
+          _mintPollTimer?.cancel();
+          _mintPollTimer = null;
+        }
+      } catch (_) {
+        // Silently ignore poll errors
+      }
+    });
   }
 
   Future<void> _checkNfcAvailability() async {
@@ -138,9 +176,9 @@ class _TicketScreenState extends State<TicketScreen> {
       }
     } else {
       final payload = TicketNfcPayload(
-        ticketId: widget.ticket.id,
-        ticketNumber: widget.ticket.ticketNumber,
-        eventId: widget.ticket.eventId,
+        ticketId: _ticket.id,
+        ticketNumber: _ticket.ticketNumber,
+        eventId: _ticket.eventId,
       );
 
       final success = await _nfcService.startBroadcasting(payload);
@@ -173,11 +211,11 @@ class _TicketScreenState extends State<TicketScreen> {
     HapticFeedback.mediumImpact();
 
     // Start NFC broadcasting if available and ticket is valid
-    if (_hceAvailable && widget.ticket.isValid && !_nfcBroadcasting) {
+    if (_hceAvailable && _ticket.isValid && !_nfcBroadcasting) {
       final payload = TicketNfcPayload(
-        ticketId: widget.ticket.id,
-        ticketNumber: widget.ticket.ticketNumber,
-        eventId: widget.ticket.eventId,
+        ticketId: _ticket.id,
+        ticketNumber: _ticket.ticketNumber,
+        eventId: _ticket.eventId,
       );
       final success = await _nfcService.startBroadcasting(payload);
       if (mounted && success) {
@@ -191,9 +229,9 @@ class _TicketScreenState extends State<TicketScreen> {
     final qrData = jsonEncode({
       'type': 'tickety_ticket',
       'version': 1,
-      'ticket_id': widget.ticket.id,
-      'ticket_number': widget.ticket.ticketNumber,
-      'event_id': widget.ticket.eventId,
+      'ticket_id': _ticket.id,
+      'ticket_number': _ticket.ticketNumber,
+      'event_id': _ticket.eventId,
     });
 
     // Show the QR overlay
@@ -202,7 +240,7 @@ class _TicketScreenState extends State<TicketScreen> {
       barrierColor: Colors.black.withValues(alpha: 0.9),
       builder: (context) => _QrCodeOverlay(
         qrData: qrData,
-        ticketNumber: widget.ticket.ticketNumber,
+        ticketNumber: _ticket.ticketNumber,
         eventTitle: _eventTitle,
         isNfcActive: _nfcBroadcasting,
         isNfcSupported: _hceAvailable,
@@ -217,8 +255,8 @@ class _TicketScreenState extends State<TicketScreen> {
   }
 
   Future<void> _openNavigation(BuildContext context) async {
-    final lat = widget.ticket.eventData?['latitude'] as num?;
-    final lng = widget.ticket.eventData?['longitude'] as num?;
+    final lat = _ticket.eventData?['latitude'] as num?;
+    final lng = _ticket.eventData?['longitude'] as num?;
 
     Uri? mapsUri;
     if (lat != null && lng != null) {
@@ -280,14 +318,13 @@ class _TicketScreenState extends State<TicketScreen> {
   Future<void> _navigateToSellScreen() async {
     final result = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => ResaleListingScreen(ticket: widget.ticket),
+        builder: (_) => ResaleListingScreen(ticket: _ticket),
       ),
     );
 
     if (result == true && mounted) {
       HapticFeedback.mediumImpact();
-      _showMessage('Ticket listed for sale!');
-      // Pop back to refresh the tickets list
+      // Pop back to refresh the tickets list (handles both listing and cancellation)
       Navigator.of(context).pop(true);
     }
   }
@@ -307,9 +344,9 @@ class _TicketScreenState extends State<TicketScreen> {
             flexibleSpace: FlexibleSpaceBar(
               background: _TicketHeader(
                 noiseSeed: _noiseSeed,
-                ticketId: widget.ticket.id,
-                ticketNumber: widget.ticket.ticketNumber,
-                eventId: widget.ticket.eventId,
+                ticketId: _ticket.id,
+                ticketNumber: _ticket.ticketNumber,
+                eventId: _ticket.eventId,
                 eventTitle: _eventTitle,
                 nfcBroadcasting: _nfcBroadcasting,
                 onPresent: _presentTicket,
@@ -380,8 +417,8 @@ class _TicketScreenState extends State<TicketScreen> {
                   _InfoCard(
                     icon: Icons.confirmation_number_outlined,
                     label: 'Ticket Number',
-                    value: widget.ticket.ticketNumber,
-                    trailing: _StatusBadge(ticket: widget.ticket),
+                    value: _ticket.ticketNumber,
+                    trailing: _StatusBadge(ticket: _ticket),
                   ),
                   const SizedBox(height: 12),
 
@@ -417,11 +454,15 @@ class _TicketScreenState extends State<TicketScreen> {
 
                   // Wallet Status Card
                   _WalletStatusCard(
-                    ticket: widget.ticket,
-                    onSellPressed: widget.ticket.canBeResold
+                    ticket: _ticket,
+                    onSellPressed: _ticket.canBeResold
                         ? _showSellConfirmation
                         : null,
+                    onManagePressed: _ticket.isListedForSale
+                        ? _navigateToSellScreen
+                        : null,
                   ),
+
                   const SizedBox(height: 24),
 
                   // Purchase info
@@ -443,25 +484,25 @@ class _TicketScreenState extends State<TicketScreen> {
                         const SizedBox(height: 12),
                         _DetailRow(
                           label: 'Price Paid',
-                          value: widget.ticket.formattedPrice,
+                          value: _ticket.formattedPrice,
                         ),
                         const SizedBox(height: 8),
                         _DetailRow(
                           label: 'Purchased',
-                          value: _formatDate(widget.ticket.soldAt),
+                          value: _formatDate(_ticket.soldAt),
                         ),
-                        if (widget.ticket.ownerName != null) ...[
+                        if (_ticket.ownerName != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
                             label: 'Holder',
-                            value: widget.ticket.ownerName!,
+                            value: _ticket.ownerName!,
                           ),
                         ],
-                        if (widget.ticket.ownerEmail != null) ...[
+                        if (_ticket.ownerEmail != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
                             label: 'Email',
-                            value: widget.ticket.ownerEmail!,
+                            value: _ticket.ownerEmail!,
                           ),
                         ],
                       ],
@@ -469,7 +510,7 @@ class _TicketScreenState extends State<TicketScreen> {
                   ),
 
                   // Check-in info if used
-                  if (widget.ticket.isUsed && widget.ticket.checkedInAt != null) ...[
+                  if (_ticket.isUsed && _ticket.checkedInAt != null) ...[
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -507,7 +548,7 @@ class _TicketScreenState extends State<TicketScreen> {
                                   ),
                                 ),
                                 Text(
-                                  _formatDateTime(widget.ticket.checkedInAt!),
+                                  _formatDateTime(_ticket.checkedInAt!),
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.green.shade700,
                                   ),
@@ -1276,17 +1317,19 @@ class _WalletStatusCard extends StatelessWidget {
   const _WalletStatusCard({
     required this.ticket,
     this.onSellPressed,
+    this.onManagePressed,
   });
 
   final Ticket ticket;
   final VoidCallback? onSellPressed;
+  final VoidCallback? onManagePressed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isOnSale = ticket.isListedForSale;
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: isOnSale
@@ -1357,32 +1400,106 @@ class _WalletStatusCard extends StatelessWidget {
                   ],
                 ),
               ),
-              // Status indicator
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
+              // On-chain status badge / Private-Public pill
+              if (ticket.nftBurned) ...[
+                GestureDetector(
+                  onTap: () async {
+                    final txHash = ticket.nftBurnTxHash;
+                    if (txHash != null && txHash != 'skipped_no_wallet' && txHash != 'ref_already_gone') {
+                      final url = Uri.parse(
+                          'https://preview.cardanoscan.io/transaction/$txHash');
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      }
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.timer_off_outlined,
+                          size: 14,
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Expired',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.8),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isOnSale ? Icons.visibility : Icons.shield,
-                      size: 14,
+              ] else if (ticket.nftMinted) ...[
+                GestureDetector(
+                  onTap: () async {
+                    final txHash = ticket.nftTransferTxHash ?? ticket.nftTxHash;
+                    if (txHash != null) {
+                      final url = Uri.parse(
+                          'https://preview.cardanoscan.io/transaction/$txHash');
+                      if (await canLaunchUrl(url)) {
+                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      }
+                    }
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.verified_rounded,
+                      size: 20,
                       color: Colors.white,
                     ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isOnSale ? 'Public' : 'Private',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ] else if (ticket.isAwaitingMint) ...[
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isOnSale ? Icons.visibility : Icons.shield,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isOnSale ? 'Public' : 'Private',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
           // Sell button (only if not already listed and ticket is valid)
@@ -1408,6 +1525,43 @@ class _WalletStatusCard extends StatelessWidget {
               ),
             ),
           ],
+          // Preparing ticket hint (awaiting mint, sell button hidden)
+          if (onSellPressed == null &&
+              !isOnSale &&
+              ticket.isAwaitingMint) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Preparing ticket\u2026',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           // Cancel listing hint (if on sale)
           if (isOnSale) ...[
             const SizedBox(height: 12),
@@ -1421,6 +1575,14 @@ class _WalletStatusCard extends StatelessWidget {
         ],
       ),
     );
+
+    if (isOnSale && onManagePressed != null) {
+      return GestureDetector(
+        onTap: onManagePressed,
+        child: card,
+      );
+    }
+    return card;
   }
 }
 
@@ -1675,3 +1837,4 @@ class _IosQrNotice extends StatelessWidget {
     );
   }
 }
+

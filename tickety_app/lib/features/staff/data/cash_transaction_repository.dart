@@ -408,10 +408,10 @@ class CashTransactionRepository {
           .eq('id', eventId)
           .single();
 
-      return response['cash_sales_enabled'] as bool? ?? false;
+      return response['cash_sales_enabled'] as bool? ?? true;
     } catch (e) {
       AppLogger.error('Failed to check cash sales status', error: e, tag: _tag);
-      return false;
+      return true;
     }
   }
 
