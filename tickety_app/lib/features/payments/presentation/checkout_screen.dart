@@ -49,6 +49,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   _PaymentMethod _selectedMethod = _PaymentMethod.card;
   List<LinkedBankAccount> _bankAccounts = [];
   bool _isBankLoading = true;
+  bool _promoExpanded = false;
+  final _promoController = TextEditingController();
 
   @override
   void initState() {
@@ -60,6 +62,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         _loadBankAccounts();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _promoController.dispose();
+    super.dispose();
   }
 
   void _checkOwnListing() {
@@ -100,18 +108,29 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   LinkedBankAccount? get _defaultBank =>
       _bankAccounts.isEmpty ? null : _bankAccounts.first;
 
+  /// The raw base cents before any discount.
+  int get _rawBaseCents =>
+      (widget.baseUnitPriceCents ?? widget.event.priceInCents ?? 0) *
+      widget.quantity;
+
+  /// Discount cents from promo code.
+  int get _promoDiscountCents {
+    final promoState = ref.read(promoValidationProvider);
+    return promoState.discountCents;
+  }
+
+  /// The discounted base (base - promo discount).
+  int get _discountedBaseCents =>
+      (_rawBaseCents - _promoDiscountCents).clamp(0, _rawBaseCents);
+
   /// The total for a bank (ACH) purchase.
   ACHPurchaseFeeBreakdown get _bankFees {
-    final baseCents = (widget.baseUnitPriceCents ?? widget.event.priceInCents ?? 0) *
-        widget.quantity;
-    return ACHPurchaseFeeCalculator.calculate(baseCents);
+    return ACHPurchaseFeeCalculator.calculate(_discountedBaseCents);
   }
 
   /// The total for a card purchase (existing fee structure).
   FeeBreakdown get _cardFees {
-    final baseCents = (widget.baseUnitPriceCents ?? widget.event.priceInCents ?? 0) *
-        widget.quantity;
-    return ServiceFeeCalculator.calculate(baseCents);
+    return ServiceFeeCalculator.calculate(_discountedBaseCents);
   }
 
   /// The savings when using bank vs card.
@@ -127,12 +146,20 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     switch (widget.paymentType) {
       case PaymentType.primaryPurchase:
+        final promoState = ref.read(promoValidationProvider);
+        final effectiveAmount = promoState.hasDiscount
+            ? _cardFees.totalCents
+            : widget.amountCents;
+        // Extract seat_selections from metadata if present
+        final seatSelections = widget.metadata?['seat_selections'] as List?;
         success = await notifier.initializePrimaryPurchase(
           eventId: widget.event.id,
-          amountCents: widget.amountCents,
+          amountCents: effectiveAmount,
           currency: ref.read(currencyCodeProvider),
           quantity: widget.quantity,
           metadata: widget.metadata,
+          promoCodeId: promoState.promoCodeId,
+          seatSelections: seatSelections?.cast<Map<String, dynamic>>(),
         );
       case PaymentType.resalePurchase:
         if (widget.resaleListingId == null) {
@@ -165,6 +192,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       case PaymentType.walletPurchase:
       case PaymentType.walletTopUp:
       case PaymentType.achPurchase:
+      case PaymentType.waitlistAutoPurchase:
         success = false;
     }
 
@@ -174,6 +202,22 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         _isPaymentReady = success;
       });
     }
+  }
+
+  void _applyPromoCode() {
+    final code = _promoController.text.trim();
+    if (code.isEmpty) return;
+
+    ref.read(promoValidationProvider.notifier).validateCode(
+      eventId: widget.event.id,
+      code: code,
+      basePriceCents: _rawBaseCents,
+    );
+
+    // Re-initialize card payment after validation completes
+    Future.delayed(const Duration(milliseconds: 100), () {
+      // Watch for state changes via listener below
+    });
   }
 
   Future<void> _handlePay() async {
@@ -209,11 +253,15 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     try {
       final repo = WalletRepository();
+      final promoState = ref.read(promoValidationProvider);
+      final seatSelections = widget.metadata?['seat_selections'] as List?;
       await repo.purchaseWithBank(
         eventId: widget.event.id,
         quantity: widget.quantity,
         paymentMethodId: bank.stripePaymentMethodId,
         amountCents: _bankFees.totalCents,
+        promoCodeId: promoState.promoCodeId,
+        seatSelections: seatSelections?.cast<Map<String, dynamic>>(),
       );
 
       if (mounted) {
@@ -248,10 +296,23 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final colorScheme = theme.colorScheme;
     final paymentState = ref.watch(paymentProcessProvider);
 
+    final promoState = ref.watch(promoValidationProvider);
+
+    // Re-initialize card payment when promo code is applied/removed
+    ref.listen<PromoValidationState>(promoValidationProvider, (prev, next) {
+      final hadDiscount = prev?.hasDiscount ?? false;
+      final hasDiscount = next.hasDiscount;
+      if (hadDiscount != hasDiscount && !next.isValidating) {
+        _initializePayment();
+      }
+    });
+
     final bankAvailable = _canUseBank && _hasLinkedBank && !_isBankLoading;
 
     final isBankSelected = _selectedMethod == _PaymentMethod.bank;
-    final displayTotal = isBankSelected ? _bankFees.totalCents : widget.amountCents;
+    final displayTotal = isBankSelected
+        ? _bankFees.totalCents
+        : (promoState.hasDiscount ? _cardFees.totalCents : widget.amountCents);
 
     return Scaffold(
       appBar: AppBar(
@@ -279,6 +340,127 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       quantity: widget.quantity,
                     ),
                     const SizedBox(height: 24),
+
+                    // Promo code section (primary purchases only)
+                    if (widget.paymentType == PaymentType.primaryPurchase) ...[
+                      if (promoState.hasDiscount) ...[
+                        // Applied state: green chip
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.green.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.check_circle,
+                                color: Colors.green.shade700,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '${promoState.appliedCode}: -${_formatAmount(promoState.discountCents)}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: Colors.green.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                color: Colors.green.shade700,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                onPressed: () {
+                                  ref
+                                      .read(promoValidationProvider.notifier)
+                                      .clearCode();
+                                  _promoController.clear();
+                                  // Re-initialize payment with original amount
+                                  _initializePayment();
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (_promoExpanded) ...[
+                        // Expanded: input field + apply button
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _promoController,
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  hintText: 'Enter promo code',
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  errorText: promoState.error,
+                                ),
+                                onSubmitted: (_) => _applyPromoCode(),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            SizedBox(
+                              height: 48,
+                              child: FilledButton(
+                                onPressed: promoState.isValidating
+                                    ? null
+                                    : _applyPromoCode,
+                                style: FilledButton.styleFrom(
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                child: promoState.isValidating
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Text('Apply'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // Collapsed: "Have a promo code?" button
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () =>
+                                setState(() => _promoExpanded = true),
+                            icon: const Icon(
+                              Icons.discount_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('Have a promo code?'),
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                    ],
 
                     // Payment method selector (only for primary purchases with linked bank)
                     if (bankAvailable) ...[
@@ -316,6 +498,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             0,
                         bankFees: _bankFees,
                         cardTotal: _cardFees.totalCents,
+                        discountCents: _promoDiscountCents,
+                        promoCode: promoState.appliedCode,
                       )
                     else
                       _OrderSummaryCard(
@@ -323,8 +507,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         unitPriceCents: widget.baseUnitPriceCents ??
                             widget.event.priceInCents ??
                             (widget.amountCents ~/ widget.quantity),
-                        totalCents: widget.amountCents,
+                        totalCents: promoState.hasDiscount
+                            ? _cardFees.totalCents
+                            : widget.amountCents,
                         paymentType: widget.paymentType,
+                        discountCents: _promoDiscountCents,
+                        promoCode: promoState.appliedCode,
                       ),
                     const SizedBox(height: 24),
 
@@ -729,12 +917,16 @@ class _BankOrderSummaryCard extends StatelessWidget {
   final int unitPriceCents;
   final ACHPurchaseFeeBreakdown bankFees;
   final int cardTotal;
+  final int discountCents;
+  final String? promoCode;
 
   const _BankOrderSummaryCard({
     required this.quantity,
     required this.unitPriceCents,
     required this.bankFees,
     required this.cardTotal,
+    this.discountCents = 0,
+    this.promoCode,
   });
 
   @override
@@ -753,8 +945,16 @@ class _BankOrderSummaryCard extends StatelessWidget {
         children: [
           _SummaryRow(
             label: 'Ticket ${quantity > 1 ? "x$quantity" : ""}',
-            amount: _formatAmount(bankFees.baseCents),
+            amount: _formatAmount(unitPriceCents * quantity),
           ),
+          if (discountCents > 0) ...[
+            const SizedBox(height: 8),
+            _SummaryRow(
+              label: 'Discount${promoCode != null ? ' ($promoCode)' : ''}',
+              amount: '-${_formatAmount(discountCents)}',
+              isDiscount: true,
+            ),
+          ],
           const SizedBox(height: 8),
           _SummaryRow(
             label: 'Platform fee (5%)',
@@ -822,18 +1022,27 @@ class _SummaryRow extends StatelessWidget {
   final String amount;
   final bool isSubtle;
   final bool isBold;
+  final bool isDiscount;
 
   const _SummaryRow({
     required this.label,
     required this.amount,
     this.isSubtle = false,
     this.isBold = false,
+    this.isDiscount = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    Color? textColor;
+    if (isDiscount) {
+      textColor = Colors.green.shade700;
+    } else if (isSubtle) {
+      textColor = colorScheme.onSurfaceVariant;
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -844,7 +1053,8 @@ class _SummaryRow extends StatelessWidget {
               ? theme.textTheme.titleSmall
                   ?.copyWith(fontWeight: FontWeight.bold)
               : theme.textTheme.bodyMedium?.copyWith(
-                  color: isSubtle ? colorScheme.onSurfaceVariant : null,
+                  color: textColor,
+                  fontWeight: isDiscount ? FontWeight.w600 : null,
                 ),
         ),
         Text(
@@ -853,7 +1063,8 @@ class _SummaryRow extends StatelessWidget {
               ? theme.textTheme.titleSmall
                   ?.copyWith(fontWeight: FontWeight.bold)
               : theme.textTheme.bodyMedium?.copyWith(
-                  color: isSubtle ? colorScheme.onSurfaceVariant : null,
+                  color: textColor,
+                  fontWeight: isDiscount ? FontWeight.w600 : null,
                 ),
         ),
       ],
@@ -998,12 +1209,16 @@ class _OrderSummaryCard extends StatelessWidget {
     required this.unitPriceCents,
     required this.totalCents,
     required this.paymentType,
+    this.discountCents = 0,
+    this.promoCode,
   });
 
   final int quantity;
   final int unitPriceCents;
   final int totalCents;
   final PaymentType paymentType;
+  final int discountCents;
+  final String? promoCode;
 
   @override
   Widget build(BuildContext context) {
@@ -1048,6 +1263,14 @@ class _OrderSummaryCard extends StatelessWidget {
               ),
             ],
           ),
+          if (discountCents > 0) ...[
+            const SizedBox(height: 8),
+            _SummaryRow(
+              label: 'Discount${promoCode != null ? ' ($promoCode)' : ''}',
+              amount: '-${_formatAmount(discountCents)}',
+              isDiscount: true,
+            ),
+          ],
           if (fees != null) ...[
             const SizedBox(height: 8),
             Row(

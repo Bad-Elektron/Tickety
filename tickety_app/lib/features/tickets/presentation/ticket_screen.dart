@@ -5,9 +5,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/providers/wallet_pass_provider.dart';
 import '../../../core/services/supabase_service.dart';
 
 import '../../../core/graphics/graphics.dart';
@@ -17,6 +19,7 @@ import '../../events/models/event_model.dart';
 import '../../events/presentation/event_details_screen.dart';
 import '../../favor_tickets/models/ticket_offer.dart' show TicketMode;
 import '../../staff/models/ticket.dart';
+import '../../wallet/models/wallet_pass.dart';
 import 'resale_listing_screen.dart';
 
 /// Screen displaying details of a single ticket.
@@ -450,6 +453,15 @@ class _TicketScreenState extends State<TicketScreen> {
                       tooltip: 'Get directions',
                     ),
                   ),
+                  // Seat assignment
+                  if (_ticket.seatLabel != null) ...[
+                    const SizedBox(height: 12),
+                    _InfoCard(
+                      icon: Icons.event_seat,
+                      label: 'Seat Assignment',
+                      value: _ticket.seatLabel!,
+                    ),
+                  ],
                   const SizedBox(height: 16),
 
                   // Wallet Status Card
@@ -462,6 +474,22 @@ class _TicketScreenState extends State<TicketScreen> {
                         ? _navigateToSellScreen
                         : null,
                   ),
+
+                  // Virtual access card
+                  if (_ticket.eventData?['event_format'] == 'virtual' ||
+                      _ticket.eventData?['event_format'] == 'hybrid') ...[
+                    const SizedBox(height: 12),
+                    _VirtualAccessCard(
+                      eventData: _ticket.eventData!,
+                      eventDate: _eventDate,
+                    ),
+                  ],
+
+                  // Add to Wallet buttons
+                  if (_ticket.isValid) ...[
+                    const SizedBox(height: 12),
+                    _WalletPassButtons(ticketId: _ticket.id),
+                  ],
 
                   const SizedBox(height: 24),
 
@@ -1777,6 +1805,302 @@ class _NfcActiveIndicatorState extends State<_NfcActiveIndicator>
           ),
         );
       },
+    );
+  }
+}
+
+/// Card showing virtual event access info with timed lockdown/reveal.
+class _VirtualAccessCard extends StatelessWidget {
+  const _VirtualAccessCard({
+    required this.eventData,
+    required this.eventDate,
+  });
+
+  final Map<String, dynamic> eventData;
+  final DateTime? eventDate;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final virtualLocked = eventData['virtual_locked'] == true;
+    final virtualUrl = eventData['virtual_event_url'] as String?;
+    final virtualPassword = eventData['virtual_event_password'] as String?;
+    final isVirtual = eventData['event_format'] == 'virtual';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.cyan.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.cyan.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.videocam_outlined, size: 20, color: Colors.cyan[600]),
+              const SizedBox(width: 8),
+              Text(
+                isVirtual ? 'Virtual Event' : 'Virtual Access',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.cyan[600],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (virtualLocked && virtualUrl != null) ...[
+            // Link revealed
+            InkWell(
+              onTap: () async {
+                final uri = Uri.tryParse(virtualUrl);
+                if (uri != null && await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.cyan.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.link, size: 18, color: Colors.cyan[700]),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        virtualUrl,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.cyan[700],
+                          decoration: TextDecoration.underline,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.open_in_new, size: 16, color: Colors.cyan[700]),
+                  ],
+                ),
+              ),
+            ),
+            if (virtualPassword != null && virtualPassword.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: virtualPassword));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Password copied'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_outline, size: 16, color: colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Password: $virtualPassword',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(Icons.copy, size: 16, color: colorScheme.onSurfaceVariant),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () async {
+                  final uri = Uri.tryParse(virtualUrl);
+                  if (uri != null && await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                icon: const Icon(Icons.videocam),
+                label: const Text('Join Event'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.cyan[600],
+                ),
+              ),
+            ),
+          ] else ...[
+            // Link not yet revealed — show countdown
+            Row(
+              children: [
+                Icon(Icons.schedule, size: 16, color: colorScheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _countdownText,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String get _countdownText {
+    if (eventDate == null) return 'Link reveals 1 hour before event';
+    final revealAt = eventDate!.subtract(const Duration(hours: 1));
+    final now = DateTime.now();
+    final diff = revealAt.difference(now);
+    if (diff.isNegative) return 'Link should be available soon...';
+    if (diff.inDays > 0) return 'Link reveals in ${diff.inDays}d ${diff.inHours % 24}h';
+    if (diff.inHours > 0) return 'Link reveals in ${diff.inHours}h ${diff.inMinutes % 60}m';
+    if (diff.inMinutes > 0) return 'Link reveals in ${diff.inMinutes}m';
+    return 'Link reveals shortly...';
+  }
+}
+
+/// Apple Wallet & Google Wallet pass buttons.
+class _WalletPassButtons extends ConsumerStatefulWidget {
+  const _WalletPassButtons({required this.ticketId});
+
+  final String ticketId;
+
+  @override
+  ConsumerState<_WalletPassButtons> createState() => _WalletPassButtonsState();
+}
+
+class _WalletPassButtonsState extends ConsumerState<_WalletPassButtons> {
+  @override
+  void initState() {
+    super.initState();
+    // Load existing passes
+    Future.microtask(() {
+      ref.read(walletPassProvider(widget.ticketId).notifier).loadPasses();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final state = ref.watch(walletPassProvider(widget.ticketId));
+
+    // Determine which buttons to show based on platform
+    final showApple = !kIsWeb && Platform.isIOS;
+    final showGoogle = kIsWeb || (!kIsWeb && Platform.isAndroid);
+
+    if (!showApple && !showGoogle) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        if (showApple)
+          _WalletButton(
+            label: state.applePass?.isDelivered == true
+                ? 'View in Apple Wallet'
+                : 'Add to Apple Wallet',
+            icon: Icons.wallet_rounded,
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            isLoading: state.isLoading,
+            onPressed: () {
+              ref
+                  .read(walletPassProvider(widget.ticketId).notifier)
+                  .generateAndOpen(WalletPassType.apple);
+            },
+          ),
+        if (showApple && showGoogle) const SizedBox(height: 8),
+        if (showGoogle)
+          _WalletButton(
+            label: state.googlePass?.isDelivered == true
+                ? 'View in Google Wallet'
+                : 'Add to Google Wallet',
+            icon: Icons.wallet_rounded,
+            backgroundColor: const Color(0xFF4285F4),
+            foregroundColor: Colors.white,
+            isLoading: state.isLoading,
+            onPressed: () {
+              ref
+                  .read(walletPassProvider(widget.ticketId).notifier)
+                  .generateAndOpen(WalletPassType.google);
+            },
+          ),
+        if (state.error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Could not generate pass. Try again later.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _WalletButton extends StatelessWidget {
+  const _WalletButton({
+    required this.label,
+    required this.icon,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.isLoading,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final bool isLoading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        onPressed: isLoading ? null : onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        icon: isLoading
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: foregroundColor,
+                ),
+              )
+            : Icon(icon, size: 20),
+        label: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
     );
   }
 }

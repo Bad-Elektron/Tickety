@@ -5,6 +5,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
+import '../../payments/presentation/promo_codes_screen.dart';
+import '../../subscriptions/subscriptions.dart';
+import '../../venues/models/venue.dart';
+import '../../venues/models/venue_section.dart';
+import '../../venues/presentation/venue_builder_screen.dart';
+import '../../venues/widgets/venue_mini_map.dart';
+import '../../venues/widgets/venue_picker_sheet.dart';
 import '../data/supabase_event_repository.dart';
 import '../models/event_model.dart';
 import '../models/ticket_type.dart';
@@ -27,12 +34,38 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
   bool _isLoading = true;
   String? _error;
   Map<String, int> _nftStats = {};
+  Venue? _venue;
+  bool _isSaving = false;
+
+  /// Tracks the venueId locally so linking updates the UI immediately.
+  String? _linkedVenueId;
+  List<VenueSection> get _venueSections => _venue?.layout.sections ?? [];
+
+  /// Pending section changes: ticketTypeId → sectionId (null = unlink).
+  final Map<String, String?> _pendingSectionChanges = {};
+  bool get _hasPendingChanges => _pendingSectionChanges.isNotEmpty;
+
+  String? get _effectiveVenueId => _linkedVenueId ?? widget.event.venueId;
 
   @override
   void initState() {
     super.initState();
+    _linkedVenueId = widget.event.venueId;
     _loadTicketTypes();
     if (widget.event.nftEnabled) _loadNftStats();
+    if (_effectiveVenueId != null) _loadVenue();
+  }
+
+  Future<void> _loadVenue() async {
+    final venueId = _effectiveVenueId;
+    if (venueId == null) return;
+    try {
+      final repo = ref.read(venueRepositoryProvider);
+      final venue = await repo.getVenue(venueId);
+      if (mounted && venue != null) {
+        setState(() => _venue = venue);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadTicketTypes() async {
@@ -99,6 +132,30 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
           SliverAppBar(
             expandedHeight: 140,
             pinned: true,
+            actions: [
+              if (_hasPendingChanges)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _isSaving
+                      ? const Center(
+                          child: SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        )
+                      : TextButton.icon(
+                          onPressed: _pushChanges,
+                          icon: const Icon(Icons.cloud_upload_outlined, size: 18, color: Colors.white),
+                          label: const Text(
+                            'Push Changes',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 'Tickets',
@@ -158,6 +215,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: _TicketTypeCard(
                         ticketType: _ticketTypes[ticketIndex],
+                        venueSections: _venueSections,
                         onMint: () => _showMintDialog(
                           context,
                           _ticketTypes[ticketIndex],
@@ -166,6 +224,12 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                           context,
                           _ticketTypes[ticketIndex],
                         ),
+                        onSectionChanged: _venueSections.isNotEmpty
+                            ? (sectionId) => _updateTicketSectionLocally(
+                                  _ticketTypes[ticketIndex],
+                                  sectionId,
+                                )
+                            : null,
                       ),
                     );
                   },
@@ -206,13 +270,52 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            widget.event.title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colorScheme.onSurfaceVariant,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.event.title,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          PromoCodesScreen(event: widget.event),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.discount_outlined, size: 18),
+                label: const Text('Promo Codes'),
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange,
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          // Venue link card
+          _VenueLinkCard(
+            hasVenue: _effectiveVenueId != null,
+            onLinkVenue: () => _handleVenueLink(context),
+          ),
+          if (_venue != null) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: VenueMiniMap(
+                layout: _venue!.layout,
+                canvasWidth: _venue!.canvasWidth,
+                canvasHeight: _venue!.canvasHeight,
+                height: 180,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           Row(
             children: [
@@ -257,6 +360,134 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  void _updateTicketSectionLocally(TicketType ticketType, String? sectionId) {
+    setState(() {
+      // Track the change
+      final originalSectionId = ticketType.venueSectionId;
+      if (sectionId == originalSectionId) {
+        // Reverted to original — remove pending change
+        _pendingSectionChanges.remove(ticketType.id);
+      } else {
+        _pendingSectionChanges[ticketType.id] = sectionId;
+      }
+      // Update local list so UI reflects immediately
+      final idx = _ticketTypes.indexWhere((t) => t.id == ticketType.id);
+      if (idx != -1) {
+        _ticketTypes[idx] = _ticketTypes[idx].copyWith(
+          venueSectionId: sectionId,
+          clearVenueSectionId: sectionId == null,
+        );
+      }
+    });
+  }
+
+  Future<void> _pushChanges() async {
+    if (!_hasPendingChanges || _isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      final client = Supabase.instance.client;
+      for (final entry in _pendingSectionChanges.entries) {
+        await client
+            .from('event_ticket_types')
+            .update({'venue_section_id': entry.value})
+            .eq('id', entry.key);
+      }
+      if (mounted) {
+        setState(() {
+          _pendingSectionChanges.clear();
+          _isSaving = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Changes saved'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSaving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _handleVenueLink(BuildContext context) {
+    final tier = ref.read(currentTierProvider);
+    final canUse = TierLimits.canUseVenueBuilder(tier);
+
+    if (!canUse) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.workspace_premium, color: Colors.amber, size: 40),
+          title: const Text('Enterprise Feature'),
+          content: const Text(
+            'Venue layouts and seating charts are available on the Enterprise plan. Upgrade to create and link venues to your events.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Maybe Later'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                // TODO: Navigate to subscription screen
+              },
+              child: const Text('View Plans'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (_effectiveVenueId != null) {
+      // Already linked — go to builder
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VenueBuilderScreen(venueId: _effectiveVenueId!),
+        ),
+      );
+      return;
+    }
+
+    // Show venue picker
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => VenuePickerSheet(
+        onVenueSelected: (venue) async {
+          final repo = ref.read(eventRepositoryProvider);
+          await (repo as SupabaseEventRepository).linkVenue(
+            widget.event.id,
+            venue.id,
+          );
+          if (mounted) {
+            setState(() => _linkedVenueId = venue.id);
+            _loadVenue();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Linked "${venue.name}" to this event'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
       ),
     );
   }
@@ -355,13 +586,17 @@ class _SummaryChip extends StatelessWidget {
 
 class _TicketTypeCard extends StatelessWidget {
   final TicketType ticketType;
+  final List<VenueSection> venueSections;
   final VoidCallback onMint;
   final VoidCallback onDiscount;
+  final ValueChanged<String?>? onSectionChanged;
 
   const _TicketTypeCard({
     required this.ticketType,
+    this.venueSections = const [],
     required this.onMint,
     required this.onDiscount,
+    this.onSectionChanged,
   });
 
   @override
@@ -507,6 +742,18 @@ class _TicketTypeCard extends StatelessWidget {
                             : colorScheme.primary,
                   ),
                 ),
+              ),
+            ),
+          ],
+          // Venue section assignment
+          if (venueSections.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _VenueSectionPicker(
+                currentSectionId: ticketType.venueSectionId,
+                sections: venueSections,
+                onChanged: onSectionChanged,
               ),
             ),
           ],
@@ -1095,6 +1342,260 @@ class _ToggleOption extends StatelessWidget {
                 : colorScheme.onSurfaceVariant,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Venue Section Picker
+// ============================================================
+
+class _VenueSectionPicker extends StatelessWidget {
+  final String? currentSectionId;
+  final List<VenueSection> sections;
+  final ValueChanged<String?>? onChanged;
+
+  const _VenueSectionPicker({
+    required this.currentSectionId,
+    required this.sections,
+    this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final linkedSection = currentSectionId != null
+        ? sections.where((s) => s.id == currentSectionId).firstOrNull
+        : null;
+
+    return GestureDetector(
+      onTap: onChanged != null
+          ? () => _showSectionPicker(context)
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: linkedSection != null
+              ? Colors.teal.withValues(alpha: 0.06)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: linkedSection != null
+                ? Colors.teal.withValues(alpha: 0.25)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              linkedSection != null ? Icons.map : Icons.map_outlined,
+              size: 16,
+              color: linkedSection != null
+                  ? Colors.teal
+                  : colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: linkedSection != null
+                  ? Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: linkedSection.name,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.teal,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          TextSpan(
+                            text: '  \u2022  ${linkedSection.type.label}'
+                                '  \u2022  ${linkedSection.seatCount} seats',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Text(
+                      'Assign venue section',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+            ),
+            Icon(
+              Icons.chevron_right,
+              size: 16,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSectionPicker(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 4),
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Text(
+                  'Assign Venue Section',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const Divider(),
+              // "None" option
+              ListTile(
+                leading: Icon(
+                  Icons.close,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                title: const Text('No section (general)'),
+                selected: currentSectionId == null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onChanged?.call(null);
+                },
+              ),
+              ...sections.map((section) {
+                final isSelected = section.id == currentSectionId;
+                return ListTile(
+                  leading: Icon(
+                    Icons.map,
+                    color: isSelected ? Colors.teal : colorScheme.primary,
+                  ),
+                  title: Text(section.name),
+                  subtitle: Text(
+                    '${section.type.label}  \u2022  ${section.seatCount} seats',
+                  ),
+                  trailing: isSelected
+                      ? const Icon(Icons.check_circle, color: Colors.teal)
+                      : null,
+                  selected: isSelected,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    onChanged?.call(section.id);
+                  },
+                );
+              }),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
+// Venue Link Card
+// ============================================================
+
+class _VenueLinkCard extends ConsumerWidget {
+  final bool hasVenue;
+  final VoidCallback onLinkVenue;
+
+  const _VenueLinkCard({
+    required this.hasVenue,
+    required this.onLinkVenue,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: onLinkVenue,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: hasVenue
+              ? Colors.teal.withValues(alpha: 0.08)
+              : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: hasVenue
+                ? Colors.teal.withValues(alpha: 0.3)
+                : colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: hasVenue
+                    ? Colors.teal.withValues(alpha: 0.15)
+                    : colorScheme.onSurface.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                hasVenue ? Icons.map : Icons.map_outlined,
+                size: 20,
+                color: hasVenue ? Colors.teal : colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    hasVenue ? 'Venue Linked' : 'Link Venue',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: hasVenue ? Colors.teal : colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    hasVenue
+                        ? 'Tap to edit seating layout'
+                        : 'Add a seating chart to this event',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              hasVenue ? Icons.edit_outlined : Icons.add_circle_outline,
+              size: 20,
+              color: hasVenue ? Colors.teal : colorScheme.onSurfaceVariant,
+            ),
+          ],
         ),
       ),
     );

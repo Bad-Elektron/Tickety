@@ -60,6 +60,8 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
     String currency = 'usd',
     int quantity = 1,
     Map<String, dynamic>? metadata,
+    String? promoCodeId,
+    List<Map<String, dynamic>>? seatSelections,
   }) async {
     if (state.isLoading) {
       AppLogger.debug('Already loading, skipping initialization', tag: _tag);
@@ -86,7 +88,9 @@ class PaymentProcessNotifier extends StateNotifier<PaymentProcessState> {
         currency: currency,
         type: PaymentType.primaryPurchase,
         quantity: quantity,
+        promoCodeId: promoCodeId,
         metadata: metadata,
+        seatSelections: seatSelections,
       );
 
       final paymentIntent = await _repository.createPaymentIntent(request);

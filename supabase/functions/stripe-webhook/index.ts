@@ -185,7 +185,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   }
 
   // Create tickets for the user
-  if (type === 'primary_purchase' || type === 'vendor_pos') {
+  if (type === 'primary_purchase' || type === 'vendor_pos' || type === 'waitlist_auto_purchase') {
     // Get user info for ticket
     const { data: profile } = await supabase
       .from('profiles')
@@ -204,6 +204,19 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       ? Math.round(baseAmountCents / quantity)
       : Math.round(paymentIntent.amount / quantity)
 
+    // Fetch seat_selections from payment record (if any)
+    let seatSelections: any[] | null = null
+    if (existingPayment) {
+      const { data: paymentRecord } = await supabase
+        .from('payments')
+        .select('seat_selections')
+        .eq('id', existingPayment.id)
+        .single()
+      if (paymentRecord?.seat_selections) {
+        seatSelections = paymentRecord.seat_selections as any[]
+      }
+    }
+
     // Create tickets for each quantity
     const ticketIds: string[] = []
     for (let i = 0; i < quantity; i++) {
@@ -212,6 +225,8 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       const random = Math.floor(Math.random() * 9999).toString().padLeft(4, '0')
       const ticketNumber = `TKT-${timestamp}-${random}`
 
+      // Assign seat data from seat_selections if present
+      const seatData = seatSelections?.[i]
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
@@ -223,6 +238,11 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
           currency: paymentIntent.currency.toUpperCase(),
           status: 'valid',
           sold_by: user_id,
+          ...(seatData && {
+            venue_section_id: seatData.section_id,
+            seat_id: seatData.seat_id,
+            seat_label: seatData.seat_label,
+          }),
         })
         .select()
         .single()
@@ -244,12 +264,30 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
         .eq('stripe_payment_intent_id', paymentIntent.id)
     }
 
+    // Clean up seat holds after ticket creation
+    if (seatSelections && seatSelections.length > 0) {
+      const seatIds = seatSelections.map((s: any) => s.seat_id)
+      await supabase
+        .from('seat_holds')
+        .delete()
+        .eq('event_id', event_id)
+        .in_('seat_id', seatIds)
+      console.log(`Cleaned up ${seatIds.length} seat holds`)
+    }
+
     console.log(`Created ${ticketIds.length} tickets for payment ${paymentIntent.id}`)
 
     // Enqueue NFT minting (fire-and-forget, never blocks ticket delivery)
     if (ticketIds.length > 0 && event_id) {
       enqueueNftMints(event_id, user_id, ticketIds).catch(err =>
         console.error('enqueueNftMints failed (non-blocking):', err.message)
+      )
+    }
+
+    // Generate wallet passes (fire-and-forget, never blocks ticket delivery)
+    if (ticketIds.length > 0) {
+      enqueueWalletPasses(ticketIds).catch(err =>
+        console.error('enqueueWalletPasses failed (non-blocking):', err.message)
       )
     }
   }
@@ -1071,6 +1109,36 @@ async function handleIdentityFailed(session: any) {
 
   if (error) {
     console.error('Failed to update profile verification status:', error)
+  }
+}
+
+// ============================================================
+// Wallet Pass Generation (Apple Wallet & Google Wallet)
+// ============================================================
+
+async function enqueueWalletPasses(ticketIds: string[]) {
+  try {
+    const generateUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-wallet-pass`
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+
+    for (const ticketId of ticketIds) {
+      // Generate both Apple and Google passes (fire-and-forget)
+      for (const passType of ['apple', 'google']) {
+        fetch(generateUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({ ticket_id: ticketId, pass_type: passType }),
+        }).catch(err =>
+          console.error(`Fire-and-forget ${passType} pass generation failed:`, err.message)
+        )
+      }
+      console.log(`Wallet pass generation enqueued for ticket ${ticketId}`)
+    }
+  } catch (err) {
+    console.error('enqueueWalletPasses error:', err.message)
   }
 }
 

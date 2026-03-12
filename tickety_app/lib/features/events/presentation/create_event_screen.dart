@@ -16,8 +16,13 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../../auth/auth.dart';
 import '../../profile/presentation/verification_screen.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
+import '../../venues/models/venue.dart';
+import '../../venues/models/venue_section.dart';
+import '../../venues/presentation/venue_builder_screen.dart';
+import '../../venues/widgets/venue_picker_sheet.dart';
 import '../data/data.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
 import '../models/event_tag.dart';
 import '../../../core/state/app_state.dart';
 import '../../subscriptions/models/tier_limits.dart';
@@ -52,6 +57,7 @@ class _TicketType {
   String description;
   double price;
   int quantity;
+  String? venueSectionId;
   final TextEditingController nameController;
   final TextEditingController descriptionController;
   final TextEditingController priceController;
@@ -62,6 +68,7 @@ class _TicketType {
     this.description = '',
     this.price = 0,
     this.quantity = 10,
+    this.venueSectionId,
   })  : nameController = TextEditingController(text: name),
         descriptionController = TextEditingController(text: description),
         priceController = TextEditingController(text: price > 0 ? price.toString() : '0'),
@@ -91,9 +98,22 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   bool _isPublic = true;
   bool _isLoading = false;
   bool _hideLocation = false;
+
+  // Virtual event fields
+  String _eventFormat = 'in_person';
+  final _virtualUrlController = TextEditingController();
+  final _virtualPasswordController = TextEditingController();
   bool _nftEnabled = true;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 7));
   TimeOfDay _selectedTime = const TimeOfDay(hour: 19, minute: 0);
+
+  // Venue selection (enterprise only)
+  Venue? _selectedVenue;
+
+  // Recurring event state
+  bool _isRecurring = false;
+  RecurrenceType _recurrenceType = RecurrenceType.weekly;
+  DateTime? _seriesEndDate;
   Set<EventTag> _selectedTags = {};
 
   // Similarity detection
@@ -168,6 +188,15 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         );
       }
 
+      // Virtual event fields
+      _eventFormat = event.eventFormat;
+      if (event.virtualEventUrl != null) {
+        _virtualUrlController.text = event.virtualEventUrl!;
+      }
+      if (event.virtualEventPassword != null) {
+        _virtualPasswordController.text = event.virtualEventPassword!;
+      }
+
       // Start with empty ticket types; will be loaded async
       _ticketTypes = [];
       _loadExistingTicketTypes(event.id);
@@ -213,6 +242,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     _nameController.dispose();
     _subtitleController.dispose();
     _descriptionController.dispose();
+    _virtualUrlController.dispose();
+    _virtualPasswordController.dispose();
     for (final ticketType in _ticketTypes) {
       ticketType.dispose();
     }
@@ -406,6 +437,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               : null,
           priceCents: priceCents,
           maxQuantity: quantity,
+          venueSectionId: tt.venueSectionId,
         );
       }).toList();
       debugPrint('Created ${ticketTypeInputs.length} TicketTypeInput objects');
@@ -435,6 +467,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
       if (isEditing) {
         // Update existing event
+        final virtualUrl = _virtualUrlController.text.trim().isNotEmpty
+            ? Validators.sanitize(_virtualUrlController.text.trim())
+            : null;
+        final virtualPassword = _virtualPasswordController.text.trim().isNotEmpty
+            ? _virtualPasswordController.text.trim()
+            : null;
+
         final updatedEvent = widget.editingEvent!.copyWith(
           title: sanitizedTitle,
           subtitle: sanitizedSubtitle.isNotEmpty
@@ -456,6 +495,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           longitude: _selectedPlace?.lng,
           formattedAddress: _selectedPlace?.formattedAddress,
           priceInCents: lowestPrice,
+          eventFormat: _eventFormat,
+          virtualEventUrl: virtualUrl,
+          virtualEventPassword: virtualPassword,
         );
 
         await _repository.updateEvent(updatedEvent);
@@ -463,8 +505,71 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           widget.editingEvent!.id,
           ticketTypeInputs,
         );
+      } else if (_isRecurring) {
+        // Create recurring event series
+        final templateSnapshot = <String, dynamic>{
+          'title': sanitizedTitle,
+          'subtitle': sanitizedSubtitle.isNotEmpty
+              ? sanitizedSubtitle
+              : 'An exciting event',
+          'description': sanitizedDescription.isNotEmpty
+              ? sanitizedDescription
+              : null,
+          'venue': venue,
+          'city': city,
+          'country': country,
+          'tags': tagIds,
+          'category': tagIds.isNotEmpty ? tagIds.first : null,
+          'noise_seed': _noiseSeed,
+          'hide_location': _hideLocation,
+          'is_private': !_isPublic,
+          'nft_enabled': _nftEnabled,
+          'price_in_cents': lowestPrice,
+          'currency': 'USD',
+          'cash_sales_enabled': true,
+          'location': _selectedPlace?.formattedAddress ?? (venue != null && city != null ? '$venue, $city' : venue ?? city),
+          if (_selectedPlace?.lat != null) 'latitude': _selectedPlace!.lat,
+          if (_selectedPlace?.lng != null) 'longitude': _selectedPlace!.lng,
+          if (_selectedPlace?.formattedAddress != null)
+            'formatted_address': _selectedPlace!.formattedAddress,
+          if (_eventFormat != 'in_person') 'event_format': _eventFormat,
+          if (_virtualUrlController.text.trim().isNotEmpty)
+            'virtual_event_url': Validators.sanitize(_virtualUrlController.text.trim()),
+          if (_virtualPasswordController.text.trim().isNotEmpty)
+            'virtual_event_password': _virtualPasswordController.text.trim(),
+        };
+
+        final ticketTypesSnapshot = ticketTypeInputs.asMap().entries.map((e) => {
+          'name': e.value.name,
+          'description': e.value.description,
+          'price_cents': e.value.priceCents,
+          'max_quantity': e.value.maxQuantity,
+          'sort_order': e.key,
+        }).toList();
+
+        // Compute recurrence_day
+        int recurrenceDay;
+        if (_recurrenceType == RecurrenceType.monthly) {
+          recurrenceDay = _selectedDate.day;
+        } else {
+          // Convert Dart weekday (1=Mon..7=Sun) to PostgreSQL DOW (0=Sun..6=Sat)
+          recurrenceDay = _selectedDate.weekday % 7;
+        }
+
+        final timeStr =
+            '${_selectedTime.hour.toString().padLeft(2, '0')}:${_selectedTime.minute.toString().padLeft(2, '0')}:00';
+
+        await _repository.createEventSeries(
+          recurrenceType: _recurrenceType,
+          recurrenceDay: recurrenceDay,
+          recurrenceTime: timeStr,
+          startsAt: eventDateTime,
+          endsAt: _seriesEndDate,
+          templateSnapshot: templateSnapshot,
+          ticketTypesSnapshot: ticketTypesSnapshot,
+        );
       } else {
-        // Create new event
+        // Create single event
         await _repository.createEventWithTicketTypes(
           title: sanitizedTitle,
           subtitle: sanitizedSubtitle.isNotEmpty
@@ -486,6 +591,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           latitude: _selectedPlace?.lat,
           longitude: _selectedPlace?.lng,
           formattedAddress: _selectedPlace?.formattedAddress,
+          venueId: _selectedVenue?.id,
+          eventFormat: _eventFormat,
+          virtualEventUrl: _virtualUrlController.text.trim().isNotEmpty
+              ? Validators.sanitize(_virtualUrlController.text.trim())
+              : null,
+          virtualEventPassword: _virtualPasswordController.text.trim().isNotEmpty
+              ? _virtualPasswordController.text.trim()
+              : null,
         );
       }
 
@@ -500,7 +613,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 const SizedBox(width: 12),
                 Text(isEditing
                     ? 'Event updated successfully!'
-                    : 'Event created successfully!'),
+                    : _isRecurring
+                        ? 'Recurring event created!'
+                        : 'Event created successfully!'),
               ],
             ),
             backgroundColor: Colors.green,
@@ -815,11 +930,16 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   }
 
   Widget _buildDetailsStep(ThemeData theme, ColorScheme colorScheme) {
+    final isVirtual = _eventFormat == 'virtual';
+    final isHybrid = _eventFormat == 'hybrid';
+    final showLocation = !isVirtual; // in_person or hybrid
+    final showVirtualFields = isVirtual || isHybrid;
+
     return Column(
       key: const ValueKey('details'),
       children: [
         const SizedBox(height: 8),
-        // Location card
+        // Event format selector
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -828,49 +948,167 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
           ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header row: location icon + "Location" + Spacer + toggle
               Row(
                 children: [
-                  Icon(Icons.location_on_outlined, size: 20, color: colorScheme.primary),
+                  Icon(Icons.public_outlined, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Location',
+                    'Event Format',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const Spacer(),
-                  _HideLocationToggle(
-                    value: _hideLocation,
-                    onChanged: (value) => setState(() => _hideLocation = value),
-                  ),
                 ],
               ),
-              // Secret location hint (conditional)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                child: _hideLocation
-                    ? Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _SecretLocationHint(),
-                      )
-                    : const SizedBox.shrink(),
-              ),
               const SizedBox(height: 12),
-              // Location (Google Places autocomplete)
-              PlacesAutocompleteField(
-                onPlaceSelected: (details) {
-                  setState(() => _selectedPlace = details);
-                },
-                onCleared: () {
-                  setState(() => _selectedPlace = null);
-                },
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'in_person',
+                      label: Text('In-Person'),
+                      icon: Icon(Icons.location_on_outlined, size: 18),
+                    ),
+                    ButtonSegment(
+                      value: 'virtual',
+                      label: Text('Virtual'),
+                      icon: Icon(Icons.videocam_outlined, size: 18),
+                    ),
+                    ButtonSegment(
+                      value: 'hybrid',
+                      label: Text('Hybrid'),
+                      icon: Icon(Icons.groups_outlined, size: 18),
+                    ),
+                  ],
+                  selected: {_eventFormat},
+                  onSelectionChanged: (value) {
+                    setState(() => _eventFormat = value.first);
+                  },
+                  showSelectedIcon: false,
+                ),
               ),
             ],
           ),
         ),
         const SizedBox(height: 16),
+        // Location card (shown for in_person and hybrid)
+        if (showLocation) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              children: [
+                // Header row: location icon + "Location" + Spacer + toggle
+                Row(
+                  children: [
+                    Icon(Icons.location_on_outlined, size: 20, color: colorScheme.primary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Location',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    _HideLocationToggle(
+                      value: _hideLocation,
+                      onChanged: (value) => setState(() => _hideLocation = value),
+                    ),
+                  ],
+                ),
+                // Secret location hint (conditional)
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  child: _hideLocation
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _SecretLocationHint(),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 12),
+                // Location (Google Places autocomplete)
+                PlacesAutocompleteField(
+                  onPlaceSelected: (details) {
+                    setState(() => _selectedPlace = details);
+                  },
+                  onCleared: () {
+                    setState(() => _selectedPlace = null);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        // Virtual meeting fields (shown for virtual and hybrid)
+        if (showVirtualFields) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.videocam_outlined, size: 20, color: Colors.cyan),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Meeting Details',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Hidden until 1 hour before the event starts.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _virtualUrlController,
+                  decoration: InputDecoration(
+                    labelText: 'Meeting URL',
+                    hintText: 'https://zoom.us/j/...',
+                    prefixIcon: const Icon(Icons.link, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _virtualPasswordController,
+                  decoration: InputDecoration(
+                    labelText: 'Meeting Password (optional)',
+                    hintText: 'Enter password if required',
+                    prefixIcon: const Icon(Icons.lock_outline, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         // Description card
         Container(
           padding: const EdgeInsets.all(16),
@@ -964,9 +1202,248 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+
+        // Venue Layout card (enterprise only)
+        if (TierLimits.canUseVenueBuilder(
+          ref.watch(subscriptionProvider).effectiveTier,
+        ))
+          _buildVenueCard(theme, colorScheme),
+        const SizedBox(height: 16),
+        // Repeat / Recurring card (not shown when editing)
+        if (!isEditing)
+          _buildRecurrenceCard(theme, colorScheme),
         const SizedBox(height: 32),
       ],
     );
+  }
+
+  Widget _buildVenueCard(ThemeData theme, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.map_outlined, size: 20, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Venue Layout',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (_selectedVenue != null)
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setState(() => _selectedVenue = null),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_selectedVenue != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(Icons.map, size: 20, color: colorScheme.onPrimaryContainer),
+              ),
+              title: Text(_selectedVenue!.name),
+              subtitle: Text(
+                '${_selectedVenue!.layout.totalCapacity} capacity',
+                style: theme.textTheme.bodySmall,
+              ),
+              trailing: TextButton(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => VenueBuilderScreen(venueId: _selectedVenue!.id),
+                    ),
+                  );
+                },
+                child: const Text('Edit'),
+              ),
+            )
+          else
+            OutlinedButton.icon(
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => VenuePickerSheet(
+                    onVenueSelected: (venue) {
+                      setState(() => _selectedVenue = venue);
+                    },
+                  ),
+                );
+              },
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Select Venue'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 44),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecurrenceCard(ThemeData theme, ColorScheme colorScheme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          // Header with toggle
+          Row(
+            children: [
+              Icon(Icons.repeat_rounded, size: 20, color: colorScheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Repeat',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Switch.adaptive(
+                value: _isRecurring,
+                onChanged: (value) => setState(() => _isRecurring = value),
+              ),
+            ],
+          ),
+
+          // Expanded recurrence options
+          if (_isRecurring) ...[
+            const SizedBox(height: 12),
+            // Frequency selector
+            SegmentedButton<RecurrenceType>(
+              segments: const [
+                ButtonSegment(value: RecurrenceType.daily, label: Text('Daily')),
+                ButtonSegment(value: RecurrenceType.weekly, label: Text('Weekly')),
+                ButtonSegment(value: RecurrenceType.biweekly, label: Text('2 Wks')),
+                ButtonSegment(value: RecurrenceType.monthly, label: Text('Monthly')),
+              ],
+              selected: {_recurrenceType},
+              onSelectionChanged: (set) =>
+                  setState(() => _recurrenceType = set.first),
+              style: SegmentedButton.styleFrom(
+                textStyle: theme.textTheme.bodySmall,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // Info text
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _recurrenceInfoText,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            // End date option
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Ends',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                ChoiceChip(
+                  label: const Text('Never'),
+                  selected: _seriesEndDate == null,
+                  onSelected: (_) => setState(() => _seriesEndDate = null),
+                ),
+                const SizedBox(width: 8),
+                ChoiceChip(
+                  label: Text(
+                    _seriesEndDate != null
+                        ? _formatDate(_seriesEndDate!)
+                        : 'Pick date',
+                  ),
+                  selected: _seriesEndDate != null,
+                  onSelected: (_) => _pickSeriesEndDate(),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String get _recurrenceInfoText {
+    final dayName = _getDayName(_selectedDate.weekday);
+    return switch (_recurrenceType) {
+      RecurrenceType.daily => 'Repeats every day at ${_formatTime(_selectedTime)}',
+      RecurrenceType.weekly => 'Repeats every $dayName at ${_formatTime(_selectedTime)}',
+      RecurrenceType.biweekly => 'Repeats every other $dayName at ${_formatTime(_selectedTime)}',
+      RecurrenceType.monthly => 'Repeats on the ${_selectedDate.day}${_ordinalSuffix(_selectedDate.day)} of each month',
+    };
+  }
+
+  String _getDayName(int weekday) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[weekday - 1];
+  }
+
+  String _ordinalSuffix(int day) {
+    if (day >= 11 && day <= 13) return 'th';
+    return switch (day % 10) {
+      1 => 'st',
+      2 => 'nd',
+      3 => 'rd',
+      _ => 'th',
+    };
+  }
+
+  Future<void> _pickSeriesEndDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _seriesEndDate ?? _selectedDate.add(const Duration(days: 90)),
+      firstDate: _selectedDate.add(const Duration(days: 1)),
+      lastDate: _selectedDate.add(const Duration(days: 365 * 2)),
+    );
+    if (picked != null) {
+      setState(() => _seriesEndDate = picked);
+    }
   }
 
   Widget _buildTagStep(ThemeData theme, ColorScheme colorScheme) {
@@ -1075,6 +1552,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
   Widget _buildTicketsStep(ThemeData theme, ColorScheme colorScheme) {
     final limitCheck = ref.watch(canAddTicketTypeProvider(_ticketTypes.length));
+    final venueSections = _selectedVenue?.layout.sections ?? [];
 
     return Column(
       key: const ValueKey('tickets'),
@@ -1087,12 +1565,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             padding: const EdgeInsets.only(bottom: 16),
             child: _TicketTypeRow(
               ticketType: ticketType,
+              venueSections: venueSections,
               canRemove: _ticketTypes.length > 1,
               onRemove: () => _removeTicketType(index),
               onNameChanged: (value) => ticketType.name = value,
               onDescriptionChanged: (value) => ticketType.description = value,
               onPriceChanged: (value) => ticketType.price = double.tryParse(value) ?? 0,
               onQuantityChanged: (value) => ticketType.quantity = int.tryParse(value) ?? 10,
+              onSectionChanged: (sectionId) => setState(() => ticketType.venueSectionId = sectionId),
             ),
           );
         }),
@@ -1133,21 +1613,25 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 /// Row widget for a single ticket type with name, description, price, and quantity.
 class _TicketTypeRow extends StatelessWidget {
   final _TicketType ticketType;
+  final List<VenueSection> venueSections;
   final bool canRemove;
   final VoidCallback onRemove;
   final ValueChanged<String> onNameChanged;
   final ValueChanged<String> onDescriptionChanged;
   final ValueChanged<String> onPriceChanged;
   final ValueChanged<String> onQuantityChanged;
+  final ValueChanged<String?> onSectionChanged;
 
   const _TicketTypeRow({
     required this.ticketType,
+    this.venueSections = const [],
     required this.canRemove,
     required this.onRemove,
     required this.onNameChanged,
     required this.onDescriptionChanged,
     required this.onPriceChanged,
     required this.onQuantityChanged,
+    required this.onSectionChanged,
   });
 
   @override
@@ -1292,6 +1776,59 @@ class _TicketTypeRow extends StatelessWidget {
               ),
             ],
           ),
+          // Venue section picker (only when venue is linked)
+          if (venueSections.isNotEmpty) ...[
+            Divider(
+              height: 20,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            ),
+            Row(
+              children: [
+                Icon(
+                  Icons.map_outlined,
+                  size: 16,
+                  color: ticketType.venueSectionId != null
+                      ? Colors.teal
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButtonFormField<String?>(
+                    value: ticketType.venueSectionId,
+                    decoration: InputDecoration(
+                      labelText: 'Venue Section',
+                      labelStyle: theme.textTheme.labelSmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: Colors.teal,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('No section (general)'),
+                      ),
+                      ...venueSections.map((section) {
+                        return DropdownMenuItem<String?>(
+                          value: section.id,
+                          child: Text(
+                            '${section.name} (${section.seatCount} seats)',
+                          ),
+                        );
+                      }),
+                    ],
+                    onChanged: onSectionChanged,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

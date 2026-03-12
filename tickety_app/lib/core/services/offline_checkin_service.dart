@@ -49,7 +49,7 @@ class OfflineCheckInService {
 
     _db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createTables,
       onUpgrade: _upgradeTables,
     );
@@ -69,6 +69,7 @@ class OfflineCheckInService {
         nft_asset_id TEXT,
         nft_policy_id TEXT,
         nft_tx_hash TEXT,
+        seat_label TEXT,
         checked_in_at TEXT,
         checked_in_by TEXT,
         updated_at TEXT NOT NULL
@@ -118,6 +119,9 @@ class OfflineCheckInService {
         )
       ''');
     }
+    if (oldVersion < 3) {
+      await db.execute('ALTER TABLE door_list ADD COLUMN seat_label TEXT');
+    }
   }
 
   /// Get door list cache info for a given event.
@@ -165,7 +169,7 @@ class OfflineCheckInService {
         .from('tickets')
         .select(
           'id, ticket_number, event_id, status, owner_name, owner_email, '
-          'nft_asset_id, nft_policy_id, nft_tx_hash, checked_in_at, checked_in_by',
+          'nft_asset_id, nft_policy_id, nft_tx_hash, seat_label, checked_in_at, checked_in_by',
         )
         .eq('event_id', eventId)
         .inFilter('status', ['valid', 'used'])
@@ -208,6 +212,7 @@ class OfflineCheckInService {
           'nft_asset_id': map['nft_asset_id'] as String?,
           'nft_policy_id': map['nft_policy_id'] as String?,
           'nft_tx_hash': map['nft_tx_hash'] as String?,
+          'seat_label': map['seat_label'] as String?,
           'checked_in_at': map['checked_in_at'] as String?,
           'checked_in_by': map['checked_in_by'] as String?,
           'updated_at': DateTime.now().toUtc().toIso8601String(),

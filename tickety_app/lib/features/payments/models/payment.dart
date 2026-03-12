@@ -31,7 +31,8 @@ enum PaymentType {
   favorTicketPurchase('favor_ticket_purchase'),
   walletPurchase('wallet_purchase'),
   walletTopUp('wallet_top_up'),
-  achPurchase('ach_purchase');
+  achPurchase('ach_purchase'),
+  waitlistAutoPurchase('waitlist_auto_purchase');
 
   final String value;
   const PaymentType(this.value);
@@ -260,7 +261,10 @@ class CreatePaymentIntentRequest {
   final int quantity;
   final String? ticketId;
   final String? resaleListingId;
+  final String? promoCodeId;
   final Map<String, dynamic>? metadata;
+
+  final List<Map<String, dynamic>>? seatSelections;
 
   const CreatePaymentIntentRequest({
     required this.eventId,
@@ -270,7 +274,9 @@ class CreatePaymentIntentRequest {
     this.quantity = 1,
     this.ticketId,
     this.resaleListingId,
+    this.promoCodeId,
     this.metadata,
+    this.seatSelections,
   });
 
   Map<String, dynamic> toJson() {
@@ -282,7 +288,9 @@ class CreatePaymentIntentRequest {
       'quantity': quantity,
       if (ticketId != null) 'ticket_id': ticketId,
       if (resaleListingId != null) 'resale_listing_id': resaleListingId,
+      if (promoCodeId != null) 'promo_code_id': promoCodeId,
       if (metadata != null) 'metadata': metadata,
+      if (seatSelections != null) 'seat_selections': seatSelections,
     };
   }
 }

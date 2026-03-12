@@ -139,6 +139,13 @@ class Ticket {
   final TicketMode ticketMode;
 
   // ─────────────────────────────────────────────────────────────────
+  // Seat assignment
+  // ─────────────────────────────────────────────────────────────────
+  final String? venueSectionId;
+  final String? seatId;
+  final String? seatLabel;
+
+  // ─────────────────────────────────────────────────────────────────
   // Resale listing (enum-based)
   // ─────────────────────────────────────────────────────────────────
   final ListingStatus listingStatus;
@@ -174,6 +181,9 @@ class Ticket {
     this.nftBurned = false,
     this.nftBurnedAt,
     this.nftBurnTxHash,
+    this.venueSectionId,
+    this.seatId,
+    this.seatLabel,
     this.ticketMode = TicketMode.standard,
     this.listingStatus = ListingStatus.none,
     this.listingPriceCents,
@@ -216,6 +226,9 @@ class Ticket {
           ? DateTime.parse(json['nft_burned_at'] as String)
           : null,
       nftBurnTxHash: json['nft_burn_tx_hash'] as String?,
+      venueSectionId: json['venue_section_id'] as String?,
+      seatId: json['seat_id'] as String?,
+      seatLabel: json['seat_label'] as String?,
       ticketMode: TicketMode.fromString(json['ticket_mode'] as String?),
       listingStatus: ListingStatus.fromString(json['listing_status'] as String?),
       listingPriceCents: json['listing_price_cents'] as int?,
@@ -235,6 +248,9 @@ class Ticket {
       'currency': currency,
       'sold_by': soldBy,
       'status': status.value,
+      if (venueSectionId != null) 'venue_section_id': venueSectionId,
+      if (seatId != null) 'seat_id': seatId,
+      if (seatLabel != null) 'seat_label': seatLabel,
       'ticket_mode': ticketMode.value,
       'listing_status': listingStatus.value,
       if (listingPriceCents != null) 'listing_price_cents': listingPriceCents,
@@ -262,7 +278,8 @@ class Ticket {
 
   /// Whether ticket can be listed for resale.
   bool get canBeResold =>
-      ticketMode.canResale && isValid && !isListedForSale && !isAwaitingMint && !nftBurned;
+      ticketMode.canResale && isValid && !isListedForSale && !isAwaitingMint && !nftBurned &&
+      !(eventData?['virtual_locked'] == true);
 
   /// Whether ticket is on an NFT-enabled event but hasn't been minted yet.
   bool get isAwaitingMint =>
@@ -389,6 +406,9 @@ class Ticket {
     bool? nftBurned,
     DateTime? nftBurnedAt,
     String? nftBurnTxHash,
+    String? venueSectionId,
+    String? seatId,
+    String? seatLabel,
     TicketMode? ticketMode,
     ListingStatus? listingStatus,
     int? listingPriceCents,
@@ -418,6 +438,9 @@ class Ticket {
       nftBurned: nftBurned ?? this.nftBurned,
       nftBurnedAt: nftBurnedAt ?? this.nftBurnedAt,
       nftBurnTxHash: nftBurnTxHash ?? this.nftBurnTxHash,
+      venueSectionId: venueSectionId ?? this.venueSectionId,
+      seatId: seatId ?? this.seatId,
+      seatLabel: seatLabel ?? this.seatLabel,
       ticketMode: ticketMode ?? this.ticketMode,
       listingStatus: listingStatus ?? this.listingStatus,
       listingPriceCents: listingPriceCents ?? this.listingPriceCents,

@@ -30,6 +30,7 @@ class DoorListEntry {
   final String? nftAssetId;
   final String? nftPolicyId;
   final String? nftTxHash;
+  final String? seatLabel;
   String? checkedInAt;
   String? checkedInBy;
   final String updatedAt;
@@ -44,6 +45,7 @@ class DoorListEntry {
     this.nftAssetId,
     this.nftPolicyId,
     this.nftTxHash,
+    this.seatLabel,
     this.checkedInAt,
     this.checkedInBy,
     required this.updatedAt,
@@ -66,6 +68,7 @@ class DoorListEntry {
       'nft_asset_id': nftAssetId,
       'nft_policy_id': nftPolicyId,
       'nft_tx_hash': nftTxHash,
+      'seat_label': seatLabel,
       'checked_in_at': checkedInAt,
       'checked_in_by': checkedInBy,
       'updated_at': updatedAt,
@@ -83,6 +86,7 @@ class DoorListEntry {
       nftAssetId: map['nft_asset_id'] as String?,
       nftPolicyId: map['nft_policy_id'] as String?,
       nftTxHash: map['nft_tx_hash'] as String?,
+      seatLabel: map['seat_label'] as String?,
       checkedInAt: map['checked_in_at'] as String?,
       checkedInBy: map['checked_in_by'] as String?,
       updatedAt: map['updated_at'] as String? ??

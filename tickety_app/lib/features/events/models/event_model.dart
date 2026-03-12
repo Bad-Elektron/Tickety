@@ -115,6 +115,33 @@ class EventModel {
   /// When this event was created in the database.
   final DateTime? createdAt;
 
+  /// Series ID if this event is part of a recurring series.
+  final String? seriesId;
+
+  /// Index of this occurrence within the series (0-based).
+  final int? occurrenceIndex;
+
+  /// Whether this occurrence was individually edited away from the template.
+  final bool seriesEdited;
+
+  /// Recurrence type (denormalized from series for display without joins).
+  final String? recurrenceType;
+
+  /// Linked venue ID for seating chart support.
+  final String? venueId;
+
+  /// Event format: 'in_person', 'virtual', or 'hybrid'.
+  final String eventFormat;
+
+  /// Meeting URL for virtual/hybrid events (hidden until lockdown).
+  final String? virtualEventUrl;
+
+  /// Meeting password for virtual/hybrid events (hidden until lockdown).
+  final String? virtualEventPassword;
+
+  /// Whether this virtual/hybrid event has been locked down (resale blocked, link revealed).
+  final bool virtualLocked;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -148,6 +175,15 @@ class EventModel {
     this.nftEnabled = false,
     this.nftPolicyId,
     this.createdAt,
+    this.seriesId,
+    this.occurrenceIndex,
+    this.seriesEdited = false,
+    this.recurrenceType,
+    this.venueId,
+    this.eventFormat = 'in_person',
+    this.virtualEventUrl,
+    this.virtualEventPassword,
+    this.virtualLocked = false,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -158,6 +194,18 @@ class EventModel {
 
   /// Whether this event is public (not private).
   bool get isPublic => !isPrivate;
+
+  /// Whether this event is part of a recurring series.
+  bool get isPartOfSeries => seriesId != null;
+
+  /// Whether this event is virtual-only.
+  bool get isVirtual => eventFormat == 'virtual';
+
+  /// Whether this event is a hybrid (in-person + virtual).
+  bool get isHybrid => eventFormat == 'hybrid';
+
+  /// Whether this event has a virtual component (virtual or hybrid).
+  bool get hasVirtualComponent => isVirtual || isHybrid;
 
   /// Whether this event has latitude/longitude coordinates.
   bool get hasCoordinates => latitude != null && longitude != null;
@@ -278,6 +326,15 @@ class EventModel {
     bool? nftEnabled,
     String? nftPolicyId,
     DateTime? createdAt,
+    String? seriesId,
+    int? occurrenceIndex,
+    bool? seriesEdited,
+    String? recurrenceType,
+    String? venueId,
+    String? eventFormat,
+    String? virtualEventUrl,
+    String? virtualEventPassword,
+    bool? virtualLocked,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -312,6 +369,15 @@ class EventModel {
       nftEnabled: nftEnabled ?? this.nftEnabled,
       nftPolicyId: nftPolicyId ?? this.nftPolicyId,
       createdAt: createdAt ?? this.createdAt,
+      seriesId: seriesId ?? this.seriesId,
+      occurrenceIndex: occurrenceIndex ?? this.occurrenceIndex,
+      seriesEdited: seriesEdited ?? this.seriesEdited,
+      recurrenceType: recurrenceType ?? this.recurrenceType,
+      venueId: venueId ?? this.venueId,
+      eventFormat: eventFormat ?? this.eventFormat,
+      virtualEventUrl: virtualEventUrl ?? this.virtualEventUrl,
+      virtualEventPassword: virtualEventPassword ?? this.virtualEventPassword,
+      virtualLocked: virtualLocked ?? this.virtualLocked,
     );
   }
 

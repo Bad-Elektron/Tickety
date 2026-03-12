@@ -14,6 +14,7 @@ import '../../subscriptions/models/tier_benefits.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
 import '../data/data.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
 import 'admin_event_screen.dart';
 import 'create_event_screen.dart';
 import 'usher_event_screen.dart';
@@ -971,6 +972,12 @@ class _MyEventCard extends ConsumerWidget {
                               ? colorScheme.error
                               : (badgeColor ?? colorScheme.tertiary),
                         ),
+                        if (event.isPartOfSeries && event.recurrenceType != null)
+                          _StatChip(
+                            icon: Icons.repeat,
+                            label: RecurrenceType.fromString(event.recurrenceType)?.shortLabel ?? 'Recurring',
+                            color: Colors.deepPurple,
+                          ),
                         if (showDoorListStatus)
                           _DoorListChip(eventId: event.id),
                       ],

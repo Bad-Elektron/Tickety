@@ -1,6 +1,7 @@
 import '../../../core/errors/errors.dart';
 import '../../../core/models/models.dart';
 import '../../../core/services/services.dart';
+import '../../waitlist/data/waitlist_repository.dart';
 import '../models/resale_listing.dart';
 import '../models/seller_balance.dart';
 import 'i_resale_repository.dart';
@@ -149,10 +150,10 @@ class ResaleRepository implements IResaleRepository {
       tag: _tag,
     );
 
-    // Check if the ticket is private (cannot be resold), awaiting mint, or burned
+    // Check if the ticket is private (cannot be resold), awaiting mint, burned, or virtual-locked
     final ticketData = await _client
         .from('tickets')
-        .select('ticket_mode, nft_minted, nft_burned, events!inner(nft_enabled)')
+        .select('ticket_mode, nft_minted, nft_burned, events!inner(nft_enabled, virtual_locked)')
         .eq('id', ticketId)
         .single();
 
@@ -178,6 +179,15 @@ class ResaleRepository implements IResaleRepository {
       throw PaymentException(
         'This ticket is still being prepared. Please try again shortly.',
         technicalDetails: 'Ticket $ticketId awaiting NFT mint',
+      );
+    }
+
+    final virtualLocked =
+        (ticketData['events'] as Map<String, dynamic>?)?['virtual_locked'] == true;
+    if (virtualLocked) {
+      throw PaymentException(
+        'Resale is locked for this virtual event.',
+        technicalDetails: 'Ticket $ticketId event is virtual-locked',
       );
     }
 
@@ -226,6 +236,18 @@ class ResaleRepository implements IResaleRepository {
 
     final listing = ResaleListing.fromJson(response);
     AppLogger.info('Resale listing created: ${listing.id}', tag: _tag);
+
+    // Fire-and-forget: trigger waitlist processing for the event
+    final eventId = listing.ticket?.eventId;
+    if (eventId != null) {
+      WaitlistRepository().triggerProcessing(
+        eventId: eventId,
+        trigger: 'resale_listed',
+        listingId: listing.id,
+        listingPriceCents: priceCents,
+      );
+    }
+
     return listing;
   }
 

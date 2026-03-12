@@ -10,8 +10,15 @@ import '../../payments/models/payment.dart';
 import '../../payments/presentation/checkout_screen.dart';
 import '../../payments/presentation/resale_browse_screen.dart';
 import '../../payments/presentation/seller_onboarding_screen.dart';
+import '../../venues/models/models.dart';
+import '../../venues/presentation/seat_picker_screen.dart';
+import '../../venues/widgets/venue_mini_map.dart';
+import '../../waitlist/presentation/waitlist_sheet.dart';
+import '../data/supabase_event_repository.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
 import '../models/ticket_availability.dart';
+import '../models/ticket_type.dart';
 import 'report_event_sheet.dart';
 
 /// Session-level dedup set for event views (avoids redundant inserts).
@@ -180,6 +187,80 @@ class EventDetailsScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                   ],
+                  // Virtual/Hybrid event chip
+                  if (event.hasVirtualComponent) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.cyan.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.videocam,
+                            size: 14,
+                            color: Colors.cyan[600],
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            event.isVirtual ? 'Virtual Event' : 'Hybrid Event',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.cyan[600],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  // Recurring event chip
+                  if (event.isPartOfSeries) ...[
+                    GestureDetector(
+                      onTap: () => _showAllDatesSheet(context, ref, event.seriesId!),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.repeat,
+                              size: 14,
+                              color: Colors.deepPurple[400],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${RecurrenceType.fromString(event.recurrenceType)?.label ?? "Recurring"} event',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Colors.deepPurple[400],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '\u00B7 See all dates',
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: Colors.deepPurple[300],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   // Title
                   Text(
                     event.title,
@@ -272,7 +353,8 @@ class EventDetailsScreen extends ConsumerWidget {
                     color: colorScheme.primary,
                   ),
                   const SizedBox(height: 12),
-                  if (locationText != null)
+                  // Location card (hidden for virtual-only events)
+                  if (locationText != null && !event.isVirtual)
                     _InfoCard(
                       icon: event.hideLocation && !hasTicket
                           ? Icons.lock_outlined
@@ -289,6 +371,21 @@ class EventDetailsScreen extends ConsumerWidget {
                             }
                           : null,
                     ),
+                  // Virtual event card
+                  if (event.hasVirtualComponent) ...[
+                    if (locationText != null && !event.isVirtual)
+                      const SizedBox(height: 12),
+                    _InfoCard(
+                      icon: Icons.videocam_outlined,
+                      title: event.isVirtual ? 'Online Event' : 'Virtual Access',
+                      value: event.virtualLocked && hasTicket && event.virtualEventUrl != null
+                          ? 'Meeting link available — check your ticket!'
+                          : event.virtualLocked
+                              ? 'Link revealed to ticket holders'
+                              : 'Link reveals 1 hour before event',
+                      color: Colors.cyan,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   // Official Tickets
                   availabilityAsync.when(
@@ -502,6 +599,18 @@ class EventDetailsScreen extends ConsumerWidget {
       builder: (context) => _BuyTicketSheet(event: event),
     );
   }
+
+  void _showAllDatesSheet(BuildContext context, WidgetRef ref, String seriesId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _AllDatesSheet(
+        seriesId: seriesId,
+        currentEventId: event.id,
+      ),
+    );
+  }
 }
 
 /// Information card with icon, title, and value.
@@ -680,15 +789,97 @@ class _BuyTicketSheet extends ConsumerStatefulWidget {
 }
 
 class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
-  int _quantity = 1;
+  // Quantities per ticket type (keyed by ticket type id)
+  final Map<String, int> _quantities = {};
+  // Fallback quantity for events without ticket types
+  int _fallbackQuantity = 1;
   static const int _maxTickets = 10;
 
+  // Venue data
+  Venue? _venue;
+  List<TicketType> _ticketTypes = [];
+  bool _loadingVenue = false;
+  String? _highlightedSectionId;
+
+  bool get _hasVenue => widget.event.venueId != null;
+  bool get _hasTicketTypes => _ticketTypes.isNotEmpty;
+
   int get _pricePerTicketCents => widget.event.priceInCents ?? 0;
-  int get _totalPriceCents => _quantity * _pricePerTicketCents;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_hasVenue) _loadVenueData();
+  }
+
+  Future<void> _loadVenueData() async {
+    setState(() => _loadingVenue = true);
+    try {
+      final venueRepo = ref.read(venueRepositoryProvider);
+      final eventRepo = ref.read(eventRepositoryProvider);
+      final results = await Future.wait([
+        venueRepo.getVenue(widget.event.venueId!),
+        (eventRepo as SupabaseEventRepository).getEventTicketTypes(widget.event.id),
+      ]);
+      if (mounted) {
+        final venue = results[0] as Venue?;
+        final types = results[1] as List<TicketType>;
+        setState(() {
+          _venue = venue;
+          _ticketTypes = types.where((t) => t.isActive).toList();
+          // Initialize quantities
+          for (final t in _ticketTypes) {
+            _quantities[t.id] = 0;
+          }
+          _loadingVenue = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingVenue = false);
+    }
+  }
+
+  int _totalCents() {
+    if (_hasTicketTypes) {
+      var total = 0;
+      for (final t in _ticketTypes) {
+        total += (_quantities[t.id] ?? 0) * t.priceInCents;
+      }
+      return total;
+    }
+    return _fallbackQuantity * _pricePerTicketCents;
+  }
+
+  int _totalQuantity() {
+    if (_hasTicketTypes) {
+      return _quantities.values.fold(0, (a, b) => a + b);
+    }
+    return _fallbackQuantity;
+  }
 
   String _formatPrice(int cents) {
     if (cents == 0) return 'Free';
     return '\$${(cents / 100).toStringAsFixed(2)}';
+  }
+
+  Set<String> get _highlightedSections {
+    // Highlight sections that have tickets in cart, or the tapped section
+    final ids = <String>{};
+    if (_highlightedSectionId != null) ids.add(_highlightedSectionId!);
+    for (final t in _ticketTypes) {
+      if ((_quantities[t.id] ?? 0) > 0 && t.venueSectionId != null) {
+        ids.add(t.venueSectionId!);
+      }
+    }
+    return ids;
+  }
+
+  String? _sectionNameFor(TicketType t) {
+    if (t.venueSectionId == null || _venue == null) return null;
+    final section = _venue!.layout.sections
+        .where((s) => s.id == t.venueSectionId)
+        .firstOrNull;
+    return section?.name;
   }
 
   @override
@@ -697,196 +888,646 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
     final colorScheme = theme.colorScheme;
     final availabilityAsync = ref.watch(_ticketAvailabilityProvider(widget.event.id));
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
-      padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 16,
-        bottom: MediaQuery.of(context).padding.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          // Title
-          Center(
-            child: Text(
-              'Get Tickets',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Center(
-            child: Text(
-              widget.event.title,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Official Tickets Section
-          _TicketOptionCard(
-            icon: Icons.verified_outlined,
-            iconColor: colorScheme.primary,
-            title: 'Official Tickets',
-            subtitle: _formatPrice(_pricePerTicketCents),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _SmallQuantityButton(
-                  icon: Icons.remove,
-                  onTap: _quantity > 1
-                      ? () => setState(() => _quantity--)
-                      : null,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 16,
+          bottom: MediaQuery.of(context).padding.bottom + 24,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    '$_quantity',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Title
+            Center(
+              child: Text(
+                'Get Tickets',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Center(
+              child: Text(
+                widget.event.title,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Venue mini-map (when venue is linked)
+            if (_hasVenue) ...[
+              if (_loadingVenue)
+                Container(
+                  height: 120,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Center(
+                    child: SizedBox(
+                      width: 24, height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              else if (_venue != null) ...[
+                VenueMiniMap(
+                  layout: _venue!.layout,
+                  canvasWidth: _venue!.canvasWidth,
+                  canvasHeight: _venue!.canvasHeight,
+                  highlightedSectionIds: _highlightedSections,
+                  onSectionTap: (sectionId) {
+                    setState(() {
+                      _highlightedSectionId =
+                          _highlightedSectionId == sectionId ? null : sectionId;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(context); // Close buy sheet
+                      final selections = await Navigator.of(context).push<List<SeatSelection>>(
+                        MaterialPageRoute(
+                          builder: (_) => SeatPickerScreen(
+                            eventId: widget.event.id,
+                            venue: _venue!,
+                            sectionQuantities: _sectionQuantities.isNotEmpty
+                                ? _sectionQuantities
+                                : {for (final s in _venue!.layout.sections) s.id: 0},
+                            ticketTypes: _ticketTypes,
+                          ),
+                        ),
+                      );
+                      // If user selected seats from the full-screen picker, proceed to checkout
+                      if (selections != null && selections.isNotEmpty && context.mounted) {
+                        _handleSeatSelectionsFromFullScreen(context, selections);
+                      }
+                    },
+                    icon: const Icon(Icons.fullscreen, size: 18),
+                    label: const Text('Full Screen'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      visualDensity: VisualDensity.compact,
                     ),
                   ),
                 ),
-                _SmallQuantityButton(
-                  icon: Icons.add,
-                  onTap: _quantity < _maxTickets
-                      ? () => setState(() => _quantity++)
-                      : null,
+              ],
+              const SizedBox(height: 16),
+            ],
+
+            // Ticket types with venue sections (when available)
+            if (_hasTicketTypes) ...[
+              ..._ticketTypes.map((t) {
+                final qty = _quantities[t.id] ?? 0;
+                final sectionName = _sectionNameFor(t);
+                final isHighlighted = t.venueSectionId != null &&
+                    t.venueSectionId == _highlightedSectionId;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _VenueTicketTypeCard(
+                    ticketType: t,
+                    quantity: qty,
+                    sectionName: sectionName,
+                    isHighlighted: isHighlighted,
+                    onIncrement: qty < _maxTickets
+                        ? () => setState(() => _quantities[t.id] = qty + 1)
+                        : null,
+                    onDecrement: qty > 0
+                        ? () => setState(() => _quantities[t.id] = qty - 1)
+                        : null,
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              // Buy button for multi-type
+              FilledButton(
+                onPressed: _totalQuantity() > 0 ? () => _checkout(context) : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
+                child: Text(
+                  _totalQuantity() > 0
+                      ? 'Buy ${_totalQuantity()} ticket${_totalQuantity() > 1 ? 's' : ''} \u2022 ${_formatPrice(_totalCents())}'
+                      : 'Select tickets above',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ] else ...[
+              // Fallback: single ticket type (no venue or types not loaded)
+              _TicketOptionCard(
+                icon: Icons.verified_outlined,
+                iconColor: colorScheme.primary,
+                title: 'Official Tickets',
+                subtitle: _formatPrice(_pricePerTicketCents),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _SmallQuantityButton(
+                      icon: Icons.remove,
+                      onTap: _fallbackQuantity > 1
+                          ? () => setState(() => _fallbackQuantity--)
+                          : null,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '$_fallbackQuantity',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    _SmallQuantityButton(
+                      icon: Icons.add,
+                      onTap: _fallbackQuantity < _maxTickets
+                          ? () => setState(() => _fallbackQuantity++)
+                          : null,
+                    ),
+                  ],
+                ),
+                onTap: null,
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () => _checkout(context),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  _totalCents() > 0
+                      ? 'Buy Official \u2022 ${_formatPrice(_totalCents())}'
+                      : 'Get Free Ticket',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 20),
+
+            // Divider with "or"
+            Row(
+              children: [
+                Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'or',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider(color: colorScheme.outlineVariant)),
               ],
             ),
-            onTap: null, // Handled by buy button below
-          ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 20),
 
-          // Buy Official Button
-          FilledButton(
-            onPressed: () {
-              final baseTotalCents = _totalPriceCents;
-              final checkoutAmountCents = baseTotalCents > 0
-                  ? ServiceFeeCalculator.calculate(baseTotalCents).totalCents
-                  : 0;
-              Navigator.pop(context);
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => CheckoutScreen(
-                    event: widget.event,
-                    amountCents: checkoutAmountCents,
-                    paymentType: PaymentType.primaryPurchase,
-                    quantity: _quantity,
-                    baseUnitPriceCents: _pricePerTicketCents,
-                  ),
+            // Resale Tickets Section
+            availabilityAsync.when(
+              loading: () => _TicketOptionCard(
+                icon: Icons.swap_horiz_rounded,
+                iconColor: colorScheme.secondary,
+                title: 'Resale Tickets',
+                subtitle: 'Loading...',
+                trailing: const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-              );
-            },
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(52),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                onTap: null,
               ),
-            ),
-            child: Text(
-              _totalPriceCents > 0
-                  ? 'Buy Official \u2022 ${_formatPrice(_totalPriceCents)}'
-                  : 'Get Free Ticket',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-
-          // Divider with "or"
-          Row(
-            children: [
-              Expanded(child: Divider(color: colorScheme.outlineVariant)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'or',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
+              error: (_, __) => _TicketOptionCard(
+                icon: Icons.swap_horiz_rounded,
+                iconColor: colorScheme.secondary,
+                title: 'Resale Tickets',
+                subtitle: 'Unable to load',
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: colorScheme.onSurfaceVariant,
                 ),
+                onTap: null,
               ),
-              Expanded(child: Divider(color: colorScheme.outlineVariant)),
-            ],
-          ),
-          const SizedBox(height: 20),
+              data: (availability) => _TicketOptionCard(
+                icon: Icons.swap_horiz_rounded,
+                iconColor: colorScheme.secondary,
+                title: 'Resale Tickets',
+                subtitle: availability.hasResaleTickets
+                    ? '${availability.resaleCount} available from other fans'
+                    : 'None available',
+                trailing: availability.hasResaleTickets
+                    ? Icon(
+                        Icons.chevron_right,
+                        color: colorScheme.onSurfaceVariant,
+                      )
+                    : null,
+                onTap: availability.hasResaleTickets
+                    ? () {
+                        Navigator.pop(context);
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => ResaleBrowseScreen(event: widget.event),
+                          ),
+                        );
+                      }
+                    : null,
+                enabled: availability.hasResaleTickets,
+              ),
+            ),
+            const SizedBox(height: 20),
 
-          // Resale Tickets Section
-          availabilityAsync.when(
-            loading: () => _TicketOptionCard(
-              icon: Icons.swap_horiz_rounded,
-              iconColor: colorScheme.secondary,
-              title: 'Resale Tickets',
-              subtitle: 'Loading...',
-              trailing: const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-              onTap: null,
-            ),
-            error: (_, __) => _TicketOptionCard(
-              icon: Icons.swap_horiz_rounded,
-              iconColor: colorScheme.secondary,
-              title: 'Resale Tickets',
-              subtitle: 'Unable to load',
-              trailing: Icon(
-                Icons.chevron_right,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              onTap: null,
-            ),
-            data: (availability) => _TicketOptionCard(
-              icon: Icons.swap_horiz_rounded,
-              iconColor: colorScheme.secondary,
-              title: 'Resale Tickets',
-              subtitle: availability.hasResaleTickets
-                  ? '${availability.resaleCount} available from other fans'
-                  : 'None available',
-              trailing: availability.hasResaleTickets
-                  ? Icon(
-                      Icons.chevron_right,
-                      color: colorScheme.onSurfaceVariant,
-                    )
-                  : null,
-              onTap: availability.hasResaleTickets
-                  ? () {
-                      Navigator.pop(context);
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => ResaleBrowseScreen(event: widget.event),
+            // Waitlist Section
+            availabilityAsync.when(
+              loading: () => const SizedBox.shrink(),
+              error: (_, __) => const SizedBox.shrink(),
+              data: (availability) {
+                // Show waitlist option when official tickets are sold out
+                final isSoldOut = !availability.hasOfficialTickets;
+                if (!isSoldOut) return const SizedBox.shrink();
+
+                return Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'sold out?',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
-                      );
-                    }
-                  : null,
-              enabled: availability.hasResaleTickets,
+                        Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _TicketOptionCard(
+                      icon: Icons.notifications_outlined,
+                      iconColor: Colors.orange,
+                      title: 'Join Waitlist',
+                      subtitle: 'Get notified or auto-buy when available',
+                      trailing: Icon(
+                        Icons.chevron_right,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => WaitlistSheet(
+                            eventId: widget.event.id,
+                            eventTitle: widget.event.title,
+                            eventPriceCents: widget.event.priceInCents,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                );
+              },
             ),
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  /// Checks if any selected ticket types are for seated sections with generated seats.
+  bool get _needsSeatPicker {
+    if (_venue == null || !_hasTicketTypes) return false;
+    for (final t in _ticketTypes) {
+      if ((_quantities[t.id] ?? 0) > 0 && t.venueSectionId != null) {
+        final section = _venue!.layout.sections
+            .where((s) => s.id == t.venueSectionId)
+            .firstOrNull;
+        if (section != null &&
+            section.type == SectionType.seated &&
+            section.rows.isNotEmpty) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Build sectionId → quantity map for seated sections only.
+  Map<String, int> get _sectionQuantities {
+    final map = <String, int>{};
+    if (_venue == null) return map;
+    for (final t in _ticketTypes) {
+      final qty = _quantities[t.id] ?? 0;
+      if (qty > 0 && t.venueSectionId != null) {
+        final section = _venue!.layout.sections
+            .where((s) => s.id == t.venueSectionId)
+            .firstOrNull;
+        if (section != null &&
+            section.type == SectionType.seated &&
+            section.rows.isNotEmpty) {
+          map[t.venueSectionId!] = (map[t.venueSectionId!] ?? 0) + qty;
+        }
+      }
+    }
+    return map;
+  }
+
+  Future<void> _checkout(BuildContext context) async {
+    final baseTotalCents = _totalCents();
+    final checkoutAmountCents = baseTotalCents > 0
+        ? ServiceFeeCalculator.calculate(baseTotalCents).totalCents
+        : 0;
+
+    // Capture everything before popping the bottom sheet (context/ref become invalid after pop)
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final venueRepo = ref.read(venueRepositoryProvider);
+    final totalQty = _totalQuantity();
+    final unitPrice = _hasTicketTypes
+        ? (baseTotalCents / totalQty).round()
+        : _pricePerTicketCents;
+
+    List<SeatSelection>? seatSelections;
+
+    // If event has seated sections with seats, show seat picker first
+    if (_needsSeatPicker) {
+      navigator.pop(); // Close buy sheet
+      final sq = _sectionQuantities;
+      final selections = await navigator.push<List<SeatSelection>>(
+        MaterialPageRoute(
+          builder: (_) => SeatPickerScreen(
+            eventId: widget.event.id,
+            venue: _venue!,
+            sectionQuantities: sq,
+            ticketTypes: _ticketTypes,
+            initialSectionId: sq.length == 1 ? sq.keys.first : null,
+          ),
+        ),
+      );
+
+      if (selections == null || selections.isEmpty) return; // User cancelled
+
+      // Hold the selected seats
+      try {
+        await venueRepo.holdSeats(
+          widget.event.id,
+          selections
+              .map((s) => (sectionId: s.sectionId, seatId: s.seatId))
+              .toList(),
+        );
+        seatSelections = selections;
+      } catch (e) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Failed to hold seats: $e')),
+        );
+        return;
+      }
+    } else {
+      navigator.pop(); // Close buy sheet
+    }
+
+    navigator.push(
+      MaterialPageRoute(
+        builder: (_) => CheckoutScreen(
+          event: widget.event,
+          amountCents: checkoutAmountCents,
+          paymentType: PaymentType.primaryPurchase,
+          quantity: totalQty,
+          baseUnitPriceCents: unitPrice,
+          metadata: seatSelections != null
+              ? {
+                  'seat_selections':
+                      seatSelections.map((s) => s.toJson()).toList(),
+                }
+              : null,
+        ),
+      ),
+    );
+  }
+
+  /// Handle seat selections returned from the full-screen venue picker button.
+  Future<void> _handleSeatSelectionsFromFullScreen(
+    BuildContext context,
+    List<SeatSelection> selections,
+  ) async {
+    final baseTotalCents = _totalCents();
+    final checkoutAmountCents = baseTotalCents > 0
+        ? ServiceFeeCalculator.calculate(baseTotalCents).totalCents
+        : 0;
+
+    // Hold the selected seats
+    try {
+      final venueRepo = ref.read(venueRepositoryProvider);
+      await venueRepo.holdSeats(
+        widget.event.id,
+        selections
+            .map((s) => (sectionId: s.sectionId, seatId: s.seatId))
+            .toList(),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to hold seats: $e')),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CheckoutScreen(
+          event: widget.event,
+          amountCents: checkoutAmountCents,
+          paymentType: PaymentType.primaryPurchase,
+          quantity: _totalQuantity(),
+          baseUnitPriceCents: _hasTicketTypes
+              ? (baseTotalCents / _totalQuantity()).round()
+              : _pricePerTicketCents,
+          metadata: {
+            'seat_selections': selections.map((s) => s.toJson()).toList(),
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// Card for a specific ticket type with venue section info.
+class _VenueTicketTypeCard extends StatelessWidget {
+  final TicketType ticketType;
+  final int quantity;
+  final String? sectionName;
+  final bool isHighlighted;
+  final VoidCallback? onIncrement;
+  final VoidCallback? onDecrement;
+
+  const _VenueTicketTypeCard({
+    required this.ticketType,
+    required this.quantity,
+    this.sectionName,
+    this.isHighlighted = false,
+    this.onIncrement,
+    this.onDecrement,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hasQty = quantity > 0;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isHighlighted
+            ? colorScheme.primaryContainer.withValues(alpha: 0.3)
+            : hasQty
+                ? colorScheme.primary.withValues(alpha: 0.06)
+                : colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isHighlighted
+              ? colorScheme.primary.withValues(alpha: 0.5)
+              : hasQty
+                  ? colorScheme.primary.withValues(alpha: 0.3)
+                  : colorScheme.outlineVariant.withValues(alpha: 0.3),
+          width: isHighlighted ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ticketType.name,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      ticketType.formattedPrice,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (sectionName != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(
+                          Icons.map,
+                          size: 12,
+                          color: Colors.teal.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      Flexible(
+                        child: Text(
+                          sectionName!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: Colors.teal,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                if (ticketType.description != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    ticketType.description!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 11,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Quantity controls
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SmallQuantityButton(
+                icon: Icons.remove,
+                onTap: onDecrement,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: SizedBox(
+                  width: 24,
+                  child: Text(
+                    '$quantity',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: hasQty ? colorScheme.primary : colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+              _SmallQuantityButton(
+                icon: Icons.add,
+                onTap: onIncrement,
+              ),
+            ],
           ),
         ],
       ),
@@ -1006,6 +1647,179 @@ class _SmallQuantityButton extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Bottom sheet listing all dates in a recurring series.
+class _AllDatesSheet extends ConsumerWidget {
+  final String seriesId;
+  final String currentEventId;
+
+  const _AllDatesSheet({
+    required this.seriesId,
+    required this.currentEventId,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final occurrencesAsync = ref.watch(seriesOccurrencesProvider(seriesId));
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.6,
+      ),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 24,
+        right: 24,
+        top: 16,
+        bottom: MediaQuery.of(context).padding.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(Icons.repeat, size: 20, color: Colors.deepPurple[400]),
+              const SizedBox(width: 8),
+              Text(
+                'All Dates',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Flexible(
+            child: occurrencesAsync.when(
+              loading: () => const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              error: (_, __) => const Center(
+                child: Text('Failed to load dates'),
+              ),
+              data: (occurrences) {
+                if (occurrences.isEmpty) {
+                  return const Center(child: Text('No upcoming dates'));
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: occurrences.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final occ = occurrences[index];
+                    final isCurrent = occ.id == currentEventId;
+                    final isPast = occ.date.isBefore(DateTime.now());
+
+                    return ListTile(
+                      leading: CircleAvatar(
+                        radius: 18,
+                        backgroundColor: isCurrent
+                            ? colorScheme.primary
+                            : isPast
+                                ? colorScheme.surfaceContainerHighest
+                                : colorScheme.primaryContainer,
+                        child: Text(
+                          '${occ.date.day}',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: isCurrent
+                                ? colorScheme.onPrimary
+                                : isPast
+                                    ? colorScheme.onSurfaceVariant
+                                    : colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      title: Text(
+                        _formatOccurrenceDate(occ.date),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: isCurrent ? FontWeight.bold : null,
+                          color: isPast ? colorScheme.onSurfaceVariant : null,
+                        ),
+                      ),
+                      trailing: isCurrent
+                          ? Chip(
+                              label: const Text('Current'),
+                              labelStyle: theme.textTheme.labelSmall?.copyWith(
+                                color: colorScheme.primary,
+                              ),
+                              backgroundColor:
+                                  colorScheme.primaryContainer.withValues(alpha: 0.5),
+                              side: BorderSide.none,
+                              padding: EdgeInsets.zero,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            )
+                          : isPast
+                              ? Text(
+                                  'Past',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.chevron_right,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                      onTap: isCurrent || isPast
+                          ? null
+                          : () async {
+                              Navigator.pop(context);
+                              // Fetch the full event and navigate
+                              final repo = ref.read(eventRepositoryProvider);
+                              try {
+                                final event = await repo.getEventById(occ.id);
+                                if (event != null && context.mounted) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          EventDetailsScreen(event: event),
+                                    ),
+                                  );
+                                }
+                              } catch (_) {}
+                            },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatOccurrenceDate(DateTime date) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final weekday = weekdays[date.weekday - 1];
+    final month = months[date.month - 1];
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final minute = date.minute.toString().padLeft(2, '0');
+    final period = date.hour >= 12 ? 'PM' : 'AM';
+    return '$weekday, $month ${date.day} at $hour:$minute $period';
   }
 }
 

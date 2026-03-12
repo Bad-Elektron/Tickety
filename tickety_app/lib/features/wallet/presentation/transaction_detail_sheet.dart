@@ -197,6 +197,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Wallet Top-Up';
       case PaymentType.achPurchase:
         return 'Bank Purchase';
+      case PaymentType.waitlistAutoPurchase:
+        return 'Waitlist Auto-Purchase';
     }
   }
 
@@ -218,6 +220,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.add_circle;
       case PaymentType.achPurchase:
         return Icons.account_balance;
+      case PaymentType.waitlistAutoPurchase:
+        return Icons.flash_on;
     }
   }
 

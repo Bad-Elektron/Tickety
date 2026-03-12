@@ -239,6 +239,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           );
         }
         break;
+      case NotificationType.waitlistAvailable:
+      case NotificationType.waitlistAutoPurchased:
+        _navigateToEvent(notification.eventId);
+        break;
+      case NotificationType.virtualEventRevealed:
+        _navigateToEvent(notification.eventId);
+        break;
       case NotificationType.unknown:
         break;
     }
@@ -480,6 +487,12 @@ class _NotificationTile extends StatelessWidget {
         return Icons.event_outlined;
       case NotificationType.favorTicketOffer:
         return Icons.card_giftcard;
+      case NotificationType.waitlistAvailable:
+        return Icons.notifications_active_outlined;
+      case NotificationType.waitlistAutoPurchased:
+        return Icons.flash_on_outlined;
+      case NotificationType.virtualEventRevealed:
+        return Icons.videocam_outlined;
       case NotificationType.unknown:
         return Icons.notifications_outlined;
     }
@@ -497,6 +510,12 @@ class _NotificationTile extends StatelessWidget {
         return Colors.orange.withValues(alpha: 0.15);
       case NotificationType.favorTicketOffer:
         return Colors.teal.withValues(alpha: 0.15);
+      case NotificationType.waitlistAvailable:
+        return Colors.orange.withValues(alpha: 0.15);
+      case NotificationType.waitlistAutoPurchased:
+        return Colors.green.withValues(alpha: 0.15);
+      case NotificationType.virtualEventRevealed:
+        return Colors.cyan.withValues(alpha: 0.15);
       case NotificationType.unknown:
         return colorScheme.surfaceContainerHighest;
     }
@@ -514,6 +533,12 @@ class _NotificationTile extends StatelessWidget {
         return Colors.orange;
       case NotificationType.favorTicketOffer:
         return Colors.teal;
+      case NotificationType.waitlistAvailable:
+        return Colors.orange;
+      case NotificationType.waitlistAutoPurchased:
+        return Colors.green;
+      case NotificationType.virtualEventRevealed:
+        return Colors.cyan;
       case NotificationType.unknown:
         return colorScheme.onSurfaceVariant;
     }

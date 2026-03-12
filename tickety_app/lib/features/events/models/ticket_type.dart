@@ -37,6 +37,12 @@ class TicketType {
   /// Whether this ticket type is currently available for sale.
   final bool isActive;
 
+  /// Venue section this ticket type is linked to (if any).
+  final String? venueSectionId;
+
+  /// Venue section name (for display, populated from join).
+  final String? venueSectionName;
+
   /// When this ticket type was created.
   final DateTime createdAt;
 
@@ -51,6 +57,8 @@ class TicketType {
     this.soldCount = 0,
     this.sortOrder = 0,
     this.isActive = true,
+    this.venueSectionId,
+    this.venueSectionName,
     required this.createdAt,
   });
 
@@ -108,6 +116,8 @@ class TicketType {
       soldCount: json['sold_count'] as int? ?? 0,
       sortOrder: json['sort_order'] as int? ?? 0,
       isActive: json['is_active'] as bool? ?? true,
+      venueSectionId: json['venue_section_id'] as String?,
+      venueSectionName: json['venue_section_name'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -125,6 +135,7 @@ class TicketType {
       'sold_count': soldCount,
       'sort_order': sortOrder,
       'is_active': isActive,
+      if (venueSectionId != null) 'venue_section_id': venueSectionId,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -141,6 +152,9 @@ class TicketType {
     int? soldCount,
     int? sortOrder,
     bool? isActive,
+    String? venueSectionId,
+    bool clearVenueSectionId = false,
+    String? venueSectionName,
     DateTime? createdAt,
   }) {
     return TicketType(
@@ -154,6 +168,8 @@ class TicketType {
       soldCount: soldCount ?? this.soldCount,
       sortOrder: sortOrder ?? this.sortOrder,
       isActive: isActive ?? this.isActive,
+      venueSectionId: clearVenueSectionId ? null : (venueSectionId ?? this.venueSectionId),
+      venueSectionName: venueSectionName ?? this.venueSectionName,
       createdAt: createdAt ?? this.createdAt,
     );
   }

@@ -9,6 +9,7 @@ export 'event_filter_bottom_sheet.dart';
 export 'event_filter_chips.dart';
 export 'gradient_action_button.dart';
 export 'gradient_events_button.dart';
+export 'gradient_venues_button.dart';
 export 'gradient_search_button.dart';
 export 'gradient_ticket_button.dart';
 export 'gradient_wallet_button.dart';

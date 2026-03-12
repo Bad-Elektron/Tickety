@@ -207,6 +207,8 @@ class WalletRepository {
     required int quantity,
     required String paymentMethodId,
     required int amountCents,
+    String? promoCodeId,
+    List<Map<String, dynamic>>? seatSelections,
   }) async {
     final response = await _client.functions.invoke(
       'create-ach-payment-intent',
@@ -215,6 +217,8 @@ class WalletRepository {
         'quantity': quantity,
         'payment_method_id': paymentMethodId,
         'amount_cents': amountCents,
+        if (promoCodeId != null) 'promo_code_id': promoCodeId,
+        if (seatSelections != null) 'seat_selections': seatSelections,
       },
     );
 

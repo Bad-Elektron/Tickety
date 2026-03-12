@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../shared/widgets/widgets.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
 
 /// A card displaying an event with a gradient background and text overlay.
 class EventBannerCard extends StatelessWidget {
@@ -161,8 +162,61 @@ class EventBannerCard extends StatelessWidget {
       ));
     }
 
+    // Virtual/Hybrid badge
+    if (event.hasVirtualComponent) {
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.cyan.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.videocam, size: 12, color: Colors.white),
+            const SizedBox(width: 3),
+            Text(
+              event.isVirtual ? 'Virtual' : 'Hybrid',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+
+    // Recurring badge
+    if (event.isPartOfSeries && event.recurrenceType != null) {
+      final recurrence = RecurrenceType.fromString(event.recurrenceType);
+      chips.add(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.repeat, size: 12, color: Colors.white),
+            const SizedBox(width: 3),
+            Text(
+              recurrence?.shortLabel ?? 'Recurring',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ));
+    }
+
     // Regular tags (up to 3 total including badges)
-    final maxRegularTags = 3 - badges.length;
+    final maxRegularTags = 3 - badges.length - (event.isPartOfSeries ? 1 : 0) - (event.hasVirtualComponent ? 1 : 0);
     final visibleTags = tags.take(maxRegularTags);
     for (final tag in visibleTags) {
       chips.add(Container(

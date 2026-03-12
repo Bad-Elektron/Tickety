@@ -7,6 +7,8 @@ import '../../../core/providers/providers.dart';
 import '../../notifications/notifications.dart';
 import '../../profile/profile.dart';
 import '../../tickets/tickets.dart';
+import '../../subscriptions/models/tier_limits.dart';
+import '../../venues/presentation/venues_screen.dart';
 import '../../wallet/wallet.dart';
 import '../data/supabase_event_repository.dart';
 import '../models/event_category.dart';
@@ -247,9 +249,13 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final canUseVenues = TierLimits.canUseVenueBuilder(
+      ref.watch(subscriptionProvider).effectiveTier,
+    );
+
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -278,6 +284,16 @@ class _Header extends StatelessWidget {
                 );
               },
             ),
+            if (canUseVenues) ...[
+              const SizedBox(width: 10),
+              GradientVenuesButton(
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const VenuesScreen()),
+                  );
+                },
+              ),
+            ],
             const SizedBox(width: 10),
             GradientEventsButton(
               onTap: () {

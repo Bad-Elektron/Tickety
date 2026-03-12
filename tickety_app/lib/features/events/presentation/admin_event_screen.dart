@@ -10,9 +10,14 @@ import '../../../shared/widgets/widgets.dart';
 import '../../analytics/analytics.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../staff/data/ticket_repository.dart';
+import '../data/supabase_event_repository.dart';
 import '../../staff/presentation/cash_reconciliation_screen.dart';
 import '../../staff/presentation/manage_staff_screen.dart';
+import '../../venues/presentation/venue_builder_screen.dart';
+import '../../venues/widgets/venue_picker_sheet.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
+import '../../payments/presentation/promo_codes_screen.dart';
 import 'create_event_screen.dart';
 import 'event_data_screen.dart';
 import 'manage_tickets_screen.dart';
@@ -31,9 +36,14 @@ class AdminEventScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
+  /// Tracks venue linkage locally so UI updates immediately after linking.
+  String? _linkedVenueId;
+  String? get _effectiveVenueId => _linkedVenueId ?? widget.event.venueId;
+
   @override
   void initState() {
     super.initState();
+    _linkedVenueId = widget.event.venueId;
     // Load ticket stats when screen opens
     Future.microtask(() {
       ref.read(ticketProvider.notifier).loadStats(widget.event.id);
@@ -211,6 +221,101 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
+                  // Recurring series banner
+                  if (event.isPartOfSeries) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.deepPurple.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.deepPurple.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.repeat, size: 20, color: Colors.deepPurple[400]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${RecurrenceType.fromString(event.recurrenceType)?.label ?? "Recurring"} Series',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.deepPurple[400],
+                                  ),
+                                ),
+                                if (event.occurrenceIndex != null)
+                                  Text(
+                                    'Occurrence #${event.occurrenceIndex! + 1}',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                  // Virtual/Hybrid event banner
+                  if (event.hasVirtualComponent) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.cyan.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.cyan.withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.videocam, size: 20, color: Colors.cyan[600]),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  event.isVirtual ? 'Virtual Event' : 'Hybrid Event',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.cyan[600],
+                                  ),
+                                ),
+                                if (event.virtualEventUrl != null)
+                                  Text(
+                                    event.virtualEventUrl!.replaceRange(
+                                      (event.virtualEventUrl!.length * 0.4).round().clamp(8, event.virtualEventUrl!.length),
+                                      event.virtualEventUrl!.length,
+                                      '\u2026',
+                                    ),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontFamily: 'monospace',
+                                    ),
+                                  ),
+                                if (event.virtualLocked)
+                                  Text(
+                                    'Link revealed to attendees',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.cyan[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   // Title
                   Text(
                     event.title,
@@ -269,6 +374,20 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   ),
                   const SizedBox(height: 12),
                   _AdminActionCard(
+                    icon: Icons.discount_outlined,
+                    title: 'Promo Codes',
+                    subtitle: 'Create and manage discount codes',
+                    color: Colors.orange,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => PromoCodesScreen(event: event),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
                     icon: Icons.content_cut,
                     customIcon: const _TicketTearIcon(size: 28),
                     title: 'Manage Staff',
@@ -295,6 +414,28 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                       }
                     },
                   ),
+                  // Venue Layout action — always visible, enterprise-gated
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.map_outlined,
+                    title: 'Venue Layout',
+                    subtitle: _effectiveVenueId != null
+                        ? 'Edit the seating chart'
+                        : 'Link a venue to this event',
+                    color: Colors.teal,
+                    onTap: () => _handleVenueAction(context, ref, event),
+                  ),
+                  // Cancel Series action (only for series events)
+                  if (event.isPartOfSeries && event.seriesId != null) ...[
+                    const SizedBox(height: 12),
+                    _AdminActionCard(
+                      icon: Icons.event_busy,
+                      title: 'Cancel Series',
+                      subtitle: 'Stop all future occurrences',
+                      color: Colors.red,
+                      onTap: () => _confirmCancelSeries(context, ref),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.payments_outlined,
@@ -381,6 +522,136 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
     final period = date.hour >= 12 ? 'PM' : 'AM';
 
     return '$weekday, $month $day at $hour:$minute $period';
+  }
+
+  void _handleVenueAction(BuildContext context, WidgetRef ref, EventModel event) {
+    final tier = ref.read(currentTierProvider);
+    final canUse = TierLimits.canUseVenueBuilder(tier);
+
+    if (!canUse) {
+      // Show upgrade prompt
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.lock_outlined, size: 32, color: Colors.teal),
+          title: const Text('Enterprise Feature'),
+          content: const Text(
+            'Venue builder and seating charts are available on the Enterprise plan. '
+            'Upgrade to create visual venue layouts for your events.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Maybe Later'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+                );
+              },
+              child: const Text('View Plans'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (_effectiveVenueId != null) {
+      // Already linked — open builder
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => VenueBuilderScreen(venueId: _effectiveVenueId),
+        ),
+      );
+    } else {
+      // Show venue picker to link
+      _showVenuePicker(context, ref, event);
+    }
+  }
+
+  void _showVenuePicker(BuildContext context, WidgetRef ref, EventModel event) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => VenuePickerSheet(
+        onVenueSelected: (venue) async {
+          final repo = ref.read(eventRepositoryProvider) as SupabaseEventRepository;
+          await repo.linkVenue(event.id, venue.id);
+          if (context.mounted) {
+            setState(() => _linkedVenueId = venue.id);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Linked "${venue.name}" to this event'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            // Navigate to builder
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => VenueBuilderScreen(venueId: venue.id),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _confirmCancelSeries(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Series'),
+        content: const Text(
+          'This will stop all future occurrences of this recurring event. '
+          'Past and current events will not be affected.\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep Series'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Cancel Series'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      final repository = ref.read(eventRepositoryProvider);
+      await (repository as SupabaseEventRepository)
+          .cancelSeries(widget.event.seriesId!);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Series cancelled — no future occurrences will be created'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to cancel series: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _showManageUshersSheet(BuildContext context) {

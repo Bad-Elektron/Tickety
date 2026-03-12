@@ -56,6 +56,15 @@ abstract class EventMapper {
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'] as String)
           : null,
+      seriesId: json['series_id'] as String?,
+      occurrenceIndex: json['occurrence_index'] as int?,
+      seriesEdited: json['series_edited'] as bool? ?? false,
+      recurrenceType: json['recurrence_type'] as String?,
+      venueId: json['venue_id'] as String?,
+      eventFormat: json['event_format'] as String? ?? 'in_person',
+      virtualEventUrl: json['virtual_event_url'] as String?,
+      virtualEventPassword: json['virtual_event_password'] as String?,
+      virtualLocked: json['virtual_locked'] as bool? ?? false,
     );
   }
 
@@ -88,6 +97,10 @@ abstract class EventMapper {
       if (event.latitude != null) 'latitude': event.latitude,
       if (event.longitude != null) 'longitude': event.longitude,
       if (event.formattedAddress != null) 'formatted_address': event.formattedAddress,
+      if (event.venueId != null) 'venue_id': event.venueId,
+      if (event.hasVirtualComponent) 'event_format': event.eventFormat,
+      if (event.hasVirtualComponent && event.virtualEventUrl != null) 'virtual_event_url': event.virtualEventUrl,
+      if (event.hasVirtualComponent && event.virtualEventPassword != null) 'virtual_event_password': event.virtualEventPassword,
     };
   }
 

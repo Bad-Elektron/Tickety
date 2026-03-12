@@ -48,6 +48,15 @@ interface ACHPaymentRequest {
   payment_method_id: string
   amount_cents: number
   metadata?: Record<string, unknown>
+  promo_code_id?: string
+  seat_selections?: Array<{
+    section_id: string
+    seat_id: string
+    seat_label: string
+    section_name: string
+    row_label: string
+    seat_number: number
+  }>
 }
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
@@ -83,7 +92,7 @@ serve(async (req) => {
     }
 
     const body: ACHPaymentRequest = await req.json()
-    const { event_id, quantity = 1, payment_method_id, amount_cents, metadata } = body
+    const { event_id, quantity = 1, payment_method_id, amount_cents, metadata, promo_code_id, seat_selections } = body
 
     if (!event_id || !payment_method_id) {
       return new Response(
@@ -127,12 +136,46 @@ serve(async (req) => {
       )
     }
 
+    // Validate promo code if provided
+    let promoDiscountCents = 0
+    let validatedPromoId: string | null = null
+    if (promo_code_id) {
+      const { data: promoCode } = await supabaseAdmin
+        .from('promo_codes')
+        .select('code')
+        .eq('id', promo_code_id)
+        .single()
+
+      if (promoCode) {
+        const rawBase = event.price_in_cents * quantity
+        const { data: promoResult, error: promoError } = await supabaseAdmin.rpc('validate_promo_code', {
+          p_event_id: event_id,
+          p_code: promoCode.code,
+          p_user_id: user.id,
+          p_base_price_cents: rawBase,
+          p_ticket_type_id: null,
+        })
+
+        if (promoError || !promoResult?.valid) {
+          const errMsg = promoResult?.error || 'Promo code is no longer valid'
+          return new Response(
+            JSON.stringify({ error: errMsg }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        promoDiscountCents = promoResult.discount_cents
+        validatedPromoId = promo_code_id
+        console.log(`[ach-promo] code=${promoCode.code}, discount=${promoDiscountCents} cents`)
+      }
+    }
+
     // Calculate fees and validate client amount
-    const baseCents = event.price_in_cents * quantity
+    const baseCents = event.price_in_cents * quantity - promoDiscountCents
     const fees = calculateFees(baseCents)
 
     if (amount_cents !== fees.total_cents) {
-      console.log(`ACH price mismatch: expected ${fees.total_cents}, got ${amount_cents}`)
+      console.log(`ACH price mismatch: expected ${fees.total_cents}, got ${amount_cents}, promoDiscount=${promoDiscountCents}`)
       return new Response(
         JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -188,6 +231,10 @@ serve(async (req) => {
       platform_fee_cents: String(fees.platform_fee_cents),
       ach_fee_cents: String(fees.ach_fee_cents),
     }
+    if (validatedPromoId) {
+      piMetadata.promo_code_id = validatedPromoId
+      piMetadata.promo_discount_cents = String(promoDiscountCents)
+    }
     if (metadata) {
       for (const [k, v] of Object.entries(metadata)) {
         piMetadata[k] = String(v)
@@ -222,10 +269,13 @@ serve(async (req) => {
         type: 'ach_purchase',
         stripe_payment_intent_id: paymentIntent.id,
         platform_fee_cents: fees.platform_fee_cents + fees.ach_fee_cents,
+        ...(validatedPromoId && { promo_code_id: validatedPromoId }),
+        ...(seat_selections && { seat_selections }),
         metadata: {
           event_title: event.title,
           fee_breakdown: fees,
           payment_method: 'ach',
+          ...(promoDiscountCents > 0 && { promo_discount_cents: promoDiscountCents }),
           ...metadata,
         },
       })
@@ -234,6 +284,19 @@ serve(async (req) => {
 
     if (paymentError) {
       console.error('Failed to create payment record:', paymentError)
+    }
+
+    // Redeem promo code after payment record is created
+    if (validatedPromoId && payment) {
+      const { error: redeemError } = await supabaseAdmin.rpc('redeem_promo_code', {
+        p_promo_code_id: validatedPromoId,
+        p_user_id: user.id,
+        p_payment_id: payment.id,
+        p_discount_cents: promoDiscountCents,
+      })
+      if (redeemError) {
+        console.error('Failed to redeem promo code (non-blocking):', redeemError)
+      }
     }
 
     // Create tickets immediately — user gets ticket now, ACH settles later
@@ -253,6 +316,8 @@ serve(async (req) => {
       const random = Math.floor(Math.random() * 9999).toString().padStart(4, '0')
       const ticketNumber = `TKT-${timestamp}-${random}`
 
+      // Assign seat data from seat_selections if present
+      const seatData = seat_selections?.[i]
       const { data: ticket, error: ticketError } = await supabaseAdmin
         .from('tickets')
         .insert({
@@ -264,6 +329,11 @@ serve(async (req) => {
           currency: 'USD',
           status: 'valid',
           sold_by: user.id,
+          ...(seatData && {
+            venue_section_id: seatData.section_id,
+            seat_id: seatData.seat_id,
+            seat_label: seatData.seat_label,
+          }),
         })
         .select()
         .single()
@@ -283,6 +353,17 @@ serve(async (req) => {
         .from('payments')
         .update({ ticket_id: ticketIds[0] })
         .eq('id', payment.id)
+    }
+
+    // Clean up seat holds after ticket creation
+    if (seat_selections && seat_selections.length > 0) {
+      const seatIds = seat_selections.map((s: any) => s.seat_id)
+      await supabaseAdmin
+        .from('seat_holds')
+        .delete()
+        .eq('event_id', event_id)
+        .in_('seat_id', seatIds)
+      console.log(`Cleaned up ${seatIds.length} seat holds`)
     }
 
     // Enqueue NFT minting if enabled (fire-and-forget)

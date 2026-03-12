@@ -23,6 +23,15 @@ interface PaymentIntentRequest {
   ticket_id?: string
   quantity?: number
   metadata?: Record<string, unknown>
+  promo_code_id?: string
+  seat_selections?: Array<{
+    section_id: string
+    seat_id: string
+    seat_label: string
+    section_name: string
+    row_label: string
+    seat_number: number
+  }>
 }
 
 // Fee constants — must match client-side ServiceFeeCalculator exactly (v2: mint fee)
@@ -99,7 +108,7 @@ serve(async (req) => {
     }
 
     const body: PaymentIntentRequest = await req.json()
-    const { event_id, amount_cents, currency = 'usd', type, quantity = 1, metadata } = body
+    const { event_id, amount_cents, currency = 'usd', type, quantity = 1, metadata, promo_code_id, seat_selections } = body
 
     // Validate required fields
     if (!event_id || !amount_cents || !type) {
@@ -112,6 +121,8 @@ serve(async (req) => {
     // Allow test event IDs in development (skip database lookup)
     const isTestEvent = event_id.startsWith('test-')
     let event: { id: string; title: string; price_in_cents?: number; organizer_id?: string } | null = null
+    let promoDiscountCents = 0
+    let validatedPromoId: string | null = null
 
     if (isTestEvent) {
       // Mock event for testing
@@ -140,11 +151,59 @@ serve(async (req) => {
       }
       event = eventData
 
-      // For primary purchases, validate total = fees(quantity × unit price)
-      if (type === 'primary_purchase' && event.price_in_cents) {
+      // Validate promo code if provided
+      if (promo_code_id && type === 'primary_purchase' && event.price_in_cents) {
         const baseCents = event.price_in_cents * quantity
+        const { data: promoResult, error: promoError } = await supabaseAdmin.rpc('validate_promo_code', {
+          p_event_id: event_id,
+          p_code: '', // not needed — we re-validate by ID below
+          p_user_id: user.id,
+          p_base_price_cents: baseCents,
+          p_ticket_type_id: null,
+        })
+
+        // Re-validate by looking up the code by ID directly
+        const { data: promoCode, error: promoLookupError } = await supabaseAdmin
+          .from('promo_codes')
+          .select('*')
+          .eq('id', promo_code_id)
+          .single()
+
+        if (promoLookupError || !promoCode) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid promo code' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Re-run validation with the actual code
+        const { data: revalidation, error: revalError } = await supabaseAdmin.rpc('validate_promo_code', {
+          p_event_id: event_id,
+          p_code: promoCode.code,
+          p_user_id: user.id,
+          p_base_price_cents: baseCents,
+          p_ticket_type_id: null,
+        })
+
+        if (revalError || !revalidation?.valid) {
+          const errMsg = revalidation?.error || 'Promo code is no longer valid'
+          console.log(`Promo code re-validation failed: ${errMsg}`)
+          return new Response(
+            JSON.stringify({ error: errMsg }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        promoDiscountCents = revalidation.discount_cents
+        validatedPromoId = promo_code_id
+        console.log(`[promo] code=${promoCode.code}, discount=${promoDiscountCents} cents`)
+      }
+
+      // For primary purchases, validate total = fees(quantity × unit price - promo discount)
+      if (type === 'primary_purchase' && event.price_in_cents) {
+        const baseCents = event.price_in_cents * quantity - promoDiscountCents
         const fees = calculateFees(baseCents)
-        console.log(`[fee-check] baseCents=${baseCents}, MINT_FEE_CENTS=${MINT_FEE_CENTS}, platform=${fees.platform_fee_cents}, mint=${fees.mint_fee_cents}, stripe=${fees.stripe_fee_cents}, total=${fees.total_cents}, client_sent=${amount_cents}`)
+        console.log(`[fee-check] baseCents=${baseCents}, promoDiscount=${promoDiscountCents}, MINT_FEE_CENTS=${MINT_FEE_CENTS}, platform=${fees.platform_fee_cents}, mint=${fees.mint_fee_cents}, stripe=${fees.stripe_fee_cents}, total=${fees.total_cents}, client_sent=${amount_cents}`)
       if (amount_cents !== fees.total_cents) {
           console.log(`Price mismatch: expected ${fees.total_cents} (base: ${baseCents}, fee: ${fees.service_fee_cents}), got ${amount_cents}`)
           return new Response(
@@ -258,6 +317,11 @@ serve(async (req) => {
       piMetadata.platform_fee_cents = String(fees.platform_fee_cents)
       piMetadata.stripe_fee_cents = String(fees.stripe_fee_cents)
     }
+    // Add promo code metadata
+    if (validatedPromoId) {
+      piMetadata.promo_code_id = validatedPromoId
+      piMetadata.promo_discount_cents = String(promoDiscountCents)
+    }
     // Spread additional metadata (e.g. offer_id)
     if (metadata) {
       for (const [k, v] of Object.entries(metadata)) {
@@ -290,9 +354,12 @@ serve(async (req) => {
         type,
         stripe_payment_intent_id: paymentIntent.id,
         platform_fee_cents: fees ? fees.service_fee_cents : 0,
+        ...(validatedPromoId && { promo_code_id: validatedPromoId }),
+        ...(seat_selections && { seat_selections }),
         metadata: {
           event_title: event.title,
           ...(fees && { fee_breakdown: fees }),
+          ...(promoDiscountCents > 0 && { promo_discount_cents: promoDiscountCents }),
           ...metadata,
         },
       })
@@ -302,6 +369,21 @@ serve(async (req) => {
     if (paymentError) {
       console.error('Failed to create payment record:', paymentError)
       // Continue anyway - webhook will handle the rest
+    }
+
+    // Redeem promo code after payment record is created
+    if (validatedPromoId && payment) {
+      const { data: redeemed, error: redeemError } = await supabaseAdmin.rpc('redeem_promo_code', {
+        p_promo_code_id: validatedPromoId,
+        p_user_id: user.id,
+        p_payment_id: payment.id,
+        p_discount_cents: promoDiscountCents,
+      })
+      if (redeemError) {
+        console.error('Failed to redeem promo code (non-blocking):', redeemError)
+      } else {
+        console.log(`[promo] Redeemed promo ${validatedPromoId} for payment ${payment.id}`)
+      }
     }
 
     return new Response(

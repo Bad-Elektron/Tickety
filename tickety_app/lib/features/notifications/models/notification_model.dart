@@ -5,6 +5,9 @@ enum NotificationType {
   ticketUsed('ticket_used'),
   eventReminder('event_reminder'),
   favorTicketOffer('favor_ticket_offer'),
+  waitlistAvailable('waitlist_available'),
+  waitlistAutoPurchased('waitlist_auto_purchased'),
+  virtualEventRevealed('virtual_event_revealed'),
   unknown('unknown');
 
   const NotificationType(this.value);
