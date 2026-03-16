@@ -32,7 +32,8 @@ enum PaymentType {
   walletPurchase('wallet_purchase'),
   walletTopUp('wallet_top_up'),
   achPurchase('ach_purchase'),
-  waitlistAutoPurchase('waitlist_auto_purchase');
+  waitlistAutoPurchase('waitlist_auto_purchase'),
+  merchPurchase('merch_purchase');
 
   final String value;
   const PaymentType(this.value);
@@ -391,6 +392,42 @@ class ACHPurchaseFeeCalculator {
       baseCents: baseCents,
       platformFeeCents: platformFeeCents,
       achFeeCents: achFeeCents,
+      totalCents: totalCents,
+    );
+  }
+}
+
+/// Fee breakdown for a merch purchase.
+typedef MerchFeeBreakdown = ({
+  int baseCents,
+  int platformFeeCents,
+  int stripeFeeCents,
+  int totalCents,
+});
+
+/// Calculates fees for merch purchases: 5% platform + Stripe (2.9% + $0.30).
+class MerchFeeCalculator {
+  MerchFeeCalculator._();
+
+  static const double _platformFeeRate = 0.05;
+  static const double _stripeFeeRate = 0.029;
+  static const int _stripeFeeFixedCents = 30;
+
+  static MerchFeeBreakdown calculate(int baseCents) {
+    if (baseCents <= 0) {
+      return (baseCents: 0, platformFeeCents: 0, stripeFeeCents: 0, totalCents: 0);
+    }
+
+    final platformFeeCents = (baseCents * _platformFeeRate).ceil();
+    final subtotal = baseCents + platformFeeCents;
+    final totalCents =
+        ((subtotal + _stripeFeeFixedCents) / (1 - _stripeFeeRate)).ceil();
+    final stripeFeeCents = totalCents - subtotal;
+
+    return (
+      baseCents: baseCents,
+      platformFeeCents: platformFeeCents,
+      stripeFeeCents: stripeFeeCents,
       totalCents: totalCents,
     );
   }

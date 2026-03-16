@@ -31,6 +31,8 @@ class DoorListEntry {
   final String? nftPolicyId;
   final String? nftTxHash;
   final String? seatLabel;
+  final String category;
+  final String? itemIcon;
   String? checkedInAt;
   String? checkedInBy;
   final String updatedAt;
@@ -46,6 +48,8 @@ class DoorListEntry {
     this.nftPolicyId,
     this.nftTxHash,
     this.seatLabel,
+    this.category = 'entry',
+    this.itemIcon,
     this.checkedInAt,
     this.checkedInBy,
     required this.updatedAt,
@@ -56,6 +60,7 @@ class DoorListEntry {
   bool get isCancelled => status == 'cancelled';
   bool get isRefunded => status == 'refunded';
   bool get hasNft => nftAssetId != null && nftAssetId!.isNotEmpty;
+  bool get isRedeemable => category == 'redeemable';
 
   Map<String, dynamic> toMap() {
     return {
@@ -69,6 +74,8 @@ class DoorListEntry {
       'nft_policy_id': nftPolicyId,
       'nft_tx_hash': nftTxHash,
       'seat_label': seatLabel,
+      'category': category,
+      'item_icon': itemIcon,
       'checked_in_at': checkedInAt,
       'checked_in_by': checkedInBy,
       'updated_at': updatedAt,
@@ -87,6 +94,8 @@ class DoorListEntry {
       nftPolicyId: map['nft_policy_id'] as String?,
       nftTxHash: map['nft_tx_hash'] as String?,
       seatLabel: map['seat_label'] as String?,
+      category: map['category'] as String? ?? 'entry',
+      itemIcon: map['item_icon'] as String?,
       checkedInAt: map['checked_in_at'] as String?,
       checkedInBy: map['checked_in_by'] as String?,
       updatedAt: map['updated_at'] as String? ??

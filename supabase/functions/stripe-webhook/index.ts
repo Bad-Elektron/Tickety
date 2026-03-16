@@ -116,7 +116,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
   // Update payment record (or create if it doesn't exist)
   const { data: existingPayment } = await supabase
     .from('payments')
-    .select('id')
+    .select('id, metadata, seat_selections')
     .eq('stripe_payment_intent_id', paymentIntent.id)
     .maybeSingle()
 
@@ -177,6 +177,40 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     return
   }
 
+  // Handle merch purchase — update order to paid, decrement inventory
+  if (type === 'merch_purchase') {
+    console.log(`Merch purchase succeeded: ${paymentIntent.id}`)
+    const { product_id: merchProductId, variant_id: merchVariantId, quantity: merchQtyStr } = paymentIntent.metadata
+    const merchQty = parseInt(merchQtyStr || '1', 10)
+
+    // Update merch_order to paid
+    const { error: orderUpdateError } = await supabase
+      .from('merch_orders')
+      .update({ status: 'paid', updated_at: new Date().toISOString() })
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+
+    if (orderUpdateError) {
+      console.error('Failed to update merch order:', orderUpdateError)
+    }
+
+    // Decrement inventory if variant specified
+    if (merchVariantId) {
+      const { data: variant } = await supabase
+        .from('merch_variants')
+        .select('inventory_count')
+        .eq('id', merchVariantId)
+        .single()
+
+      if (variant && variant.inventory_count !== null) {
+        await supabase
+          .from('merch_variants')
+          .update({ inventory_count: Math.max(0, variant.inventory_count - merchQty) })
+          .eq('id', merchVariantId)
+      }
+    }
+    return
+  }
+
   // Skip ticket creation for test events (non-UUID event IDs)
   const isTestEvent = event_id?.startsWith('test-')
   if (isTestEvent) {
@@ -204,16 +238,40 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       ? Math.round(baseAmountCents / quantity)
       : Math.round(paymentIntent.amount / quantity)
 
-    // Fetch seat_selections from payment record (if any)
-    let seatSelections: any[] | null = null
-    if (existingPayment) {
-      const { data: paymentRecord } = await supabase
-        .from('payments')
-        .select('seat_selections')
-        .eq('id', existingPayment.id)
-        .single()
-      if (paymentRecord?.seat_selections) {
-        seatSelections = paymentRecord.seat_selections as any[]
+    // Get seat_selections and ticket_items from payment record metadata
+    let seatSelections: any[] | null = existingPayment?.seat_selections as any[] | null
+    const ticketItems: any[] | null = existingPayment?.metadata?.ticket_items as any[] | null
+    console.log(`[ticket-creation] existingPayment=${!!existingPayment}, hasMetadata=${!!existingPayment?.metadata}, ticketItems=${JSON.stringify(ticketItems)}`)
+
+    // Build a flat list of per-ticket category/icon from ticket_items
+    // e.g. [{ticket_type_id, quantity: 2, category: 'entry'}, {ticket_type_id, quantity: 1, category: 'redeemable', item_icon: '🎸'}]
+    // → ['entry', 'entry', 'redeemable'] with icons [null, null, '🎸']
+    const ticketCategories: string[] = []
+    const ticketIcons: (string | null)[] = []
+    const ticketTypeNames: (string | null)[] = []
+    if (ticketItems && Array.isArray(ticketItems)) {
+      // Fetch ticket type names from DB
+      const typeIds = ticketItems.map((ti: any) => ti.ticket_type_id).filter(Boolean)
+      let typeNameMap: Record<string, string> = {}
+      if (typeIds.length > 0) {
+        const { data: dbTypes } = await supabase
+          .from('event_ticket_types')
+          .select('id, name')
+          .in('id', typeIds)
+        if (dbTypes) {
+          for (const dt of dbTypes) {
+            typeNameMap[dt.id] = dt.name
+          }
+        }
+      }
+      for (const item of ticketItems) {
+        const qty = item.quantity || 1
+        const typeName = typeNameMap[item.ticket_type_id] || null
+        for (let j = 0; j < qty; j++) {
+          ticketCategories.push(item.category || 'entry')
+          ticketIcons.push(item.item_icon || null)
+          ticketTypeNames.push(typeName)
+        }
       }
     }
 
@@ -227,6 +285,10 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
 
       // Assign seat data from seat_selections if present
       const seatData = seatSelections?.[i]
+      // Assign category and type name from ticket_items breakdown
+      const category = ticketCategories[i] || 'entry'
+      const itemIcon = ticketIcons[i] || null
+      const typeName = ticketTypeNames[i] || null
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
@@ -238,6 +300,9 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
           currency: paymentIntent.currency.toUpperCase(),
           status: 'valid',
           sold_by: user_id,
+          category,
+          ...(itemIcon && { item_icon: itemIcon }),
+          ...(typeName && { ticket_type_name: typeName }),
           ...(seatData && {
             venue_section_id: seatData.section_id,
             seat_id: seatData.seat_id,
@@ -253,7 +318,7 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       }
 
       ticketIds.push(ticket.id)
-      console.log(`Ticket ${i + 1}/${quantity} created: ${ticketNumber}`)
+      console.log(`Ticket ${i + 1}/${quantity} created: ${ticketNumber} (${category})`)
     }
 
     // Link first ticket to payment (for reference)
@@ -289,6 +354,15 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       enqueueWalletPasses(ticketIds).catch(err =>
         console.error('enqueueWalletPasses failed (non-blocking):', err.message)
       )
+    }
+
+    // Update widget checkout session status if this came from the widget
+    if (existingPayment?.metadata?.source === 'widget') {
+      await supabase
+        .from('widget_checkout_sessions')
+        .update({ status: 'completed', updated_at: new Date().toISOString() })
+        .eq('stripe_payment_intent_id', paymentIntent.id)
+      console.log('Widget checkout session marked completed')
     }
   }
 

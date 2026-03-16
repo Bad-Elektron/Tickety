@@ -12,6 +12,7 @@ import '../../settings/settings.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../analytics/analytics.dart';
 import '../../referral/referral.dart';
+import '../../merch/merch.dart';
 import '../../wallet/wallet.dart';
 import '../widgets/widgets.dart';
 import 'verification_screen.dart';
@@ -170,6 +171,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => const TransactionsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.shopping_bag_outlined,
+                    title: 'My Orders',
+                    subtitle: 'Merch and merchandise',
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const MyMerchOrdersScreen(),
                         ),
                       );
                     },

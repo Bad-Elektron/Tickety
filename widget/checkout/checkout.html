@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tickety Checkout</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    :root {
+      --primary: #6366F1;
+      --primary-hover: #5558E3;
+      --bg: #FFFFFF;
+      --bg-secondary: #F9FAFB;
+      --text: #111827;
+      --text-secondary: #6B7280;
+      --border: #E5E7EB;
+      --success: #10B981;
+      --error: #EF4444;
+      --radius: 12px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .checkout-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 10;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      margin-right: 12px;
+    }
+
+    .close-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: var(--bg-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .close-btn:hover { background: var(--border); }
+    .close-btn svg { width: 16px; height: 16px; stroke: var(--text-secondary); }
+
+    /* ── Steps ───────────────────────────────── */
+    .step-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 20px;
+      background: var(--bg-secondary);
+    }
+
+    .step-dot {
+      flex: 1;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      transition: background 0.3s;
+    }
+    .step-dot.active { background: var(--primary); }
+    .step-dot.done { background: var(--success); }
+
+    /* ── Content ─────────────────────────────── */
+    .step-content {
+      flex: 1;
+      padding: 20px;
+      display: none;
+    }
+    .step-content.active { display: block; }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    /* ── Event Info ──────────────────────────── */
+    .event-info {
+      display: flex;
+      gap: 12px;
+      padding: 12px;
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      margin-bottom: 20px;
+    }
+
+    .event-image {
+      width: 64px;
+      height: 64px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: var(--border);
+    }
+
+    .event-details { flex: 1; min-width: 0; }
+
+    .event-details h2 {
+      font-size: 15px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .event-meta {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 2px;
+    }
+
+    /* ── Ticket Types ────────────────────────── */
+    .ticket-type {
+      display: flex;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 8px;
+      transition: border-color 0.15s;
+    }
+    .ticket-type:hover { border-color: var(--primary); }
+    .ticket-type.sold-out { opacity: 0.5; pointer-events: none; }
+
+    .ticket-icon {
+      font-size: 20px;
+      margin-right: 12px;
+      width: 28px;
+      text-align: center;
+    }
+
+    .ticket-info { flex: 1; min-width: 0; }
+    .ticket-name { font-size: 14px; font-weight: 600; }
+    .ticket-desc {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ticket-price {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--primary);
+      margin-right: 12px;
+      white-space: nowrap;
+    }
+
+    .qty-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .qty-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+    .qty-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .qty-btn:disabled { opacity: 0.3; pointer-events: none; }
+
+    .qty-value {
+      width: 24px;
+      text-align: center;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    /* ── Buyer Form ──────────────────────────── */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 14px;
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .form-input:focus { border-color: var(--primary); }
+    .form-input::placeholder { color: #9CA3AF; }
+
+    /* ── Promo Code ──────────────────────────── */
+    .promo-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .promo-row .form-input { flex: 1; }
+
+    .promo-btn {
+      padding: 0 16px;
+      border-radius: 8px;
+      border: 1px solid var(--primary);
+      background: transparent;
+      color: var(--primary);
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .promo-btn:hover { background: var(--primary); color: #fff; }
+
+    .promo-result {
+      font-size: 13px;
+      margin-top: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+    }
+    .promo-result.success { background: #ECFDF5; color: #065F46; }
+    .promo-result.error { background: #FEF2F2; color: #991B1B; }
+
+    /* ── Order Summary ───────────────────────── */
+    .summary-card {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+
+    .summary-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      padding: 4px 0;
+    }
+
+    .summary-line.total {
+      font-weight: 700;
+      font-size: 16px;
+      border-top: 1px solid var(--border);
+      margin-top: 8px;
+      padding-top: 10px;
+    }
+
+    .summary-line .label { color: var(--text-secondary); }
+    .summary-line.total .label { color: var(--text); }
+
+    /* ── Stripe Elements ─────────────────────── */
+    #card-element {
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      transition: border-color 0.15s;
+    }
+    #card-element.StripeElement--focus { border-color: var(--primary); }
+    #card-element.StripeElement--invalid { border-color: var(--error); }
+
+    #card-errors {
+      font-size: 13px;
+      color: var(--error);
+      margin-top: 8px;
+      min-height: 20px;
+    }
+
+    /* ── Buttons ─────────────────────────────── */
+    .footer {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+      position: sticky;
+      bottom: 0;
+    }
+
+    .primary-btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      background: var(--primary);
+      color: #fff;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .primary-btn:hover { background: var(--primary-hover); }
+    .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .powered-by {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .powered-by a { color: var(--primary); text-decoration: none; }
+
+    /* ── Success ─────────────────────────────── */
+    .success-view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      flex: 1;
+    }
+
+    .success-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: #ECFDF5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .success-icon svg { stroke: var(--success); width: 32px; height: 32px; }
+
+    .success-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .success-subtitle { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; }
+
+    /* ── Loading ─────────────────────────────── */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      padding: 40px;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-view {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+      flex: 1;
+    }
+    .error-view p { color: var(--error); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="checkout-container" id="checkout">
+    <!-- Loading state -->
+    <div class="loading" id="loading-view">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Error state -->
+    <div class="error-view" id="error-view" style="display:none;">
+      <p id="error-message">Something went wrong</p>
+      <button class="primary-btn" style="margin-top:16px;max-width:200px;" onclick="location.reload()">Try Again</button>
+    </div>
+
+    <!-- Main checkout flow -->
+    <div id="main-flow" style="display:none;flex-direction:column;height:100vh;">
+      <!-- Header -->
+      <div class="header">
+        <h1 id="event-title">Loading...</h1>
+        <button class="close-btn" onclick="closeWidget()">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Step indicator -->
+      <div class="step-indicator">
+        <div class="step-dot active" id="dot-0"></div>
+        <div class="step-dot" id="dot-1"></div>
+        <div class="step-dot" id="dot-2"></div>
+      </div>
+
+      <!-- Step 0: Select Tickets -->
+      <div class="step-content active" id="step-0">
+        <div class="event-info" id="event-info"></div>
+        <div class="section-title">Select Tickets</div>
+        <div id="ticket-list"></div>
+
+        <!-- Promo code -->
+        <div class="promo-row">
+          <input type="text" class="form-input" id="promo-input" placeholder="Promo code">
+          <button class="promo-btn" id="promo-btn" onclick="applyPromo()">Apply</button>
+        </div>
+        <div id="promo-result"></div>
+      </div>
+
+      <!-- Step 1: Your Details -->
+      <div class="step-content" id="step-1">
+        <div class="section-title">Your Details</div>
+        <div class="form-group">
+          <label class="form-label" for="buyer-email">Email *</label>
+          <input type="email" class="form-input" id="buyer-email" placeholder="your@email.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="buyer-name">Full Name</label>
+          <input type="text" class="form-input" id="buyer-name" placeholder="John Doe">
+        </div>
+
+        <div class="summary-card" id="summary-step1"></div>
+      </div>
+
+      <!-- Step 2: Payment -->
+      <div class="step-content" id="step-2">
+        <div class="section-title">Payment</div>
+        <div class="summary-card" id="summary-step2"></div>
+
+        <div class="form-group">
+          <label class="form-label">Card Details</label>
+          <div id="card-element"></div>
+          <div id="card-errors"></div>
+        </div>
+      </div>
+
+      <!-- Footer with action button -->
+      <div class="footer">
+        <button class="primary-btn" id="action-btn" onclick="handleAction()">Continue</button>
+        <div class="powered-by" id="powered-by">
+          Secured by <a href="https://tickety.app" target="_blank">Tickety</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Success view -->
+    <div class="success-view" id="success-view">
+      <div class="success-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="success-title">You're all set!</div>
+      <div class="success-subtitle" id="success-message">Check your email for your tickets.</div>
+      <button class="primary-btn" style="max-width:200px;" onclick="closeWidget()">Done</button>
+      <div class="powered-by" style="margin-top:16px;">
+        Powered by <a href="https://tickety.app" target="_blank">Tickety</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Config from URL params ──────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const WIDGET_KEY = params.get('key');
+    const EVENT_ID = params.get('event');
+    const CUSTOM_COLOR = params.get('color');
+    const API_BASE = 'https://hnouslchigcmbiovdbfz.supabase.co/functions/v1';
+
+    // ── State ───────────────────────────────────────────
+    let currentStep = 0;
+    let eventData = null;
+    let ticketTypes = [];
+    let widgetConfig = {};
+    let quantities = {};  // { typeId: qty }
+    let promoDiscount = 0;
+    let promoCode = null;
+    let stripeInstance = null;
+    let cardElement = null;
+    let checkoutSession = null;
+    let isProcessing = false;
+
+    // ── Init ────────────────────────────────────────────
+    async function init() {
+      if (!WIDGET_KEY || !EVENT_ID) {
+        showError('Invalid widget configuration');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/widget-get-event`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ widget_key: WIDGET_KEY, event_id: EVENT_ID }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Failed to load event');
+        }
+
+        const data = await res.json();
+        eventData = data.event;
+        ticketTypes = data.ticket_types;
+        widgetConfig = data.widget_config;
+
+        applyTheme();
+        renderEvent();
+        renderTicketTypes();
+
+        document.getElementById('loading-view').style.display = 'none';
+        document.getElementById('main-flow').style.display = 'flex';
+      } catch (err) {
+        showError(err.message);
+      }
+    }
+
+    // ── Theme ───────────────────────────────────────────
+    function applyTheme() {
+      const color = CUSTOM_COLOR
+        ? `#${CUSTOM_COLOR}`
+        : widgetConfig.primary_color || '#6366F1';
+
+      document.documentElement.style.setProperty('--primary', color);
+
+      // Darken for hover
+      const hover = adjustColor(color, -15);
+      document.documentElement.style.setProperty('--primary-hover', hover);
+
+      if (widgetConfig.font_family) {
+        document.body.style.fontFamily = `'${widgetConfig.font_family}', sans-serif`;
+      }
+
+      if (widgetConfig.show_powered_by === false) {
+        document.getElementById('powered-by').style.display = 'none';
+      }
+    }
+
+    function adjustColor(hex, amount) {
+      hex = hex.replace('#', '');
+      const num = parseInt(hex, 16);
+      let r = Math.min(255, Math.max(0, (num >> 16) + amount));
+      let g = Math.min(255, Math.max(0, ((num >> 8) & 0x00FF) + amount));
+      let b = Math.min(255, Math.max(0, (num & 0x0000FF) + amount));
+      return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
+    }
+
+    // ── Render ──────────────────────────────────────────
+    function renderEvent() {
+      document.getElementById('event-title').textContent = eventData.title;
+
+      const date = new Date(eventData.start_date);
+      const dateStr = date.toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      });
+
+      document.getElementById('event-info').innerHTML = `
+        ${eventData.image_url
+          ? `<img class="event-image" src="${eventData.image_url}" alt="${eventData.title}">`
+          : `<div class="event-image"></div>`
+        }
+        <div class="event-details">
+          <h2>${escapeHtml(eventData.title)}</h2>
+          <div class="event-meta">${escapeHtml(dateStr)}</div>
+          <div class="event-meta">${escapeHtml(eventData.location || '')}</div>
+        </div>
+      `;
+    }
+
+    function renderTicketTypes() {
+      const container = document.getElementById('ticket-list');
+      container.innerHTML = '';
+
+      for (const type of ticketTypes) {
+        quantities[type.id] = quantities[type.id] || 0;
+        const soldOut = !type.is_available;
+        const icon = type.category === 'redeemable'
+          ? (type.item_icon || '🎁')
+          : '🎫';
+
+        const el = document.createElement('div');
+        el.className = `ticket-type${soldOut ? ' sold-out' : ''}`;
+        el.innerHTML = `
+          <div class="ticket-icon">${icon}</div>
+          <div class="ticket-info">
+            <div class="ticket-name">${escapeHtml(type.name)}</div>
+            ${type.description ? `<div class="ticket-desc">${escapeHtml(type.description)}</div>` : ''}
+            ${type.remaining !== null ? `<div class="ticket-desc">${type.remaining} remaining</div>` : ''}
+          </div>
+          <div class="ticket-price">${type.price_cents === 0 ? 'Free' : formatPrice(type.price_cents)}</div>
+          <div class="qty-control">
+            <button class="qty-btn" onclick="changeQty('${type.id}', -1)" id="minus-${type.id}" disabled>−</button>
+            <span class="qty-value" id="qty-${type.id}">0</span>
+            <button class="qty-btn" onclick="changeQty('${type.id}', 1)" id="plus-${type.id}" ${soldOut ? 'disabled' : ''}>+</button>
+          </div>
+        `;
+        container.appendChild(el);
+      }
+
+      updateActionButton();
+    }
+
+    function changeQty(typeId, delta) {
+      const type = ticketTypes.find(t => t.id === typeId);
+      if (!type) return;
+
+      const current = quantities[typeId] || 0;
+      const maxPerOrder = 10;
+      const maxAvail = type.remaining !== null ? type.remaining : maxPerOrder;
+      const newQty = Math.max(0, Math.min(Math.min(maxPerOrder, maxAvail), current + delta));
+
+      quantities[typeId] = newQty;
+
+      document.getElementById(`qty-${typeId}`).textContent = newQty;
+      document.getElementById(`minus-${typeId}`).disabled = newQty <= 0;
+      document.getElementById(`plus-${typeId}`).disabled = newQty >= Math.min(maxPerOrder, maxAvail);
+
+      updateActionButton();
+    }
+
+    function updateActionButton() {
+      const btn = document.getElementById('action-btn');
+      const total = getTotalQuantity();
+
+      if (currentStep === 0) {
+        btn.textContent = total > 0 ? `Continue (${total} ticket${total !== 1 ? 's' : ''})` : 'Select Tickets';
+        btn.disabled = total === 0;
+      } else if (currentStep === 1) {
+        btn.textContent = 'Continue to Payment';
+        btn.disabled = false;
+      } else if (currentStep === 2) {
+        const amount = getBaseCents() - promoDiscount;
+        btn.textContent = `Pay ${formatPrice(calculateTotal(amount))}`;
+        btn.disabled = isProcessing;
+      }
+    }
+
+    // ── Navigation ──────────────────────────────────────
+    function goToStep(step) {
+      document.querySelectorAll('.step-content').forEach((el, i) => {
+        el.classList.toggle('active', i === step);
+      });
+      document.querySelectorAll('.step-dot').forEach((el, i) => {
+        el.classList.remove('active', 'done');
+        if (i < step) el.classList.add('done');
+        if (i === step) el.classList.add('active');
+      });
+
+      currentStep = step;
+
+      if (step === 1) renderSummary('summary-step1');
+      if (step === 2) {
+        renderSummary('summary-step2');
+        initStripe();
+      }
+
+      updateActionButton();
+    }
+
+    function handleAction() {
+      if (isProcessing) return;
+
+      if (currentStep === 0) {
+        if (getTotalQuantity() === 0) return;
+        goToStep(1);
+      } else if (currentStep === 1) {
+        const email = document.getElementById('buyer-email').value.trim();
+        if (!email || !email.includes('@')) {
+          document.getElementById('buyer-email').style.borderColor = 'var(--error)';
+          document.getElementById('buyer-email').focus();
+          return;
+        }
+        document.getElementById('buyer-email').style.borderColor = '';
+        goToStep(2);
+      } else if (currentStep === 2) {
+        processPayment();
+      }
+    }
+
+    // ── Summary ─────────────────────────────────────────
+    function renderSummary(containerId) {
+      const container = document.getElementById(containerId);
+      let html = '';
+
+      for (const type of ticketTypes) {
+        const qty = quantities[type.id] || 0;
+        if (qty === 0) continue;
+        html += `<div class="summary-line">
+          <span class="label">${escapeHtml(type.name)} × ${qty}</span>
+          <span>${formatPrice(type.price_cents * qty)}</span>
+        </div>`;
+      }
+
+      const baseCents = getBaseCents();
+      if (promoDiscount > 0) {
+        html += `<div class="summary-line">
+          <span class="label">Promo discount</span>
+          <span style="color:var(--success)">−${formatPrice(promoDiscount)}</span>
+        </div>`;
+      }
+
+      const netBase = Math.max(0, baseCents - promoDiscount);
+      const fees = calculateServiceFee(netBase);
+      if (fees > 0) {
+        html += `<div class="summary-line">
+          <span class="label">Service fee</span>
+          <span>${formatPrice(fees)}</span>
+        </div>`;
+      }
+
+      const total = calculateTotal(netBase);
+      html += `<div class="summary-line total">
+        <span class="label">Total</span>
+        <span>${formatPrice(total)}</span>
+      </div>`;
+
+      container.innerHTML = html;
+    }
+
+    // ── Promo Code ──────────────────────────────────────
+    async function applyPromo() {
+      const code = document.getElementById('promo-input').value.trim();
+      if (!code) return;
+
+      const resultEl = document.getElementById('promo-result');
+      const btn = document.getElementById('promo-btn');
+      btn.disabled = true;
+      btn.textContent = '...';
+
+      try {
+        const res = await fetch(`${API_BASE}/widget-validate-promo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            widget_key: WIDGET_KEY,
+            event_id: EVENT_ID,
+            code,
+            base_price_cents: getBaseCents(),
+          }),
+        });
+
+        const data = await res.json();
+        if (data.valid) {
+          promoDiscount = data.discount_cents;
+          promoCode = code;
+          resultEl.className = 'promo-result success';
+          resultEl.textContent = `−${formatPrice(data.discount_cents)} discount applied!`;
+        } else {
+          promoDiscount = 0;
+          promoCode = null;
+          resultEl.className = 'promo-result error';
+          resultEl.textContent = data.error || 'Invalid promo code';
+        }
+      } catch {
+        resultEl.className = 'promo-result error';
+        resultEl.textContent = 'Failed to validate code';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Apply';
+      updateActionButton();
+    }
+
+    // ── Stripe ──────────────────────────────────────────
+    function initStripe() {
+      if (stripeInstance) return; // Already initialized, will set up after session
+
+      // Stripe will be initialized once we have the publishable key from the checkout session
+      createCheckoutSession();
+    }
+
+    async function createCheckoutSession() {
+      const btn = document.getElementById('action-btn');
+      btn.disabled = true;
+      btn.textContent = 'Setting up payment...';
+
+      const ticketSelections = [];
+      for (const type of ticketTypes) {
+        const qty = quantities[type.id] || 0;
+        if (qty > 0) {
+          ticketSelections.push({ ticket_type_id: type.id, quantity: qty });
+        }
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/widget-create-checkout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            widget_key: WIDGET_KEY,
+            event_id: EVENT_ID,
+            ticket_selections: ticketSelections,
+            buyer_email: document.getElementById('buyer-email').value.trim(),
+            buyer_name: document.getElementById('buyer-name').value.trim() || null,
+            promo_code: promoCode,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Failed to create checkout session');
+        }
+
+        checkoutSession = await res.json();
+
+        // Initialize Stripe with the publishable key from the server
+        stripeInstance = Stripe(checkoutSession.publishable_key);
+        const elements = stripeInstance.elements();
+        cardElement = elements.create('card', {
+          style: {
+            base: {
+              fontSize: '15px',
+              fontFamily: "'Inter', sans-serif",
+              color: '#111827',
+              '::placeholder': { color: '#9CA3AF' },
+            },
+            invalid: { color: '#EF4444' },
+          },
+        });
+        cardElement.mount('#card-element');
+        cardElement.on('change', (event) => {
+          document.getElementById('card-errors').textContent = event.error?.message || '';
+        });
+
+        updateActionButton();
+      } catch (err) {
+        document.getElementById('card-errors').textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
+    }
+
+    async function processPayment() {
+      if (!stripeInstance || !cardElement || !checkoutSession) return;
+
+      isProcessing = true;
+      const btn = document.getElementById('action-btn');
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+
+      try {
+        const { error, paymentIntent } = await stripeInstance.confirmCardPayment(
+          checkoutSession.client_secret,
+          {
+            payment_method: {
+              card: cardElement,
+              billing_details: {
+                email: document.getElementById('buyer-email').value.trim(),
+                name: document.getElementById('buyer-name').value.trim() || undefined,
+              },
+            },
+          }
+        );
+
+        if (error) {
+          document.getElementById('card-errors').textContent = error.message;
+          isProcessing = false;
+          btn.disabled = false;
+          updateActionButton();
+          return;
+        }
+
+        if (paymentIntent.status === 'succeeded') {
+          showSuccess();
+        } else if (paymentIntent.status === 'processing') {
+          showSuccess('Your payment is processing. Tickets will arrive by email shortly.');
+        }
+      } catch (err) {
+        document.getElementById('card-errors').textContent = 'Payment failed. Please try again.';
+        isProcessing = false;
+        btn.disabled = false;
+        updateActionButton();
+      }
+    }
+
+    // ── Success / Error ─────────────────────────────────
+    function showSuccess(message) {
+      document.getElementById('main-flow').style.display = 'none';
+      document.getElementById('success-view').style.display = 'flex';
+      if (message) {
+        document.getElementById('success-message').textContent = message;
+      }
+
+      // Notify parent window
+      window.parent.postMessage({
+        type: 'tickety:checkout_complete',
+        payload: {
+          session_id: checkoutSession?.session_id,
+          event_id: EVENT_ID,
+          email: document.getElementById('buyer-email')?.value?.trim(),
+        },
+      }, '*');
+    }
+
+    function showError(message) {
+      document.getElementById('loading-view').style.display = 'none';
+      document.getElementById('error-view').style.display = 'flex';
+      document.getElementById('error-message').textContent = message;
+    }
+
+    function closeWidget() {
+      window.parent.postMessage({ type: 'tickety:close' }, '*');
+    }
+
+    // ── Helpers ─────────────────────────────────────────
+    function getTotalQuantity() {
+      return Object.values(quantities).reduce((a, b) => a + b, 0);
+    }
+
+    function getBaseCents() {
+      let total = 0;
+      for (const type of ticketTypes) {
+        total += (quantities[type.id] || 0) * type.price_cents;
+      }
+      return total;
+    }
+
+    function calculateServiceFee(baseCents) {
+      if (baseCents <= 0) return 0;
+      const platformFee = Math.ceil(baseCents * 0.05);
+      const mintFee = 25;
+      const subtotal = baseCents + platformFee + mintFee;
+      const total = Math.ceil((subtotal + 30) / (1 - 0.029));
+      return total - baseCents;
+    }
+
+    function calculateTotal(baseCents) {
+      if (baseCents <= 0) return 0;
+      const platformFee = Math.ceil(baseCents * 0.05);
+      const mintFee = 25;
+      const subtotal = baseCents + platformFee + mintFee;
+      return Math.ceil((subtotal + 30) / (1 - 0.029));
+    }
+
+    function formatPrice(cents) {
+      return '$' + (cents / 100).toFixed(2);
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // ── Boot ────────────────────────────────────────────
+    init();
+  </script>
+</body>
+</html>

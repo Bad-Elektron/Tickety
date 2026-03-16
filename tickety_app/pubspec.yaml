@@ -100,6 +100,7 @@ dependencies:
 
   # Network state detection for offline sync
   connectivity_plus: ^6.0.0
+  crypto: ^3.0.7
 
 dev_dependencies:
   flutter_test:

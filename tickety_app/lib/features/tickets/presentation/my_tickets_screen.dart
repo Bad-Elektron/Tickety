@@ -420,6 +420,14 @@ class _EventTicketGroup {
 
   bool get allUsed => usedCount == ticketCount;
 
+  /// Entry tickets in this group.
+  List<Ticket> get entryTickets => tickets.where((t) => !t.isRedeemable).toList();
+
+  /// Redeemable items in this group.
+  List<Ticket> get redeemableTickets => tickets.where((t) => t.isRedeemable).toList();
+
+  bool get hasRedeemableItems => redeemableTickets.isNotEmpty;
+
   bool get isEventPast {
     final date = eventDate;
     if (date == null) return false;
@@ -698,7 +706,29 @@ class _EventTicketCardState extends State<_EventTicketCard>
                   height: 1,
                   color: colorScheme.outlineVariant.withValues(alpha: 0.5),
                 ),
-                ...group.tickets.map((ticket) => _TicketListItem(ticket: ticket)),
+                // Entry tickets
+                ...group.entryTickets.map((ticket) => _TicketListItem(ticket: ticket)),
+                // Redeemable items section
+                if (group.hasRedeemableItems) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Icon(Icons.card_giftcard, size: 14,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Items to Pick Up',
+                          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  ...group.redeemableTickets.map((ticket) => _TicketListItem(ticket: ticket)),
+                ],
               ],
             ),
           ),
@@ -773,19 +803,23 @@ class _TicketListItem extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            // Ticket icon
+            // Ticket/item icon
             Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: colorScheme.primaryContainer.withValues(alpha: 0.5),
+                color: ticket.isRedeemable
+                    ? Colors.amber.withValues(alpha: 0.15)
+                    : colorScheme.primaryContainer.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(
-                Icons.confirmation_number_outlined,
-                size: 20,
-                color: colorScheme.primary,
-              ),
+              child: ticket.isRedeemable && ticket.itemIcon != null
+                  ? Center(child: Text(ticket.itemIcon!, style: const TextStyle(fontSize: 20)))
+                  : Icon(
+                      Icons.confirmation_number_outlined,
+                      size: 20,
+                      color: colorScheme.primary,
+                    ),
             ),
             const SizedBox(width: 12),
             // Ticket info
@@ -794,16 +828,22 @@ class _TicketListItem extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    ticket.ticketNumber,
+                    ticket.ticketTypeName != null
+                        ? '${ticket.ticketTypeName} · ${ticket.ticketNumber.substring(ticket.ticketNumber.length - 4)}'
+                        : ticket.ticketNumber,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    ticket.formattedPrice,
+                    ticket.isRedeemable
+                        ? (ticket.isUsed ? 'Redeemed' : ticket.formattedPrice)
+                        : ticket.formattedPrice,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                      color: ticket.isRedeemable && ticket.isUsed
+                          ? colorScheme.onSurfaceVariant
+                          : colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],

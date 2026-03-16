@@ -49,7 +49,7 @@ class OfflineCheckInService {
 
     _db = await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createTables,
       onUpgrade: _upgradeTables,
     );
@@ -70,6 +70,8 @@ class OfflineCheckInService {
         nft_policy_id TEXT,
         nft_tx_hash TEXT,
         seat_label TEXT,
+        category TEXT DEFAULT 'entry',
+        item_icon TEXT,
         checked_in_at TEXT,
         checked_in_by TEXT,
         updated_at TEXT NOT NULL
@@ -121,6 +123,10 @@ class OfflineCheckInService {
     }
     if (oldVersion < 3) {
       await db.execute('ALTER TABLE door_list ADD COLUMN seat_label TEXT');
+    }
+    if (oldVersion < 4) {
+      await db.execute("ALTER TABLE door_list ADD COLUMN category TEXT DEFAULT 'entry'");
+      await db.execute('ALTER TABLE door_list ADD COLUMN item_icon TEXT');
     }
   }
 

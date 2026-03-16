@@ -58,10 +58,14 @@ class _TicketType {
   double price;
   int quantity;
   String? venueSectionId;
+  String category; // 'entry' or 'redeemable'
+  String? itemIcon;
+  String? itemDescription;
   final TextEditingController nameController;
   final TextEditingController descriptionController;
   final TextEditingController priceController;
   final TextEditingController quantityController;
+  final TextEditingController itemDescriptionController;
 
   _TicketType({
     required this.name,
@@ -69,16 +73,23 @@ class _TicketType {
     this.price = 0,
     this.quantity = 10,
     this.venueSectionId,
+    this.category = 'entry',
+    this.itemIcon,
+    this.itemDescription,
   })  : nameController = TextEditingController(text: name),
         descriptionController = TextEditingController(text: description),
         priceController = TextEditingController(text: price > 0 ? price.toString() : '0'),
-        quantityController = TextEditingController(text: quantity.toString());
+        quantityController = TextEditingController(text: quantity.toString()),
+        itemDescriptionController = TextEditingController(text: itemDescription ?? '');
+
+  bool get isRedeemable => category == 'redeemable';
 
   void dispose() {
     nameController.dispose();
     descriptionController.dispose();
     priceController.dispose();
     quantityController.dispose();
+    itemDescriptionController.dispose();
   }
 }
 
@@ -220,6 +231,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             description: t.description ?? '',
             price: t.priceInCents / 100.0,
             quantity: t.maxQuantity ?? 0,
+            category: t.category,
+            itemIcon: t.itemIcon,
+            itemDescription: t.itemDescription,
           )).toList();
           if (_ticketTypes.isEmpty) {
             _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
@@ -437,7 +451,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               : null,
           priceCents: priceCents,
           maxQuantity: quantity,
-          venueSectionId: tt.venueSectionId,
+          venueSectionId: tt.isRedeemable ? null : tt.venueSectionId,
+          category: tt.category,
+          itemIcon: tt.isRedeemable ? tt.itemIcon : null,
+          itemDescription: tt.isRedeemable
+              ? (Validators.sanitize(tt.itemDescriptionController.text).isNotEmpty
+                  ? Validators.sanitize(tt.itemDescriptionController.text)
+                  : null)
+              : null,
         );
       }).toList();
       debugPrint('Created ${ticketTypeInputs.length} TicketTypeInput objects');
@@ -455,11 +476,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final city = _selectedPlace?.city;
       final country = _selectedPlace?.country;
 
-      // Use the lowest NON-ZERO ticket price as the event's display price
-      final nonZeroPrices = ticketTypeInputs
+      // Use the lowest NON-ZERO entry ticket price as the event's display price
+      // (exclude redeemable add-ons — they're not the event admission price)
+      final entryTypes = ticketTypeInputs.where((t) => t.category != 'redeemable');
+      final nonZeroPrices = entryTypes
           .where((t) => t.priceCents > 0)
           .map((t) => t.priceCents);
-      final lowestPrice = ticketTypeInputs.isEmpty
+      final lowestPrice = entryTypes.isEmpty
           ? null
           : nonZeroPrices.isEmpty
               ? 0
@@ -1554,12 +1577,35 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     final limitCheck = ref.watch(canAddTicketTypeProvider(_ticketTypes.length));
     final venueSections = _selectedVenue?.layout.sections ?? [];
 
+    final entryTypes = <int>[];
+    final redeemableTypes = <int>[];
+    for (var i = 0; i < _ticketTypes.length; i++) {
+      if (_ticketTypes[i].isRedeemable) {
+        redeemableTypes.add(i);
+      } else {
+        entryTypes.add(i);
+      }
+    }
+
     return Column(
       key: const ValueKey('tickets'),
       children: [
         const SizedBox(height: 16),
-        // Ticket types list
-        ...List.generate(_ticketTypes.length, (index) {
+        // Entry ticket types
+        if (entryTypes.isNotEmpty) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Entry Tickets',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+        ...entryTypes.map((index) {
           final ticketType = _ticketTypes[index];
           return Padding(
             padding: const EdgeInsets.only(bottom: 16),
@@ -1573,9 +1619,51 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               onPriceChanged: (value) => ticketType.price = double.tryParse(value) ?? 0,
               onQuantityChanged: (value) => ticketType.quantity = int.tryParse(value) ?? 10,
               onSectionChanged: (sectionId) => setState(() => ticketType.venueSectionId = sectionId),
+              onCategoryChanged: (cat) => setState(() => ticketType.category = cat),
+              onItemIconChanged: (icon) => setState(() => ticketType.itemIcon = icon),
             ),
           );
         }),
+        // Redeemable items section
+        if (redeemableTypes.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: Divider(color: colorScheme.outlineVariant)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'Redeemable Items',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Expanded(child: Divider(color: colorScheme.outlineVariant)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...redeemableTypes.map((index) {
+            final ticketType = _ticketTypes[index];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _TicketTypeRow(
+                ticketType: ticketType,
+                venueSections: const [],
+                canRemove: _ticketTypes.length > 1,
+                onRemove: () => _removeTicketType(index),
+                onNameChanged: (value) => ticketType.name = value,
+                onDescriptionChanged: (value) => ticketType.description = value,
+                onPriceChanged: (value) => ticketType.price = double.tryParse(value) ?? 0,
+                onQuantityChanged: (value) => ticketType.quantity = int.tryParse(value) ?? 10,
+                onSectionChanged: (_) {},
+                onCategoryChanged: (cat) => setState(() => ticketType.category = cat),
+                onItemIconChanged: (icon) => setState(() => ticketType.itemIcon = icon),
+              ),
+            );
+          }),
+        ],
         // Limit banner
         if (limitCheck.isAtLimit) ...[
           const SizedBox(height: 4),
@@ -1597,9 +1685,31 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             ),
           ),
         ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: limitCheck.isAtLimit ? null : () {
+            final limitCheckRead = ref.read(canAddTicketTypeProvider(_ticketTypes.length));
+            if (!limitCheckRead.allowed) return;
+            setState(() {
+              _ticketTypes.add(_TicketType(
+                name: 'Item ${redeemableTypes.length + 1}',
+                category: 'redeemable',
+                itemIcon: '\u{1F381}',
+              ));
+            });
+          },
+          icon: const Icon(Icons.card_giftcard, size: 20),
+          label: const Text('Add Redeemable Item'),
+          style: OutlinedButton.styleFrom(
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
-          'Price 0 = free entry',
+          'Price 0 = free entry. Redeemable items are single-use (merch, drinks, perks).',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -1621,6 +1731,8 @@ class _TicketTypeRow extends StatelessWidget {
   final ValueChanged<String> onPriceChanged;
   final ValueChanged<String> onQuantityChanged;
   final ValueChanged<String?> onSectionChanged;
+  final ValueChanged<String>? onCategoryChanged;
+  final ValueChanged<String?>? onItemIconChanged;
 
   const _TicketTypeRow({
     required this.ticketType,
@@ -1632,6 +1744,8 @@ class _TicketTypeRow extends StatelessWidget {
     required this.onPriceChanged,
     required this.onQuantityChanged,
     required this.onSectionChanged,
+    this.onCategoryChanged,
+    this.onItemIconChanged,
   });
 
   @override
@@ -1703,6 +1817,81 @@ class _TicketTypeRow extends StatelessWidget {
             ),
             onChanged: onDescriptionChanged,
           ),
+          // Category toggle
+          if (onCategoryChanged != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                if (ticketType.isRedeemable && ticketType.itemIcon != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Text(
+                      ticketType.itemIcon!,
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: ticketType.isRedeemable
+                        ? Colors.amber.withValues(alpha: 0.15)
+                        : colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    ticketType.isRedeemable ? 'Redeemable Item' : 'Entry Ticket',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: ticketType.isRedeemable ? Colors.amber.shade800 : colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          // Item description for redeemable items
+          if (ticketType.isRedeemable) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: ticketType.itemDescriptionController,
+              decoration: InputDecoration(
+                hintText: 'Item description (e.g., "LED Glow Stick")',
+                hintStyle: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            // Emoji picker row
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              children: ['\u{1F381}', '\u{1F37A}', '\u{1F455}', '\u{1F3B8}', '\u{2B50}', '\u{1F3AB}', '\u{1F354}', '\u{2615}'].map((emoji) {
+                final isSelected = ticketType.itemIcon == emoji;
+                return GestureDetector(
+                  onTap: () => onItemIconChanged?.call(emoji),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? colorScheme.primary.withValues(alpha: 0.15)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(8),
+                      border: isSelected
+                          ? Border.all(color: colorScheme.primary.withValues(alpha: 0.5))
+                          : null,
+                    ),
+                    child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           Divider(
             height: 20,
             color: colorScheme.outlineVariant.withValues(alpha: 0.3),

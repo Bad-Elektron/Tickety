@@ -77,6 +77,20 @@ class TierLimits {
     AccountTier.enterprise: true,
   };
 
+  // ── Merch store access ──────────────────────────────────
+  static const Map<AccountTier, bool> _merchStoreAccess = {
+    AccountTier.base: false,
+    AccountTier.pro: false,
+    AccountTier.enterprise: true,
+  };
+
+  // ── Embed widget access ─────────────────────────────────
+  static const Map<AccountTier, bool> _widgetAccess = {
+    AccountTier.base: true,   // Base gets widget with "Powered by Tickety" branding
+    AccountTier.pro: true,
+    AccountTier.enterprise: true,
+  };
+
   // ── Analytics access ────────────────────────────────────────
 
   static const Map<AccountTier, Set<AnalyticsSection>> _analyticsAccess = {
@@ -106,6 +120,8 @@ class TierLimits {
   static int getMaxTags(AccountTier tier) => _maxTags[tier] ?? 3;
   static bool canUseCustomTags(AccountTier tier) => _customTagsAllowed[tier] ?? false;
   static bool canUseVenueBuilder(AccountTier tier) => _venueBuilderAccess[tier] ?? false;
+  static bool canUseMerchStore(AccountTier tier) => _merchStoreAccess[tier] ?? false;
+  static bool canUseWidget(AccountTier tier) => _widgetAccess[tier] ?? false;
 
   /// Whether [tier] can view the given analytics [section].
   static bool canViewAnalytics(AccountTier tier, AnalyticsSection section) {

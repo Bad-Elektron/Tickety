@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../../../shared/widgets/widgets.dart';
+import '../../merch/models/merch_product.dart';
+import '../../merch/presentation/product_detail_screen.dart';
 import '../../payments/models/payment.dart';
 import '../../payments/presentation/checkout_screen.dart';
 import '../../payments/presentation/resale_browse_screen.dart';
@@ -31,6 +33,19 @@ final _logEventViewProvider =
   _recentlyViewedEvents.add(eventId);
   final repo = ref.read(eventRepositoryProvider);
   await repo.logEventView(eventId, source: 'direct');
+});
+
+/// Provider that fetches the cheapest entry ticket price for an event.
+/// Returns null if no ticket types exist (use event.priceInCents as fallback).
+final _entryPriceProvider =
+    FutureProvider.autoDispose.family<int?, String>((ref, eventId) async {
+  final repo = ref.read(eventRepositoryProvider) as SupabaseEventRepository;
+  final types = await repo.getEventTicketTypes(eventId);
+  final entryTypes = types.where((t) => t.isActive && !t.isRedeemable);
+  if (entryTypes.isEmpty) return null;
+  final prices = entryTypes.map((t) => t.priceInCents).where((p) => p > 0);
+  if (prices.isEmpty) return 0;
+  return prices.reduce((a, b) => a < b ? a : b);
 });
 
 /// Provider that checks if the current user owns a ticket for a given event.
@@ -427,6 +442,53 @@ class EventDetailsScreen extends ConsumerWidget {
                           )
                         : const SizedBox.shrink(),
                   ),
+                  // Shop section (merch products for this event)
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final merchAsync = ref.watch(eventMerchProvider(event.id));
+                      return merchAsync.when(
+                        loading: () => const SizedBox.shrink(),
+                        error: (_, __) => const SizedBox.shrink(),
+                        data: (products) {
+                          if (products.isEmpty) return const SizedBox.shrink();
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 24),
+                              Text(
+                                'Shop',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                height: 140,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: products.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                                  itemBuilder: (context, index) {
+                                    final product = products[index];
+                                    return _MerchProductCard(
+                                      product: product,
+                                      onTap: () {
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (_) => ProductDetailScreen(product: product),
+                                          ),
+                                        );
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
                   // Organizer info
                   if (event.organizerName != null || event.organizerHandle != null) ...[
@@ -541,7 +603,8 @@ class EventDetailsScreen extends ConsumerWidget {
       ),
       // Bottom bar with price and buy button
       bottomNavigationBar: _BottomBuyBar(
-        priceInCents: event.priceInCents,
+        eventId: event.id,
+        fallbackPriceInCents: event.priceInCents,
         onBuyPressed: () {
           _showBuyTicketSheet(context);
         },
@@ -688,24 +751,35 @@ class _InfoCard extends StatelessWidget {
 }
 
 /// Bottom bar with price display and buy button.
-class _BottomBuyBar extends StatelessWidget {
-  final int? priceInCents;
+/// Fetches ticket types to show the cheapest entry ticket price,
+/// falling back to event.priceInCents.
+class _BottomBuyBar extends ConsumerWidget {
+  final String eventId;
+  final int? fallbackPriceInCents;
   final VoidCallback onBuyPressed;
 
   const _BottomBuyBar({
-    required this.priceInCents,
+    required this.eventId,
+    required this.fallbackPriceInCents,
     required this.onBuyPressed,
   });
 
-  String get _formattedPrice {
-    if (priceInCents == null || priceInCents == 0) return 'Free';
-    return '\$${(priceInCents! / 100).toStringAsFixed(2)}';
-  }
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final ticketTypesAsync = ref.watch(_entryPriceProvider(eventId));
+
+    final displayPrice = ticketTypesAsync.when(
+      data: (entryPrice) => entryPrice ?? fallbackPriceInCents,
+      loading: () => fallbackPriceInCents,
+      error: (_, __) => fallbackPriceInCents,
+    );
+
+    String formattedPrice() {
+      if (displayPrice == null || displayPrice == 0) return 'Free';
+      return '\$${(displayPrice / 100).toStringAsFixed(2)}';
+    }
 
     return Container(
       padding: EdgeInsets.only(
@@ -737,7 +811,7 @@ class _BottomBuyBar extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                _formattedPrice,
+                formattedPrice(),
                 style: theme.textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: colorScheme.primary,
@@ -809,24 +883,30 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
   @override
   void initState() {
     super.initState();
-    if (_hasVenue) _loadVenueData();
+    _loadTicketData();
   }
 
-  Future<void> _loadVenueData() async {
+  Future<void> _loadTicketData() async {
     setState(() => _loadingVenue = true);
     try {
-      final venueRepo = ref.read(venueRepositoryProvider);
       final eventRepo = ref.read(eventRepositoryProvider);
-      final results = await Future.wait([
-        venueRepo.getVenue(widget.event.venueId!),
+
+      // Always load ticket types; optionally load venue
+      final futures = <Future>[
         (eventRepo as SupabaseEventRepository).getEventTicketTypes(widget.event.id),
-      ]);
+      ];
+      if (_hasVenue) {
+        final venueRepo = ref.read(venueRepositoryProvider);
+        futures.add(venueRepo.getVenue(widget.event.venueId!));
+      }
+
+      final results = await Future.wait(futures);
       if (mounted) {
-        final venue = results[0] as Venue?;
-        final types = results[1] as List<TicketType>;
+        final types = results[0] as List<TicketType>;
+        final venue = _hasVenue ? results[1] as Venue? : null;
         setState(() {
-          _venue = venue;
           _ticketTypes = types.where((t) => t.isActive).toList();
+          _venue = venue;
           // Initialize quantities
           for (final t in _ticketTypes) {
             _quantities[t.id] = 0;
@@ -855,6 +935,17 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
       return _quantities.values.fold(0, (a, b) => a + b);
     }
     return _fallbackQuantity;
+  }
+
+  /// Count of entry tickets selected (excludes redeemable items).
+  int _entryQuantity() {
+    var total = 0;
+    for (final t in _ticketTypes) {
+      if (!t.isRedeemable) {
+        total += _quantities[t.id] ?? 0;
+      }
+    }
+    return total;
   }
 
   String _formatPrice(int cents) {
@@ -1007,7 +1098,8 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
 
             // Ticket types with venue sections (when available)
             if (_hasTicketTypes) ...[
-              ..._ticketTypes.map((t) {
+              // Entry tickets
+              ..._ticketTypes.where((t) => !t.isRedeemable).map((t) {
                 final qty = _quantities[t.id] ?? 0;
                 final sectionName = _sectionNameFor(t);
                 final isHighlighted = t.venueSectionId != null &&
@@ -1029,6 +1121,57 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                   ),
                 );
               }),
+              // Add-ons section (redeemable items)
+              if (_ticketTypes.any((t) => t.isRedeemable)) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'Add-ons',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                // Only show redeemable items when user has selected >= 1 entry ticket
+                if (_entryQuantity() > 0)
+                  ..._ticketTypes.where((t) => t.isRedeemable).map((t) {
+                    final qty = _quantities[t.id] ?? 0;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _RedeemableItemCard(
+                        ticketType: t,
+                        quantity: qty,
+                        onIncrement: qty < _maxTickets
+                            ? () => setState(() => _quantities[t.id] = qty + 1)
+                            : null,
+                        onDecrement: qty > 0
+                            ? () => setState(() => _quantities[t.id] = qty - 1)
+                            : null,
+                      ),
+                    );
+                  })
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Select an entry ticket to add items',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+              ],
               const SizedBox(height: 12),
               // Buy button for multi-type
               FilledButton(
@@ -1041,7 +1184,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                 ),
                 child: Text(
                   _totalQuantity() > 0
-                      ? 'Buy ${_totalQuantity()} ticket${_totalQuantity() > 1 ? 's' : ''} \u2022 ${_formatPrice(_totalCents())}'
+                      ? 'Buy ${_totalQuantity()} item${_totalQuantity() > 1 ? 's' : ''} \u2022 ${_formatPrice(_totalCents())}'
                       : 'Select tickets above',
                   style: const TextStyle(
                     fontSize: 16,
@@ -1330,6 +1473,28 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
       navigator.pop(); // Close buy sheet
     }
 
+    // Build ticket_items metadata so the webhook creates tickets with the right category
+    final ticketItems = <Map<String, dynamic>>[];
+    if (_hasTicketTypes) {
+      for (final t in _ticketTypes) {
+        final qty = _quantities[t.id] ?? 0;
+        if (qty > 0) {
+          ticketItems.add({
+            'ticket_type_id': t.id,
+            'quantity': qty,
+            'category': t.category,
+            if (t.itemIcon != null) 'item_icon': t.itemIcon,
+          });
+        }
+      }
+    }
+
+    final metadata = <String, dynamic>{
+      if (seatSelections != null)
+        'seat_selections': seatSelections.map((s) => s.toJson()).toList(),
+      if (ticketItems.isNotEmpty) 'ticket_items': ticketItems,
+    };
+
     navigator.push(
       MaterialPageRoute(
         builder: (_) => CheckoutScreen(
@@ -1338,12 +1503,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
           paymentType: PaymentType.primaryPurchase,
           quantity: totalQty,
           baseUnitPriceCents: unitPrice,
-          metadata: seatSelections != null
-              ? {
-                  'seat_selections':
-                      seatSelections.map((s) => s.toJson()).toList(),
-                }
-              : null,
+          metadata: metadata.isNotEmpty ? metadata : null,
         ),
       ),
     );
@@ -1378,6 +1538,23 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
     }
 
     if (!context.mounted) return;
+
+    // Build ticket_items metadata for category tracking
+    final ticketItems = <Map<String, dynamic>>[];
+    if (_hasTicketTypes) {
+      for (final t in _ticketTypes) {
+        final qty = _quantities[t.id] ?? 0;
+        if (qty > 0) {
+          ticketItems.add({
+            'ticket_type_id': t.id,
+            'quantity': qty,
+            'category': t.category,
+            if (t.itemIcon != null) 'item_icon': t.itemIcon,
+          });
+        }
+      }
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CheckoutScreen(
@@ -1390,8 +1567,198 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
               : _pricePerTicketCents,
           metadata: {
             'seat_selections': selections.map((s) => s.toJson()).toList(),
+            if (ticketItems.isNotEmpty) 'ticket_items': ticketItems,
           },
         ),
+      ),
+    );
+  }
+}
+
+/// Card for a merch product in the horizontal Shop section.
+class _MerchProductCard extends StatelessWidget {
+  final MerchProduct product;
+  final VoidCallback onTap;
+
+  const _MerchProductCard({required this.product, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 120,
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            Container(
+              height: 80,
+              width: double.infinity,
+              color: colorScheme.surfaceContainerHighest,
+              child: product.thumbnailUrl != null
+                  ? Image.network(
+                      product.thumbnailUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Center(
+                        child: Icon(
+                          Icons.shopping_bag,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    )
+                  : Center(
+                      child: Icon(
+                        Icons.shopping_bag,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+            ),
+            // Info
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.title,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    product.formattedPrice,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card for a redeemable item in the add-ons section.
+class _RedeemableItemCard extends StatelessWidget {
+  final TicketType ticketType;
+  final int quantity;
+  final VoidCallback? onIncrement;
+  final VoidCallback? onDecrement;
+
+  const _RedeemableItemCard({
+    required this.ticketType,
+    required this.quantity,
+    this.onIncrement,
+    this.onDecrement,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final hasQty = quantity > 0;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: hasQty
+            ? Colors.amber.withValues(alpha: 0.08)
+            : colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasQty
+              ? Colors.amber.withValues(alpha: 0.4)
+              : colorScheme.outlineVariant.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Item icon
+          if (ticketType.itemIcon != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Text(
+                ticketType.itemIcon!,
+                style: const TextStyle(fontSize: 28),
+              ),
+            ),
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ticketType.name,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (ticketType.itemDescription != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    ticketType.itemDescription!,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                const SizedBox(height: 2),
+                Text(
+                  ticketType.formattedPrice,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Quantity controls
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _SmallQuantityButton(
+                icon: Icons.remove,
+                onTap: onDecrement,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  '$quantity',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              _SmallQuantityButton(
+                icon: Icons.add,
+                onTap: onIncrement,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

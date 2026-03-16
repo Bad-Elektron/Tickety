@@ -193,6 +193,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       case PaymentType.walletTopUp:
       case PaymentType.achPurchase:
       case PaymentType.waitlistAutoPurchase:
+      case PaymentType.merchPurchase:
         success = false;
     }
 

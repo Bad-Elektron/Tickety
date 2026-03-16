@@ -8,6 +8,7 @@ import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../analytics/analytics.dart';
+import '../../merch/presentation/organizer_products_screen.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../staff/data/ticket_repository.dart';
 import '../data/supabase_event_repository.dart';
@@ -20,6 +21,7 @@ import '../models/event_series.dart';
 import '../../payments/presentation/promo_codes_screen.dart';
 import 'create_event_screen.dart';
 import 'event_data_screen.dart';
+import '../../widget/presentation/widget_settings_screen.dart';
 import 'manage_tickets_screen.dart';
 
 /// Admin screen for managing an event created by the user.
@@ -424,6 +426,49 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                         : 'Link a venue to this event',
                     color: Colors.teal,
                     onTap: () => _handleVenueAction(context, ref, event),
+                  ),
+                  // Merch Store action — enterprise-gated
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.shopping_bag_outlined,
+                    title: 'Merch Store',
+                    subtitle: AppState().tier == AccountTier.enterprise
+                        ? 'Sell merchandise for this event'
+                        : 'Enterprise plan required',
+                    color: Colors.amber,
+                    onTap: () {
+                      if (AppState().tier == AccountTier.enterprise) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => OrganizerProductsScreen(event: event),
+                          ),
+                        );
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const SubscriptionScreen(),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  // Embed Widget action
+                  const SizedBox(height: 12),
+                  _AdminActionCard(
+                    icon: Icons.code,
+                    title: 'Embed Widget',
+                    subtitle: 'Add checkout to your website',
+                    color: Colors.indigo,
+                    onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => WidgetSettingsScreen(
+                            eventId: event.id,
+                            eventTitle: event.title,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                   // Cancel Series action (only for series events)
                   if (event.isPartOfSeries && event.seriesId != null) ...[

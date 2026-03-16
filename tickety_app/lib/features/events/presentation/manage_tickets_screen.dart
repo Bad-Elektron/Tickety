@@ -209,35 +209,67 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                     if (index == 0) {
                       return _buildSummaryBar(theme, colorScheme);
                     }
-                    final ticketIndex = index - 1;
-                    if (ticketIndex >= _ticketTypes.length) return null;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: _TicketTypeCard(
-                        ticketType: _ticketTypes[ticketIndex],
-                        venueSections: _venueSections,
-                        onMint: () => _showMintDialog(
-                          context,
-                          _ticketTypes[ticketIndex],
+
+                    final entryTypes = _ticketTypes.where((t) => !t.isRedeemable).toList();
+                    final redeemableTypes = _ticketTypes.where((t) => t.isRedeemable).toList();
+
+                    // Items: summary(0), entry types, divider (if redeemable), redeemable types
+                    final itemIndex = index - 1;
+                    final entryCount = entryTypes.length;
+                    final hasDivider = redeemableTypes.isNotEmpty;
+                    final dividerIndex = entryCount;
+                    final redeemableStartIndex = dividerIndex + (hasDivider ? 1 : 0);
+
+                    if (itemIndex < entryCount) {
+                      final t = entryTypes[itemIndex];
+                      return _buildTicketTypeItem(context, t);
+                    } else if (hasDivider && itemIndex == dividerIndex) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 16),
+                        child: Row(
+                          children: [
+                            Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'Redeemable Items',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                            Expanded(child: Divider(color: colorScheme.outlineVariant)),
+                          ],
                         ),
-                        onDiscount: () => _showDiscountDialog(
-                          context,
-                          _ticketTypes[ticketIndex],
-                        ),
-                        onSectionChanged: _venueSections.isNotEmpty
-                            ? (sectionId) => _updateTicketSectionLocally(
-                                  _ticketTypes[ticketIndex],
-                                  sectionId,
-                                )
-                            : null,
-                      ),
-                    );
+                      );
+                    } else if (itemIndex >= redeemableStartIndex &&
+                        itemIndex - redeemableStartIndex < redeemableTypes.length) {
+                      final t = redeemableTypes[itemIndex - redeemableStartIndex];
+                      return _buildTicketTypeItem(context, t);
+                    }
+                    return null;
                   },
-                  childCount: _ticketTypes.length + 1,
+                  childCount: _ticketTypes.length + 1 + (_ticketTypes.any((t) => t.isRedeemable) ? 1 : 0),
                 ),
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildTicketTypeItem(BuildContext context, TicketType t) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: _TicketTypeCard(
+        ticketType: t,
+        venueSections: t.isRedeemable ? const [] : _venueSections,
+        onMint: () => _showMintDialog(context, t),
+        onDiscount: () => _showDiscountDialog(context, t),
+        onSectionChanged: !t.isRedeemable && _venueSections.isNotEmpty
+            ? (sectionId) => _updateTicketSectionLocally(t, sectionId)
+            : null,
       ),
     );
   }

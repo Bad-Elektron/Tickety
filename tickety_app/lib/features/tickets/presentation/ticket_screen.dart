@@ -416,6 +416,49 @@ class _TicketScreenState extends State<TicketScreen> {
                   ),
                   const SizedBox(height: 24),
 
+                  // Redeemable item card
+                  if (_ticket.isRedeemable) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.amber.withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          if (_ticket.itemIcon != null)
+                            Text(
+                              _ticket.itemIcon!,
+                              style: const TextStyle(fontSize: 48),
+                            ),
+                          const SizedBox(height: 8),
+                          Text(
+                            _ticket.isUsed ? 'Redeemed' : 'Show at event to redeem',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: _ticket.isUsed
+                                  ? colorScheme.onSurfaceVariant
+                                  : Colors.amber.shade800,
+                            ),
+                          ),
+                          if (_ticket.isUsed) ...[
+                            const SizedBox(height: 4),
+                            Icon(
+                              Icons.check_circle,
+                              color: colorScheme.onSurfaceVariant,
+                              size: 32,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+
                   // Ticket number
                   _InfoCard(
                     icon: Icons.confirmation_number_outlined,

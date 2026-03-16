@@ -17,6 +17,9 @@ class TicketTypeInput {
   final int priceCents;
   final int? maxQuantity;
   final String? venueSectionId;
+  final String category;
+  final String? itemIcon;
+  final String? itemDescription;
 
   const TicketTypeInput({
     required this.name,
@@ -24,6 +27,9 @@ class TicketTypeInput {
     this.description,
     this.maxQuantity,
     this.venueSectionId,
+    this.category = 'entry',
+    this.itemIcon,
+    this.itemDescription,
   });
 }
 
@@ -472,7 +478,10 @@ class SupabaseEventRepository implements EventRepository {
         'max_quantity': tt.maxQuantity,
         'sort_order': index,
         'is_active': true,
+        'category': tt.category,
         if (tt.venueSectionId != null) 'venue_section_id': tt.venueSectionId,
+        if (tt.itemIcon != null) 'item_icon': tt.itemIcon,
+        if (tt.itemDescription != null) 'item_description': tt.itemDescription,
       };
       debugPrint('Ticket type data: $item');
       return item;

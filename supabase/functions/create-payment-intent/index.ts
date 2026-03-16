@@ -199,17 +199,45 @@ serve(async (req) => {
         console.log(`[promo] code=${promoCode.code}, discount=${promoDiscountCents} cents`)
       }
 
-      // For primary purchases, validate total = fees(quantity × unit price - promo discount)
-      if (type === 'primary_purchase' && event.price_in_cents) {
-        const baseCents = event.price_in_cents * quantity - promoDiscountCents
-        const fees = calculateFees(baseCents)
-        console.log(`[fee-check] baseCents=${baseCents}, promoDiscount=${promoDiscountCents}, MINT_FEE_CENTS=${MINT_FEE_CENTS}, platform=${fees.platform_fee_cents}, mint=${fees.mint_fee_cents}, stripe=${fees.stripe_fee_cents}, total=${fees.total_cents}, client_sent=${amount_cents}`)
-      if (amount_cents !== fees.total_cents) {
-          console.log(`Price mismatch: expected ${fees.total_cents} (base: ${baseCents}, fee: ${fees.service_fee_cents}), got ${amount_cents}`)
-          return new Response(
-            JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
+      // For primary purchases, validate total = fees(sum of ticket prices - promo discount)
+      if (type === 'primary_purchase') {
+        let baseCents = 0
+        const ticketItems = metadata?.ticket_items as any[] | undefined
+
+        if (ticketItems && Array.isArray(ticketItems) && ticketItems.length > 0) {
+          // Multi-type purchase: fetch actual ticket type prices from DB
+          const typeIds = ticketItems.map((ti: any) => ti.ticket_type_id)
+          const { data: dbTypes } = await supabaseAdmin
+            .from('event_ticket_types')
+            .select('id, price_cents')
+            .in('id', typeIds)
+
+          if (dbTypes) {
+            const priceMap: Record<string, number> = {}
+            for (const dt of dbTypes) {
+              priceMap[dt.id] = dt.price_cents
+            }
+            for (const ti of ticketItems) {
+              const unitPrice = priceMap[ti.ticket_type_id] ?? 0
+              baseCents += unitPrice * (ti.quantity || 1)
+            }
+          }
+        } else if (event.price_in_cents) {
+          // Flat price (no ticket types): use event-level price × quantity
+          baseCents = event.price_in_cents * quantity
+        }
+
+        if (baseCents > 0) {
+          baseCents -= promoDiscountCents
+          const fees = calculateFees(baseCents)
+          console.log(`[fee-check] baseCents=${baseCents}, promoDiscount=${promoDiscountCents}, MINT_FEE_CENTS=${MINT_FEE_CENTS}, platform=${fees.platform_fee_cents}, mint=${fees.mint_fee_cents}, stripe=${fees.stripe_fee_cents}, total=${fees.total_cents}, client_sent=${amount_cents}`)
+          if (amount_cents !== fees.total_cents) {
+            console.log(`Price mismatch: expected ${fees.total_cents} (base: ${baseCents}, fee: ${fees.service_fee_cents}), got ${amount_cents}`)
+            return new Response(
+              JSON.stringify({ error: 'Price mismatch. Please refresh and try again.' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
         }
       }
 

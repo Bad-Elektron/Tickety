@@ -8,6 +8,7 @@ export 'currency_provider.dart';
 export 'cardano_wallet_provider.dart';
 export 'events_provider.dart';
 export 'favor_ticket_provider.dart';
+export 'merch_provider.dart';
 export 'notification_preferences_provider.dart';
 export 'notification_provider.dart';
 export 'payment_methods_provider.dart';

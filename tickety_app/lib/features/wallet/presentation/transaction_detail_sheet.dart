@@ -199,6 +199,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return 'Bank Purchase';
       case PaymentType.waitlistAutoPurchase:
         return 'Waitlist Auto-Purchase';
+      case PaymentType.merchPurchase:
+        return 'Merch Purchase';
     }
   }
 
@@ -222,6 +224,8 @@ class TransactionDetailSheet extends StatelessWidget {
         return Icons.account_balance;
       case PaymentType.waitlistAutoPurchase:
         return Icons.flash_on;
+      case PaymentType.merchPurchase:
+        return Icons.shopping_bag;
     }
   }
 

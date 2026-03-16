@@ -43,6 +43,15 @@ class TicketType {
   /// Venue section name (for display, populated from join).
   final String? venueSectionName;
 
+  /// Category: 'entry' (event admission) or 'redeemable' (single-use item).
+  final String category;
+
+  /// Emoji icon for redeemable items (e.g. 🎸, 🍺, 👕).
+  final String? itemIcon;
+
+  /// Short description of the redeemable item.
+  final String? itemDescription;
+
   /// When this ticket type was created.
   final DateTime createdAt;
 
@@ -59,8 +68,14 @@ class TicketType {
     this.isActive = true,
     this.venueSectionId,
     this.venueSectionName,
+    this.category = 'entry',
+    this.itemIcon,
+    this.itemDescription,
     required this.createdAt,
   });
+
+  /// Whether this is a redeemable item (not event entry).
+  bool get isRedeemable => category == 'redeemable';
 
   /// Whether this ticket type has limited quantity.
   bool get hasLimit => maxQuantity != null;
@@ -118,6 +133,9 @@ class TicketType {
       isActive: json['is_active'] as bool? ?? true,
       venueSectionId: json['venue_section_id'] as String?,
       venueSectionName: json['venue_section_name'] as String?,
+      category: json['category'] as String? ?? 'entry',
+      itemIcon: json['item_icon'] as String?,
+      itemDescription: json['item_description'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -136,6 +154,9 @@ class TicketType {
       'sort_order': sortOrder,
       'is_active': isActive,
       if (venueSectionId != null) 'venue_section_id': venueSectionId,
+      'category': category,
+      if (itemIcon != null) 'item_icon': itemIcon,
+      if (itemDescription != null) 'item_description': itemDescription,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -155,6 +176,9 @@ class TicketType {
     String? venueSectionId,
     bool clearVenueSectionId = false,
     String? venueSectionName,
+    String? category,
+    String? itemIcon,
+    String? itemDescription,
     DateTime? createdAt,
   }) {
     return TicketType(
@@ -170,6 +194,9 @@ class TicketType {
       isActive: isActive ?? this.isActive,
       venueSectionId: clearVenueSectionId ? null : (venueSectionId ?? this.venueSectionId),
       venueSectionName: venueSectionName ?? this.venueSectionName,
+      category: category ?? this.category,
+      itemIcon: itemIcon ?? this.itemIcon,
+      itemDescription: itemDescription ?? this.itemDescription,
       createdAt: createdAt ?? this.createdAt,
     );
   }

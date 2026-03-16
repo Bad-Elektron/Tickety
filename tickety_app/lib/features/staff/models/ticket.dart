@@ -146,6 +146,13 @@ class Ticket {
   final String? seatLabel;
 
   // ─────────────────────────────────────────────────────────────────
+  // Category (entry vs redeemable)
+  // ─────────────────────────────────────────────────────────────────
+  final String category;
+  final String? itemIcon;
+  final String? ticketTypeName;
+
+  // ─────────────────────────────────────────────────────────────────
   // Resale listing (enum-based)
   // ─────────────────────────────────────────────────────────────────
   final ListingStatus listingStatus;
@@ -184,6 +191,9 @@ class Ticket {
     this.venueSectionId,
     this.seatId,
     this.seatLabel,
+    this.category = 'entry',
+    this.itemIcon,
+    this.ticketTypeName,
     this.ticketMode = TicketMode.standard,
     this.listingStatus = ListingStatus.none,
     this.listingPriceCents,
@@ -229,6 +239,9 @@ class Ticket {
       venueSectionId: json['venue_section_id'] as String?,
       seatId: json['seat_id'] as String?,
       seatLabel: json['seat_label'] as String?,
+      category: json['category'] as String? ?? 'entry',
+      itemIcon: json['item_icon'] as String?,
+      ticketTypeName: json['ticket_type_name'] as String?,
       ticketMode: TicketMode.fromString(json['ticket_mode'] as String?),
       listingStatus: ListingStatus.fromString(json['listing_status'] as String?),
       listingPriceCents: json['listing_price_cents'] as int?,
@@ -251,6 +264,9 @@ class Ticket {
       if (venueSectionId != null) 'venue_section_id': venueSectionId,
       if (seatId != null) 'seat_id': seatId,
       if (seatLabel != null) 'seat_label': seatLabel,
+      'category': category,
+      if (itemIcon != null) 'item_icon': itemIcon,
+      if (ticketTypeName != null) 'ticket_type_name': ticketTypeName,
       'ticket_mode': ticketMode.value,
       'listing_status': listingStatus.value,
       if (listingPriceCents != null) 'listing_price_cents': listingPriceCents,
@@ -260,6 +276,9 @@ class Ticket {
   // ─────────────────────────────────────────────────────────────────
   // Status-based computed properties
   // ─────────────────────────────────────────────────────────────────
+
+  /// Whether this is a redeemable item (not event entry).
+  bool get isRedeemable => category == 'redeemable';
 
   /// Whether ticket has been used (checked in).
   bool get isUsed => status == TicketStatus.used;
@@ -343,7 +362,7 @@ class Ticket {
 
   /// Ticket type (e.g., "General Admission", "VIP").
   String get ticketType =>
-      eventData?['ticket_type'] as String? ?? 'General Admission';
+      ticketTypeName ?? eventData?['ticket_type'] as String? ?? 'General Admission';
 
   /// Combined venue and city for display.
   String? get displayLocation {
@@ -409,6 +428,9 @@ class Ticket {
     String? venueSectionId,
     String? seatId,
     String? seatLabel,
+    String? category,
+    String? itemIcon,
+    String? ticketTypeName,
     TicketMode? ticketMode,
     ListingStatus? listingStatus,
     int? listingPriceCents,
@@ -441,6 +463,9 @@ class Ticket {
       venueSectionId: venueSectionId ?? this.venueSectionId,
       seatId: seatId ?? this.seatId,
       seatLabel: seatLabel ?? this.seatLabel,
+      category: category ?? this.category,
+      itemIcon: itemIcon ?? this.itemIcon,
+      ticketTypeName: ticketTypeName ?? this.ticketTypeName,
       ticketMode: ticketMode ?? this.ticketMode,
       listingStatus: listingStatus ?? this.listingStatus,
       listingPriceCents: listingPriceCents ?? this.listingPriceCents,
