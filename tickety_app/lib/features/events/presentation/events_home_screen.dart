@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/providers.dart';
+import '../../external_events/external_events.dart';
 import '../../notifications/notifications.dart';
 import '../../profile/profile.dart';
 import '../../tickets/tickets.dart';
@@ -86,18 +87,26 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
   Widget build(BuildContext context) {
     // Watch the events state - automatically rebuilds when it changes
     final eventsState = ref.watch(eventsProvider);
+    final externalState = ref.watch(externalEventsProvider);
     final selectedCategories = ref.watch(_selectedCategoriesProvider);
     final selectedCity = ref.watch(_selectedCityProvider);
     final selectedTags = ref.watch(_selectedTagsProvider);
 
-    // Compute filtered events
-    final filteredEvents = _filterEvents(
-      eventsState.events,
+    // Build mixed feed items
+    final nativeItems = eventsState.events.map(NativeEventFeedItem.new).toList();
+    final externalItems = externalState.events.map(ExternalEventFeedItem.new).toList();
+    final allItems = [...nativeItems, ...externalItems]
+      ..sort((a, b) => a.sortDate.compareTo(b.sortDate));
+
+    // Compute filtered events (works on FeedItem)
+    final filteredFeed = _filterFeed(
+      allItems,
       selectedCategories,
       selectedCity,
       selectedTags,
       _searchQuery,
     );
+
 
     // Compute available cities
     final availableCities = eventsState.events
@@ -110,8 +119,12 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
-          // Refresh is simple - just call the notifier method
-          onRefresh: () => ref.read(eventsProvider.notifier).refresh(),
+          onRefresh: () async {
+            await Future.wait([
+              ref.read(eventsProvider.notifier).refresh(),
+              ref.read(externalEventsProvider.notifier).refresh(),
+            ]);
+          },
           child: CustomScrollView(
             slivers: [
               _Header(),
@@ -189,7 +202,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                       },
                     ),
                   ),
-                if (filteredEvents.isEmpty && _inviteCodeResult == null)
+                if (filteredFeed.isEmpty && _inviteCodeResult == null)
                   _EmptyFilterState(
                     searchQuery: _searchQuery,
                     onClearFilters: () {
@@ -199,8 +212,8 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                       if (_isSearching) _toggleSearch();
                     },
                   )
-                else if (filteredEvents.isNotEmpty)
-                  _EventList(events: filteredEvents),
+                else if (filteredFeed.isNotEmpty)
+                  _MixedFeedList(items: filteredFeed),
               ],
             ],
           ),
@@ -209,42 +222,56 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     );
   }
 
-  /// Filter events by category, city, tags, and search query.
-  List<EventModel> _filterEvents(
-    List<EventModel> events,
+  /// Filter mixed feed items by category, city, tags, and search query.
+  List<FeedItem> _filterFeed(
+    List<FeedItem> items,
     Set<EventCategory> categories,
     String? city,
     Set<String> tags,
     String searchQuery,
   ) {
-    return events.where((event) {
-      // Category filter
-      if (categories.isNotEmpty) {
-        final eventCategory = event.eventCategory;
-        if (eventCategory == null || !categories.contains(eventCategory)) {
-          return false;
-        }
+    return items.where((item) {
+      switch (item) {
+        case NativeEventFeedItem(:final event):
+          // Category filter
+          if (categories.isNotEmpty) {
+            final eventCategory = event.eventCategory;
+            if (eventCategory == null || !categories.contains(eventCategory)) return false;
+          }
+          if (city != null && event.city != city) return false;
+          if (tags.isNotEmpty && !tags.every((t) => event.tags.contains(t))) return false;
+          if (searchQuery.isNotEmpty) {
+            final match = event.title.toLowerCase().contains(searchQuery) ||
+                event.subtitle.toLowerCase().contains(searchQuery) ||
+                (event.venue?.toLowerCase().contains(searchQuery) ?? false) ||
+                (event.city?.toLowerCase().contains(searchQuery) ?? false);
+            if (!match) return false;
+          }
+          return true;
+
+        case ExternalEventFeedItem(:final event):
+          // Category filter (map EventCategory name to external category string)
+          if (categories.isNotEmpty) {
+            final cat = event.category?.toLowerCase();
+            final match = categories.any((c) => c.label.toLowerCase() == cat);
+            if (!match) return false;
+          }
+          // City filter — external events use venueAddress
+          if (city != null) {
+            final addr = event.venueAddress?.toLowerCase() ?? '';
+            if (!addr.contains(city.toLowerCase())) return false;
+          }
+          // Tags don't apply to external events — skip
+          if (tags.isNotEmpty) return false;
+          // Search filter
+          if (searchQuery.isNotEmpty) {
+            final match = event.title.toLowerCase().contains(searchQuery) ||
+                (event.venueName?.toLowerCase().contains(searchQuery) ?? false) ||
+                (event.venueAddress?.toLowerCase().contains(searchQuery) ?? false);
+            if (!match) return false;
+          }
+          return true;
       }
-      // City filter
-      if (city != null && event.city != city) {
-        return false;
-      }
-      // Tag filter — event must have ALL selected tags
-      if (tags.isNotEmpty) {
-        if (!tags.every((tagId) => event.tags.contains(tagId))) {
-          return false;
-        }
-      }
-      // Search filter
-      if (searchQuery.isNotEmpty) {
-        final matchesSearch =
-            event.title.toLowerCase().contains(searchQuery) ||
-            event.subtitle.toLowerCase().contains(searchQuery) ||
-            (event.venue?.toLowerCase().contains(searchQuery) ?? false) ||
-            (event.city?.toLowerCase().contains(searchQuery) ?? false);
-        if (!matchesSearch) return false;
-      }
-      return true;
     }).toList();
   }
 }
@@ -629,6 +656,185 @@ class _Thumbnail extends StatelessWidget {
         ),
         child: const SizedBox(width: 56, height: 56),
       ),
+    );
+  }
+}
+
+class _MixedFeedList extends ConsumerStatefulWidget {
+  final List<FeedItem> items;
+
+  const _MixedFeedList({required this.items});
+
+  @override
+  ConsumerState<_MixedFeedList> createState() => _MixedFeedListState();
+}
+
+class _MixedFeedListState extends ConsumerState<_MixedFeedList> {
+  @override
+  Widget build(BuildContext context) {
+    final isLoadingMore = ref.watch(eventsLoadingMoreProvider);
+    final canLoadMore = ref.watch(eventsCanLoadMoreProvider);
+    final itemCount = widget.items.length + (isLoadingMore || canLoadMore ? 1 : 0);
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          if (index == widget.items.length) {
+            if (isLoadingMore) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ref.read(eventsProvider.notifier).loadMore();
+              ref.read(externalEventsProvider.notifier).loadMore();
+            });
+            return const SizedBox(height: 16);
+          }
+
+          if (index >= widget.items.length - 3 && canLoadMore && !isLoadingMore) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ref.read(eventsProvider.notifier).loadMore();
+              ref.read(externalEventsProvider.notifier).loadMore();
+            });
+          }
+
+          final item = widget.items[index];
+          return switch (item) {
+            NativeEventFeedItem(:final event) => _EventListTile(event: event),
+            ExternalEventFeedItem(:final event) => _ExternalEventListTile(event: event),
+          };
+        },
+        childCount: itemCount,
+      ),
+    );
+  }
+}
+
+class _ExternalEventListTile extends StatelessWidget {
+  final ExternalEvent event;
+
+  const _ExternalEventListTile({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final sourceColor = switch (event.source) {
+      'ticketmaster' => const Color(0xFF026CDF),
+      'seatgeek' => const Color(0xFFF05537),
+      _ => colorScheme.primary,
+    };
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      leading: _ExternalThumbnail(imageUrl: event.imageUrl),
+      title: Text(
+        event.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 4),
+          Text(
+            _formatDate(event.startDate),
+            style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.primary),
+          ),
+          if (event.displayLocation.isNotEmpty)
+            Text(
+              event.displayLocation,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+            ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: sourceColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              'via ${event.sourceLabel}',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: sourceColor,
+                fontWeight: FontWeight.w600,
+                fontSize: 9,
+              ),
+            ),
+          ),
+        ],
+      ),
+      trailing: event.formattedPrice.isNotEmpty
+          ? Text(
+              event.formattedPrice,
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            )
+          : null,
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ExternalEventDetailScreen(event: event),
+          ),
+        );
+      },
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final now = DateTime.now();
+    final diff = date.difference(now).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Tomorrow';
+    return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
+class _ExternalThumbnail extends StatelessWidget {
+  final String? imageUrl;
+
+  const _ExternalThumbnail({this.imageUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    if (imageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Image.network(
+          imageUrl!,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _fallback(context),
+        ),
+      );
+    }
+    return _fallback(context);
+  }
+
+  Widget _fallback(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          colors: [colorScheme.primary, colorScheme.tertiary],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Icon(Icons.event, color: Colors.white, size: 24),
     );
   }
 }

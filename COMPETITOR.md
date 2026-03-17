@@ -89,12 +89,15 @@ Features don't matter without users. Tickety has every feature advantage but zer
 
 ### Bootstrap Strategy (Three Prongs)
 
-**Prong 1: Event Aggregation (Priority 9)**
-Fill the app with Ticketmaster/SeatGeek events via free APIs (230K+ events, zero cost). Buyers download Tickety and see a full event catalog immediately. Native Tickety events are mixed in. Over time, the ratio shifts as organizers adopt the platform.
+**Prong 1: Event Aggregation via Affiliate Programs (Priority 9 — blocked on approvals)**
+Fill the app with Ticketmaster/SeatGeek events. Buyers download Tickety and see a full event catalog immediately. Native Tickety events are mixed in. Over time, the ratio shifts as organizers adopt the platform. **Bonus: earn commission on every referred ticket sale.**
 
-- Ticketmaster Discovery API: Free, 5K calls/day, 230K+ events globally
-- SeatGeek API: Free, US-focused, includes pricing data
-- External events display with "via Ticketmaster" badge + deep link to source for purchase
+- **Must use affiliate programs** — both APIs have ToS restrictions against competing platforms using data directly
+- Ticketmaster Affiliate Program (via Impact.com): explicit permission + commission per referred sale
+- SeatGeek Partner Program (via Impact.com): ~$11 avg commission per sale
+- Legal research: scraping public event data is legal (*Ticketmaster v. Tickets.com, 2000*; *hiQ v. LinkedIn, 2022*) but affiliate route is safer + generates revenue
+- Code is built and deployed, awaiting affiliate approvals + API keys
+- External events display with source badge + deep link to source for purchase
 - Future: "Claim this event" lets organizers take ownership and sell natively
 
 **Prong 2: Embeddable Widget (Priority 8)**

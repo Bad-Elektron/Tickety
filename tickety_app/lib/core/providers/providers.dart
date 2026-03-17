@@ -7,6 +7,7 @@ export 'offline_checkin_provider.dart';
 export 'currency_provider.dart';
 export 'cardano_wallet_provider.dart';
 export 'events_provider.dart';
+export 'external_events_provider.dart';
 export 'favor_ticket_provider.dart';
 export 'merch_provider.dart';
 export 'notification_preferences_provider.dart';

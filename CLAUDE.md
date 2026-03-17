@@ -208,47 +208,23 @@ Engagement seed data for dashboard development in `supabase/seeds/`. Marker: `an
 
 ## Roadmap
 
-### Priority 9 — Event Aggregation & External Listings
+### Priority 9 — Event Aggregation & External Listings (BLOCKED — awaiting affiliate approvals)
 
-Populate the discovery feed with events from external sources so users have a reason to open the app before organizers adopt the platform. This solves the cold-start chicken-and-egg problem: buyers need events to discover, organizers need buyers to justify switching.
+Populate the discovery feed with events from external sources to solve the cold-start problem. **Code is built and deployed** (database, edge functions, Flutter mixed feed UI) — blocked on API keys pending affiliate program approval.
 
-**Research findings:** TicketSwap (~11M users, ~$39M ARR) is seller-driven — events appear when fans upload tickets, not via API aggregation. However, for a discovery-focused app like Tickety, proactive event ingestion is essential.
+**Legal research findings (March 2026):**
+- **Ticketmaster API ToS** prohibits "deriving revenue" from API data — broadly worded, risky for a competing platform. Safe path: join their **Affiliate Program via Impact.com** (explicit permission + commission per referred sale, 1,200+ partners already do this).
+- **SeatGeek API ToS** explicitly prohibits using API to "create a service that directly competes with SeatGeek" and bans persistent data caching (only transient/intermediate allowed). Safe path: **Partner Program via Impact.com** (~$11 avg commission per sale).
+- **Web scraping alternative:** Legal precedent supports scraping public event data (*Ticketmaster v. Tickets.com, 2000* — factual data like dates/venues not copyrightable; *hiQ v. LinkedIn, 2022* — scraping public pages doesn't violate CFAA). However, practical risks (IP blocking, legal threats) and Terms of Service breach-of-contract claims make this less attractive than affiliate programs.
+- **Other sources:** Eventbrite API deprecated (2019). Bandsintown locked to single-artist keys. Songkick/JamBase require commercial licenses. Facebook Events closed since 2018. PredictHQ is enterprise-priced.
 
-**Available APIs (ranked by value):**
-- **Ticketmaster Discovery API** — Free, 5K calls/day, 230K+ events globally. Best free source. JSON/HAL format, API key auth.
-- **SeatGeek API** — Free, US-centric, includes pricing data. Good sports/concert coverage.
-- **PredictHQ API** — 22M+ events, 400K new/month, 200+ sources normalized. Enterprise pricing (sales-driven). Best for powering discovery algorithm.
-- **Songkick** — 6M+ concerts, largest live music DB. Requires partnership/license (not free).
-- **Eventbrite** — Search API deprecated Dec 2019. Only useful for known event/org IDs. Not viable for aggregation.
-- **Bandsintown** — Locked to single-artist API keys. Not viable.
-- **Facebook Events** — Effectively closed to third parties since 2018.
-- **Google Events** — No API exists. Only consumes schema.org/Event structured data from websites.
+**Action items:**
+1. Apply for Ticketmaster Affiliate Program (Impact.com)
+2. Apply for SeatGeek Partner Program (Impact.com)
+3. Once approved, set API keys + affiliate tracking IDs as Supabase secrets
+4. Trigger initial sync: `curl -X POST .../sync-ticketmaster-events`
 
-**Architecture:**
-
-**Database:**
-- `external_events` — source (ticketmaster/seatgeek/predicthq), external_id, title, description, start_date, end_date, venue_name, venue_address, lat, lng, image_url, category, genre, price_range_min/max, ticket_url (deep link to source), source_updated_at, is_active
-- `external_event_sync_log` — source, last_sync_at, events_added, events_updated, next_cursor
-- RLS: public SELECT on active events, admin-only management
-
-**Edge Functions:**
-- `sync-ticketmaster-events` — Paginated Discovery API fetch by geo/classification, upsert into external_events. pg_cron hourly.
-- `sync-seatgeek-events` — Similar pattern for SeatGeek data.
-- `cleanup-external-events` — Remove past events, mark cancelled. pg_cron daily.
-
-**Flutter:**
-- `features/external_events/` — models (ExternalEvent), data (ExternalEventRepository), presentation
-- Home feed mixes native Tickety events with external events, visually distinguished ("via Ticketmaster" badge)
-- External event detail screen: event info + "Get Tickets" button deep-linking to source platform
-- Future: "Claim this event" flow for organizers to take ownership and sell directly on Tickety
-
-**Implementation Phases:**
-- Phase A: Ticketmaster sync — hourly geo-based ingestion, external_events table, mixed feed display
-- Phase B: SeatGeek sync — second source, deduplication logic (same event from multiple sources)
-- Phase C: "Claim this event" — organizers can link their Tickety event to an external listing, replacing the deep link with native ticketing
-- Phase D: PredictHQ integration (if budget allows) — broadest coverage, powers discovery algorithm signals
-
-**Strategic context:** TicketSwap bootstrapped via seller supply. Ticket Tailor bootstrapped via cold-calling venues. For Tickety, API aggregation + the embeddable checkout widget (Priority 8) are the two-pronged bootstrap strategy: aggregation gives buyers a reason to open the app, the widget gives organizers a reason to connect their events.
+**Code ready:** `external_events` table, `sync-ticketmaster-events`, `sync-seatgeek-events`, `cleanup-external-events` edge functions, `ExternalEvent` model, `ExternalEventRepository`, mixed feed in `EventsHomeScreen` with source badges and deep links.
 
 ### Priority 10 — Event Discovery Algorithm
 
@@ -344,4 +320,5 @@ Multi-language checkout and app UI. Start with Spanish, French, German, Portugue
 - ACH bank payments, native buyer app, event discovery algorithm
 - Tap-to-pay NFC, comp/favor tickets, organizer verification
 - Redeemable ticket add-ons, physical merch store (Shopify/Stripe), seating charts
-- External event aggregation (Ticketmaster/SeatGeek APIs) for cold-start bootstrap
+- Embeddable checkout widget (iframe, guest checkout, Stripe Elements)
+- External event aggregation via affiliate programs (Ticketmaster/SeatGeek) for cold-start bootstrap + commission revenue
