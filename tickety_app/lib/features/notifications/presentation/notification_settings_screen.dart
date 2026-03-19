@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/notification_preferences_provider.dart';
 
 /// Screen for managing notification preferences.
@@ -15,7 +16,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: Text(L.tr('notifications')),
         centerTitle: true,
       ),
       body: prefsState.isLoading && prefs == null
@@ -28,13 +29,13 @@ class NotificationSettingsScreen extends ConsumerWidget {
               : ListView(
                   children: [
                     // Channels
-                    const _SectionHeader(title: 'Channels'),
+                    _SectionHeader(title: L.tr('channels')),
                     _SettingsCard(
                       children: [
                         _SettingsTile(
                           icon: Icons.notifications_active_outlined,
-                          title: 'Push Notifications',
-                          subtitle: 'Receive alerts on your device',
+                          title: L.tr('push_notifications'),
+                          subtitle: L.tr('receive_alerts_device'),
                           trailing: Switch.adaptive(
                             value: prefs.pushEnabled,
                             onChanged: (value) => notifier.updatePreference(
@@ -44,8 +45,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
                         ),
                         _SettingsTile(
                           icon: Icons.email_outlined,
-                          title: 'Email Notifications',
-                          subtitle: 'Receive alerts via email',
+                          title: L.tr('email_notifications'),
+                          subtitle: L.tr('receive_alerts_email'),
                           trailing: Switch.adaptive(
                             value: prefs.emailEnabled,
                             onChanged: (value) => notifier.updatePreference(
@@ -57,14 +58,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
                     ),
 
                     // Activity
-                    const _SectionHeader(title: 'Activity'),
+                    _SectionHeader(title: L.tr('activity')),
                     _SettingsCard(
                       dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                       children: [
                         _SettingsTile(
                           icon: Icons.badge_outlined,
-                          title: 'Staff Role Assignments',
-                          subtitle: 'When added as usher, seller, or manager',
+                          title: L.tr('staff_role_assignments'),
+                          subtitle: L.tr('staff_role_assignments_subtitle'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.staffAdded,
@@ -75,8 +76,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
                         ),
                         _SettingsTile(
                           icon: Icons.confirmation_num_outlined,
-                          title: 'Ticket Purchases',
-                          subtitle: 'Purchase confirmations and receipts',
+                          title: L.tr('ticket_purchases'),
+                          subtitle: L.tr('purchase_confirmations_receipts'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.ticketPurchased,
@@ -87,8 +88,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
                         ),
                         _SettingsTile(
                           icon: Icons.qr_code_scanner_outlined,
-                          title: 'Ticket Scanned',
-                          subtitle: 'When your ticket is used at an event',
+                          title: L.tr('ticket_scanned'),
+                          subtitle: L.tr('ticket_scanned_subtitle'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.ticketUsed,
@@ -101,14 +102,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
                     ),
 
                     // Events
-                    const _SectionHeader(title: 'Events'),
+                    _SectionHeader(title: L.tr('events')),
                     _SettingsCard(
                       dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                       children: [
                         _SettingsTile(
                           icon: Icons.alarm_outlined,
-                          title: 'Event Reminders',
-                          subtitle: 'Reminders before events you\'re attending',
+                          title: L.tr('event_reminders'),
+                          subtitle: L.tr('event_reminders_subtitle'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.eventReminders,
@@ -119,8 +120,8 @@ class NotificationSettingsScreen extends ConsumerWidget {
                         ),
                         _SettingsTile(
                           icon: Icons.update_outlined,
-                          title: 'Event Updates',
-                          subtitle: 'Changes to events you have tickets for',
+                          title: L.tr('event_updates'),
+                          subtitle: L.tr('event_updates_subtitle'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.eventUpdates,
@@ -133,14 +134,14 @@ class NotificationSettingsScreen extends ConsumerWidget {
                     ),
 
                     // Promotional
-                    const _SectionHeader(title: 'Promotional'),
+                    _SectionHeader(title: L.tr('promotional')),
                     _SettingsCard(
                       dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                       children: [
                         _SettingsTile(
                           icon: Icons.campaign_outlined,
-                          title: 'Marketing',
-                          subtitle: 'Promotional content and special offers',
+                          title: L.tr('marketing'),
+                          subtitle: L.tr('marketing_subtitle'),
                           dimmed: !prefs.pushEnabled && !prefs.emailEnabled,
                           trailing: Switch.adaptive(
                             value: prefs.marketing,
@@ -188,7 +189,7 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Retry'),
+              label: Text(L.tr('retry')),
             ),
           ],
         ),

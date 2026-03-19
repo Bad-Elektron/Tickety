@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../models/payment_method.dart';
@@ -27,8 +28,8 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
     if (!StripeService.isSupported) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Card management is only available on mobile devices'),
+          SnackBar(
+            content: Text(L.tr('payments_card_mobile_only')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -43,21 +44,21 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Card'),
+        title: Text(L.tr('payments_remove_card')),
         content: Text(
           'Remove ${card.displayBrand} ending in ${card.last4}?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('common_cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Remove'),
+            child: Text(L.tr('common_remove')),
           ),
         ],
       ),
@@ -94,7 +95,7 @@ class _PaymentMethodsScreenState extends ConsumerState<PaymentMethodsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Payment Methods'),
+        title: Text(L.tr('payments_methods_title')),
         centerTitle: true,
       ),
       body: RefreshIndicator(
@@ -134,7 +135,7 @@ class _EmptyState extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'No cards saved',
+          L.tr('payments_no_cards_saved'),
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -142,7 +143,7 @@ class _EmptyState extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Add a card to speed up checkout.',
+          L.tr('payments_add_card_subtitle'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
@@ -154,7 +155,7 @@ class _EmptyState extends StatelessWidget {
           child: FilledButton.icon(
             onPressed: onAddCard,
             icon: const Icon(Icons.add),
-            label: const Text('Add Card'),
+            label: Text(L.tr('payments_add_card')),
           ),
         ),
       ],
@@ -195,7 +196,7 @@ class _CardList extends StatelessWidget {
           child: OutlinedButton.icon(
             onPressed: isLoading ? null : onAddCard,
             icon: const Icon(Icons.add, size: 20),
-            label: const Text('Add Card'),
+            label: Text(L.tr('payments_add_card')),
             style: OutlinedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
@@ -326,7 +327,7 @@ class _CardTile extends StatelessWidget {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  'Default',
+                                  L.tr('common_default'),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: colorScheme.primary,
                                     fontWeight: FontWeight.w600,
@@ -361,13 +362,13 @@ class _CardTile extends StatelessWidget {
                     },
                     itemBuilder: (context) => [
                       if (!card.isDefault)
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: 'default',
                           child: Row(
                             children: [
-                              Icon(Icons.check_circle_outline, size: 20),
-                              SizedBox(width: 12),
-                              Text('Set as Default'),
+                              const Icon(Icons.check_circle_outline, size: 20),
+                              const SizedBox(width: 12),
+                              Text(L.tr('payments_set_as_default')),
                             ],
                           ),
                         ),
@@ -378,7 +379,7 @@ class _CardTile extends StatelessWidget {
                             Icon(Icons.delete_outline, size: 20,
                                 color: Theme.of(context).colorScheme.error),
                             const SizedBox(width: 12),
-                            Text('Remove',
+                            Text(L.tr('common_remove'),
                                 style: TextStyle(
                                     color: Theme.of(context).colorScheme.error)),
                           ],

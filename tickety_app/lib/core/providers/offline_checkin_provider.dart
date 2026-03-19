@@ -18,6 +18,8 @@ class OfflineCheckInState {
   final int totalTickets;
   final int checkedInCount;
   final int pendingSyncCount;
+  final int totalRedeemable;
+  final int redeemedCount;
   final bool isOnline;
   final DateTime? lastSyncTime;
   final DateTime? doorListDownloadedAt;
@@ -31,6 +33,8 @@ class OfflineCheckInState {
     this.totalTickets = 0,
     this.checkedInCount = 0,
     this.pendingSyncCount = 0,
+    this.totalRedeemable = 0,
+    this.redeemedCount = 0,
     this.isOnline = true,
     this.lastSyncTime,
     this.doorListDownloadedAt,
@@ -45,6 +49,8 @@ class OfflineCheckInState {
     int? totalTickets,
     int? checkedInCount,
     int? pendingSyncCount,
+    int? totalRedeemable,
+    int? redeemedCount,
     bool? isOnline,
     DateTime? lastSyncTime,
     DateTime? doorListDownloadedAt,
@@ -60,6 +66,8 @@ class OfflineCheckInState {
       totalTickets: totalTickets ?? this.totalTickets,
       checkedInCount: checkedInCount ?? this.checkedInCount,
       pendingSyncCount: pendingSyncCount ?? this.pendingSyncCount,
+      totalRedeemable: totalRedeemable ?? this.totalRedeemable,
+      redeemedCount: redeemedCount ?? this.redeemedCount,
       isOnline: isOnline ?? this.isOnline,
       lastSyncTime: lastSyncTime ?? this.lastSyncTime,
       doorListDownloadedAt: doorListDownloadedAt ?? this.doorListDownloadedAt,
@@ -270,6 +278,44 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
       ticket: entry ?? result.ticket,
       isAdmittable: admittable,
     );
+
+    // Record discrepancy if admitted offline but a later tier failed
+    if (admittable && entry != null) {
+      final userId =
+          SupabaseService.instance.currentUser?.id ?? 'unknown';
+
+      if (blockchainTier.status == TierStatus.failed) {
+        _offlineService.recordVerificationFlag(
+          ticketId: entry.ticketId,
+          eventId: eventId,
+          flagType: 'blockchain_failed',
+          tier: 'blockchain',
+          message: blockchainTier.message ?? 'Blockchain verification failed',
+          usherId: userId,
+        );
+        AppLogger.warning(
+          'Verification flag: ticket ${entry.ticketNumber} admitted '
+          'but blockchain failed — ${blockchainTier.message}',
+          tag: _tag,
+        );
+      }
+
+      if (databaseTier.status == TierStatus.failed) {
+        _offlineService.recordVerificationFlag(
+          ticketId: entry.ticketId,
+          eventId: eventId,
+          flagType: 'database_mismatch',
+          tier: 'database',
+          message: databaseTier.message ?? 'Database verification failed',
+          usherId: userId,
+        );
+        AppLogger.warning(
+          'Verification flag: ticket ${entry.ticketNumber} admitted '
+          'but database failed — ${databaseTier.message}',
+          tag: _tag,
+        );
+      }
+    }
 
     state = state.copyWith(
       currentVerification: result,
@@ -500,12 +546,15 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
   /// Refresh stats from the local service.
   Future<void> _refreshStats() async {
     final stats = _offlineService.getLocalStats();
+    final catStats = _offlineService.getStatsByCategory();
     final pendingSync = await _offlineService.getPendingSyncCount();
 
     state = state.copyWith(
       totalTickets: stats.totalTickets,
       checkedInCount: stats.checkedIn,
       pendingSyncCount: pendingSync,
+      totalRedeemable: catStats.totalRedeemable,
+      redeemedCount: catStats.redeemedRedeemable,
     );
   }
 

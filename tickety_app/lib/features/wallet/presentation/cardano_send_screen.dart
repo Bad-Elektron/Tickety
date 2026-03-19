@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/cardano_wallet_provider.dart';
 
 /// Screen for sending ADA to another Cardano address.
@@ -38,19 +39,19 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Transaction'),
+        title: Text(L.tr('wallet_send_confirm_title')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ConfirmRow(label: 'To', value: _truncateAddress(address)),
+            _ConfirmRow(label: L.tr('wallet_send_to'), value: _truncateAddress(address)),
             const SizedBox(height: 8),
-            _ConfirmRow(label: 'Amount', value: '${adaAmount.toStringAsFixed(2)} ADA'),
+            _ConfirmRow(label: L.tr('wallet_send_amount'), value: '${adaAmount.toStringAsFixed(2)} ADA'),
             const SizedBox(height: 8),
-            _ConfirmRow(label: 'Est. Fee', value: '~0.18 ADA'),
+            _ConfirmRow(label: L.tr('wallet_send_est_fee'), value: '~0.18 ADA'),
             const Divider(height: 24),
             _ConfirmRow(
-              label: 'Total',
+              label: L.tr('wallet_send_total'),
               value: '~${(adaAmount + 0.18).toStringAsFixed(2)} ADA',
               isBold: true,
             ),
@@ -59,11 +60,11 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Send'),
+            child: Text(L.tr('wallet_send_button')),
           ),
         ],
       ),
@@ -109,7 +110,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Send ADA'),
+        title: Text(L.tr('wallet_send_title')),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -130,7 +131,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Available',
+                      L.tr('wallet_send_available'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -150,7 +151,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
               TextFormField(
                 controller: _addressController,
                 decoration: InputDecoration(
-                  labelText: 'Recipient Address',
+                  labelText: L.tr('wallet_send_recipient_address'),
                   hintText: 'addr_test1...',
                   border: const OutlineInputBorder(),
                   suffixIcon: Row(
@@ -165,24 +166,24 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                           }
                         },
                         icon: const Icon(Icons.paste, size: 20),
-                        tooltip: 'Paste',
+                        tooltip: L.tr('paste'),
                       ),
                       IconButton(
                         onPressed: _scanQR,
                         icon: const Icon(Icons.qr_code_scanner, size: 20),
-                        tooltip: 'Scan QR',
+                        tooltip: L.tr('wallet_send_scan_qr'),
                       ),
                     ],
                   ),
                 ),
                 validator: (v) {
                   final addr = v?.trim() ?? '';
-                  if (addr.isEmpty) return 'Address is required';
+                  if (addr.isEmpty) return L.tr('wallet_send_address_required');
                   if (!addr.startsWith('addr_test1') &&
                       !addr.startsWith('addr1')) {
-                    return 'Invalid Cardano address';
+                    return L.tr('wallet_send_invalid_address');
                   }
-                  if (addr.length < 50) return 'Address is too short';
+                  if (addr.length < 50) return L.tr('wallet_send_address_too_short');
                   return null;
                 },
                 maxLines: 2,
@@ -193,7 +194,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
               TextFormField(
                 controller: _amountController,
                 decoration: InputDecoration(
-                  labelText: 'Amount (ADA)',
+                  labelText: L.tr('wallet_send_amount_label'),
                   hintText: '0.00',
                   border: const OutlineInputBorder(),
                   suffixText: 'ADA',
@@ -204,7 +205,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                             (balance.availableAda - 0.2).toStringAsFixed(2);
                       }
                     },
-                    child: const Text('MAX'),
+                    child: Text(L.tr('wallet_send_max')),
                   ),
                 ),
                 keyboardType:
@@ -215,14 +216,14 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                 validator: (v) {
                   final amount = double.tryParse(v?.trim() ?? '');
                   if (amount == null || amount <= 0) {
-                    return 'Enter a valid amount';
+                    return L.tr('wallet_send_enter_valid_amount');
                   }
                   if (amount < 1.0) {
-                    return 'Minimum 1 ADA';
+                    return L.tr('wallet_send_minimum_ada');
                   }
                   final maxSendable = (balance?.availableAda ?? 0) - 0.2;
                   if (amount > maxSendable) {
-                    return 'Insufficient balance (need ~0.2 ADA for fee)';
+                    return L.tr('wallet_send_insufficient_balance');
                   }
                   return null;
                 },
@@ -231,7 +232,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
 
               // Fee estimate
               Text(
-                'Estimated network fee: ~0.17-0.20 ADA',
+                L.tr('wallet_send_estimated_fee'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -271,7 +272,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Send ADA'),
+                    : Text(L.tr('wallet_send_title')),
               ),
             ],
           ),
@@ -286,7 +287,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transaction Sent'),
+        title: Text(L.tr('wallet_send_tx_sent')),
         centerTitle: true,
       ),
       body: Padding(
@@ -305,14 +306,14 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'Transaction Submitted!',
+              L.tr('wallet_send_tx_submitted'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Your transaction has been submitted to the Cardano network.',
+              L.tr('wallet_send_tx_submitted_desc'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -341,8 +342,8 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: txHash));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Transaction hash copied'),
+                        SnackBar(
+                          content: Text(L.tr('wallet_send_tx_hash_copied')),
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
@@ -362,7 +363,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                 );
               },
               icon: const Icon(Icons.open_in_new, size: 18),
-              label: const Text('View on CardanoScan'),
+              label: Text(L.tr('wallet_view_on_cardanoscan')),
             ),
             const Spacer(),
             SizedBox(
@@ -375,7 +376,7 @@ class _CardanoSendScreenState extends ConsumerState<CardanoSendScreen> {
                     borderRadius: BorderRadius.circular(14),
                   ),
                 ),
-                child: const Text('Done'),
+                child: Text(L.tr('done')),
               ),
             ),
           ],
@@ -441,7 +442,7 @@ class _QRScanPageState extends State<_QRScanPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan QR Code')),
+      appBar: AppBar(title: Text(L.tr('wallet_send_scan_qr_code'))),
       body: MobileScanner(
         controller: _controller,
         onDetect: (capture) {

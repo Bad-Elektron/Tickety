@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
 import '../../wallet/data/wallet_repository.dart';
@@ -317,7 +318,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Checkout'),
+        title: Text(L.tr('payments_checkout_title')),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: () {
@@ -402,7 +403,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                 textCapitalization:
                                     TextCapitalization.characters,
                                 decoration: InputDecoration(
-                                  hintText: 'Enter promo code',
+                                  hintText: L.tr('payments_promo_code'),
                                   isDense: true,
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: 16,
@@ -437,7 +438,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                           color: Colors.white,
                                         ),
                                       )
-                                    : const Text('Apply'),
+                                    : Text(L.tr('common_apply')),
                               ),
                             ),
                           ],
@@ -453,7 +454,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               Icons.discount_outlined,
                               size: 18,
                             ),
-                            label: const Text('Have a promo code?'),
+                            label: Text(L.tr('payments_have_promo_code')),
                             style: TextButton.styleFrom(
                               padding: EdgeInsets.zero,
                             ),
@@ -466,7 +467,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     // Payment method selector (only for primary purchases with linked bank)
                     if (bankAvailable) ...[
                       Text(
-                        'Payment Method',
+                        L.tr('payments_payment_method'),
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -484,7 +485,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
                     // Order summary
                     Text(
-                      'Order Summary',
+                      L.tr('payments_order_summary'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -549,7 +550,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Payment Method',
+                                    L.tr('payments_payment_method'),
                                     style:
                                         theme.textTheme.labelSmall?.copyWith(
                                       color: colorScheme.onSurfaceVariant,
@@ -557,7 +558,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    'Card, Apple Pay, or Google Pay',
+                                    L.tr('payments_card_apple_google_pay'),
                                     style:
                                         theme.textTheme.bodyMedium?.copyWith(
                                       fontWeight: FontWeight.w500,
@@ -609,7 +610,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Total',
+                        L.tr('payments_total'),
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -639,7 +640,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                               colorScheme.surfaceContainerHighest,
                         ),
                         child: Text(
-                          'Cannot buy your own ticket',
+                          L.tr('payments_cannot_buy_own_ticket'),
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colorScheme.onSurfaceVariant,
@@ -658,7 +659,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          'This is your listing',
+                          L.tr('payments_this_is_your_listing'),
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -713,8 +714,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         const SizedBox(width: 4),
                         Text(
                           isBankSelected
-                              ? 'ACH bank transfer \u2022 Settles in 4-5 days'
-                              : 'Secured by Stripe',
+                              ? L.tr('ach_bank_transfer_info')
+                              : L.tr('secured_by_stripe'),
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -773,7 +774,7 @@ class _PaymentMethodSelector extends StatelessWidget {
         // Bank option
         _MethodTile(
           icon: Icons.account_balance,
-          title: 'Bank Transfer',
+          title: L.tr('payments_bank_transfer'),
           subtitle: bankName,
           isSelected: selectedMethod == _PaymentMethod.bank,
           onTap: () => onSelect(_PaymentMethod.bank),
@@ -799,8 +800,8 @@ class _PaymentMethodSelector extends StatelessWidget {
         // Card option
         _MethodTile(
           icon: Icons.credit_card,
-          title: 'Card Payment',
-          subtitle: 'Card, Apple Pay, or Google Pay',
+          title: L.tr('payments_card_payment'),
+          subtitle: L.tr('payments_card_apple_google_pay'),
           isSelected: selectedMethod == _PaymentMethod.card,
           onTap: () => onSelect(_PaymentMethod.card),
         ),

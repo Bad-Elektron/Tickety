@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/utils/utils.dart';
 import '../../../shared/widgets/widgets.dart';
@@ -10,7 +11,14 @@ import 'login_screen.dart';
 ///
 /// Uses Riverpod - no more manual addListener/removeListener!
 class SignupScreen extends ConsumerStatefulWidget {
-  const SignupScreen({super.key});
+  final String? initialReferralCode;
+  final String? initialReferralChannel;
+
+  const SignupScreen({
+    super.key,
+    this.initialReferralCode,
+    this.initialReferralChannel,
+  });
 
   @override
   ConsumerState<SignupScreen> createState() => _SignupScreenState();
@@ -25,6 +33,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _referralCodeController = TextEditingController();
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  String? _referralChannel;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialReferralCode != null) {
+      _referralCodeController.text = widget.initialReferralCode!;
+    }
+    _referralChannel = widget.initialReferralChannel;
+  }
 
   @override
   void dispose() {
@@ -48,12 +66,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
           password: _passwordController.text,
           displayName: sanitizedName,
           referralCode: referralCode.isNotEmpty ? referralCode : null,
+          referralChannel: referralCode.isNotEmpty ? _referralChannel : null,
         );
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Account created successfully!'),
+          content: Text(L.tr('auth_signup_success')),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Theme.of(context).colorScheme.primary,
         ),
@@ -78,12 +97,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    ref.watch(localeProvider);
     // Watch auth state - automatically rebuilds when loading state changes
     final authState = ref.watch(authProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sign Up'),
+        title: Text(L.tr('auth_signup_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -103,7 +123,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Create account',
+                  L.tr('auth_signup_welcome'),
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -111,7 +131,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Start discovering amazing events',
+                  L.tr('auth_signup_subtitle'),
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -124,10 +144,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   controller: _nameController,
                   textInputAction: TextInputAction.next,
                   textCapitalization: TextCapitalization.none,
-                  decoration: const InputDecoration(
-                    labelText: 'Username',
-                    prefixIcon: Icon(Icons.person_outlined),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L.tr('auth_signup_username'),
+                    prefixIcon: const Icon(Icons.person_outlined),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: Validators.displayName,
                 ),
@@ -139,10 +159,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L.tr('auth_login_email_label'),
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: Validators.email,
                 ),
@@ -154,7 +174,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   obscureText: _obscurePassword,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
-                    labelText: 'Password',
+                    labelText: L.tr('auth_login_password_label'),
                     prefixIcon: const Icon(Icons.lock_outlined),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -179,7 +199,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _handleSignup(),
                   decoration: InputDecoration(
-                    labelText: 'Confirm password',
+                    labelText: L.tr('auth_signup_confirm_password'),
                     prefixIcon: const Icon(Icons.lock_outlined),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -213,10 +233,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   textCapitalization: TextCapitalization.characters,
                   maxLength: 8,
                   onFieldSubmitted: (_) => _handleSignup(),
-                  decoration: const InputDecoration(
-                    labelText: 'Referral code (optional)',
-                    prefixIcon: Icon(Icons.card_giftcard_outlined),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L.tr('auth_signup_referral'),
+                    prefixIcon: const Icon(Icons.card_giftcard_outlined),
+                    border: const OutlineInputBorder(),
                     counterText: '',
                   ),
                 ),
@@ -234,7 +254,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Create Account'),
+                      : Text(L.tr('auth_signup_button')),
                 ),
                 const SizedBox(height: 24),
 
@@ -243,12 +263,12 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'Already have an account?',
+                      L.tr('auth_signup_have_account'),
                       style: theme.textTheme.bodyMedium,
                     ),
                     TextButton(
                       onPressed: _navigateToLogin,
-                      child: const Text('Log in'),
+                      child: Text(L.tr('auth_login_title')),
                     ),
                   ],
                 ),

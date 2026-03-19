@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
+
 import '../models/tag_weekly_stats.dart';
 
 /// Bar chart showing weekly event counts with an optional price line overlay.
@@ -19,9 +21,9 @@ class WeeklyChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (stats.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 200,
-        child: Center(child: Text('No data available')),
+        child: Center(child: Text(L.tr('No data available'))),
       );
     }
 
@@ -170,9 +172,9 @@ class PriceTrendChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (stats.isEmpty) {
-      return const SizedBox(
+      return SizedBox(
         height: 160,
-        child: Center(child: Text('No data available')),
+        child: Center(child: Text(L.tr('No data available'))),
       );
     }
 

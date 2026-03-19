@@ -208,12 +208,52 @@ class CheckInSyncService {
         _statsChangedController.add(null);
       }
 
+      // Also sync verification flags
+      await _syncVerificationFlags();
+
       return syncedCount;
     } catch (e) {
       AppLogger.error('Sync batch failed: $e', tag: _tag);
       return 0;
     } finally {
       _isSyncing = false;
+    }
+  }
+
+  /// Sync verification discrepancy flags to Supabase.
+  ///
+  /// These are tickets that passed offline check but failed blockchain
+  /// or database verification. Stored in `checkin_flags` table for
+  /// admin review and investigation.
+  Future<void> _syncVerificationFlags() async {
+    try {
+      final flags = await _offlineService.getUnsyncedFlags();
+      if (flags.isEmpty) return;
+
+      final client = SupabaseService.instance.client;
+
+      for (final flag in flags) {
+        try {
+          await client.from('checkin_flags').insert({
+            'ticket_id': flag['ticket_id'],
+            'event_id': flag['event_id'],
+            'flag_type': flag['flag_type'],
+            'tier': flag['tier'],
+            'message': flag['message'],
+            'flagged_by': flag['usher_id'],
+            'flagged_at': flag['timestamp'],
+          });
+          await _offlineService.markFlagSynced(flag['id'] as int);
+        } catch (e) {
+          // Non-critical — will retry next cycle
+          AppLogger.debug(
+            'Failed to sync verification flag: $e',
+            tag: _tag,
+          );
+        }
+      }
+    } catch (e) {
+      AppLogger.debug('Flag sync failed: $e', tag: _tag);
     }
   }
 

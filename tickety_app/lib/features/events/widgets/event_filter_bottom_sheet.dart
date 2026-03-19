@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/event_category.dart';
 import '../models/event_tag.dart';
 import 'city_selector.dart';
@@ -124,7 +125,7 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
             child: Row(
               children: [
                 Text(
-                  'Filters',
+                  L.tr('Filters'),
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -157,7 +158,7 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
                       foregroundColor: colorScheme.error,
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                     ),
-                    child: const Text('Clear all'),
+                    child: Text(L.tr('Clear all')),
                   ),
               ],
             ),
@@ -177,7 +178,7 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
                 children: [
                   // ── Categories ──
                   _SectionHeader(
-                    title: 'Categories',
+                    title: L.tr('Categories'),
                     icon: Icons.grid_view_rounded,
                   ),
                   const SizedBox(height: 12),
@@ -200,7 +201,7 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
 
                   // ── Location ──
                   _SectionHeader(
-                    title: 'Location',
+                    title: L.tr('Location'),
                     icon: Icons.location_on_outlined,
                   ),
                   const SizedBox(height: 12),
@@ -216,12 +217,12 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
 
                   // ── Tags: Category ──
                   _SectionHeader(
-                    title: 'Tags',
+                    title: L.tr('Tags'),
                     icon: Icons.label_outlined,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Category',
+                    L.tr('Category'),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       fontWeight: FontWeight.w600,
@@ -248,7 +249,7 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
 
                   // ── Tags: Vibe ──
                   Text(
-                    'Vibe',
+                    L.tr('Vibe'),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                       fontWeight: FontWeight.w600,
@@ -294,8 +295,8 @@ class _EventFilterBottomSheetState extends State<EventFilterBottomSheet> {
                   ),
                   child: Text(
                     _hasAnyFilter
-                        ? 'Apply Filters ($_activeCount)'
-                        : 'Apply Filters',
+                        ? '${L.tr('Apply Filters')} ($_activeCount)'
+                        : L.tr('Apply Filters'),
                   ),
                 ),
               ),

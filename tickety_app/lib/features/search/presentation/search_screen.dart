@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/utils/utils.dart';
 import '../../events/models/event_model.dart';
 import '../../events/presentation/event_details_screen.dart';
@@ -156,7 +157,7 @@ class _SearchScreenState extends State<SearchScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Recent Searches',
+                  L.tr('recent_searches'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -165,7 +166,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   onPressed: () {
                     setState(() => _recentSearches = []);
                   },
-                  child: const Text('Clear'),
+                  child: Text(L.tr('clear')),
                 ),
               ],
             ),
@@ -187,7 +188,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ],
           // Trending events
           Text(
-            'Trending Events',
+            L.tr('trending_events'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -220,14 +221,14 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'No events found',
+                L.tr('no_events_found'),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                'Try a different search term',
+                L.tr('try_different_search'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -292,7 +293,7 @@ class _SearchBar extends StatelessWidget {
       onSubmitted: onSubmitted,
       textInputAction: TextInputAction.search,
       decoration: InputDecoration(
-        hintText: 'Search events...',
+        hintText: L.tr('search_events'),
         border: InputBorder.none,
         enabledBorder: InputBorder.none,
         focusedBorder: InputBorder.none,
@@ -531,7 +532,7 @@ class _InviteCodeResultCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Private Event Found',
+                          L.tr('private_event_found'),
                           style: theme.textTheme.titleSmall?.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w600,

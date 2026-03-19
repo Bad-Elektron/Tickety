@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/graphics/graphics.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
@@ -13,7 +14,11 @@ import '../../../shared/widgets/limit_reached_banner.dart';
 import '../../../shared/widgets/widgets.dart' show PlacesAutocompleteField;
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../../auth/auth.dart';
+import '../../branding/data/branding_repository.dart';
 import '../../profile/presentation/verification_screen.dart';
 import '../../subscriptions/presentation/subscription_screen.dart';
 import '../../venues/models/venue.dart';
@@ -98,6 +103,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   final _nameController = TextEditingController();
   final _subtitleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _websiteUrlController = TextEditingController();
 
   final _repository = SupabaseEventRepository();
 
@@ -130,6 +136,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   // Similarity detection
   List<Map<String, dynamic>> _similarEvents = [];
   bool _checkingSimilarity = false;
+
+  // Branding state
+  Color _brandingPrimary = const Color(0xFF6366F1);
+  Color _brandingAccent = const Color(0xFF8B5CF6);
+  String? _brandingLogoUrl;
+  bool _brandingLoaded = false;
+  bool _brandingUploading = false;
 
   // Ticket types
   late List<_TicketType> _ticketTypes;
@@ -168,6 +181,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       _nameController.text = event.title;
       _subtitleController.text = event.subtitle;
       _descriptionController.text = event.description ?? '';
+      _websiteUrlController.text = event.websiteUrl ?? '';
       _selectedDate = event.date;
       _selectedTime = TimeOfDay(hour: event.date.hour, minute: event.date.minute);
       _isPublic = !event.isPrivate;
@@ -256,6 +270,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     _nameController.dispose();
     _subtitleController.dispose();
     _descriptionController.dispose();
+    _websiteUrlController.dispose();
     _virtualUrlController.dispose();
     _virtualPasswordController.dispose();
     for (final ticketType in _ticketTypes) {
@@ -314,8 +329,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     // For now, show a message that this feature is coming
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Image upload coming soon! Using generated art for now.'),
+        SnackBar(
+          content: Text(L.tr('create_image_upload_coming_soon')),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -328,18 +343,18 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       final shouldLogin = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Sign In Required'),
-          content: const Text(
-            'You need to sign in to create events. Would you like to sign in now?',
+          title: Text(L.tr('create_sign_in_required')),
+          content: Text(
+            L.tr('create_sign_in_description'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel'),
+              child: Text(L.tr('cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Sign In'),
+              child: Text(L.tr('create_sign_in')),
             ),
           ],
         ),
@@ -362,8 +377,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
 
     if (Validators.sanitize(_nameController.text).isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter an event name'),
+        SnackBar(
+          content: Text(L.tr('create_enter_event_name')),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -392,19 +407,18 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               context: context,
               builder: (context) => AlertDialog(
                 icon: const Icon(Icons.shield_outlined, size: 40),
-                title: const Text('Verification Required'),
-                content: const Text(
-                  'Events with 250+ total ticket capacity require identity verification '
-                  'to protect ticket buyers. Please verify your identity to continue.',
+                title: Text(L.tr('create_verification_required')),
+                content: Text(
+                  L.tr('create_verification_description'),
                 ),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
+                    child: Text(L.tr('cancel')),
                   ),
                   FilledButton(
                     onPressed: () => Navigator.pop(context, true),
-                    child: const Text('Get Verified'),
+                    child: Text(L.tr('create_get_verified')),
                   ),
                 ],
               ),
@@ -521,6 +535,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           eventFormat: _eventFormat,
           virtualEventUrl: virtualUrl,
           virtualEventPassword: virtualPassword,
+          websiteUrl: _websiteUrlController.text.trim().isNotEmpty
+              ? Validators.sanitize(_websiteUrlController.text.trim())
+              : null,
         );
 
         await _repository.updateEvent(updatedEvent);
@@ -622,7 +639,23 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           virtualEventPassword: _virtualPasswordController.text.trim().isNotEmpty
               ? _virtualPasswordController.text.trim()
               : null,
+          websiteUrl: _websiteUrlController.text.trim().isNotEmpty
+              ? Validators.sanitize(_websiteUrlController.text.trim())
+              : null,
         );
+      }
+
+      // Save branding if Pro+ organizer
+      if (TierLimits.canCustomizeBranding(AppState().tier)) {
+        try {
+          await BrandingRepository().saveBranding(
+            primaryColor: '#${_brandingPrimary.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+            accentColor: '#${_brandingAccent.toARGB32().toRadixString(16).substring(2).toUpperCase()}',
+            logoUrl: _brandingLogoUrl,
+          );
+        } catch (_) {
+          // Non-fatal — event was already created
+        }
       }
 
       HapticFeedback.mediumImpact();
@@ -635,10 +668,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 12),
                 Text(isEditing
-                    ? 'Event updated successfully!'
+                    ? L.tr('create_event_updated')
                     : _isRecurring
-                        ? 'Recurring event created!'
-                        : 'Event created successfully!'),
+                        ? L.tr('create_recurring_created')
+                        : L.tr('create_event_created')),
               ],
             ),
             backgroundColor: Colors.green,
@@ -782,7 +815,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 24),
                 child: _StepIndicator(
                   currentStep: _currentStep,
-                  labels: const ['Design', 'Details', 'Tags', 'Tickets'],
+                  labels: [L.tr('create_step_design'), L.tr('create_step_details'), L.tr('create_step_tags'), L.tr('create_step_tickets')],
                 ),
               ),
               Expanded(
@@ -828,10 +861,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                         )
                       : Text(
                           _currentStep < 3
-                              ? 'Continue'
+                              ? L.tr('continue')
                               : isEditing
-                                  ? 'Update Event'
-                                  : 'Create Event',
+                                  ? L.tr('create_update_event')
+                                  : L.tr('create_create_event'),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -888,7 +921,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Private event \u2014 a unique invite code will be generated. Share it so people can find your event.',
+                    L.tr('create_private_event_info'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -907,7 +940,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             fontWeight: FontWeight.bold,
           ),
           decoration: InputDecoration(
-            hintText: 'Event Name',
+            hintText: L.tr('create_event_name_hint'),
             hintStyle: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
               color: colorScheme.onSurface.withValues(alpha: 0.3),
@@ -937,7 +970,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           textAlign: TextAlign.center,
           style: theme.textTheme.titleMedium,
           decoration: InputDecoration(
-            hintText: 'A short tagline (optional)',
+            hintText: L.tr('create_tagline_hint'),
             hintStyle: theme.textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurface.withValues(alpha: 0.3),
             ),
@@ -947,9 +980,313 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           ),
           textCapitalization: TextCapitalization.sentences,
         ),
+        // Inline branding section (Pro+ only)
+        if (TierLimits.canCustomizeBranding(AppState().tier))
+          _buildBrandingSection(theme, colorScheme),
         const SizedBox(height: 32),
       ],
     );
+  }
+
+  Widget _buildBrandingSection(ThemeData theme, ColorScheme colorScheme) {
+    // Load existing branding once
+    if (!_brandingLoaded) {
+      _brandingLoaded = true;
+      final brandingAsync = ref.read(myBrandingProvider);
+      brandingAsync.whenData((branding) {
+        if (branding != null) {
+          _brandingPrimary = branding.primaryColorValue;
+          _brandingAccent = branding.accentColorValue;
+          _brandingLogoUrl = branding.logoUrl;
+          if (mounted) setState(() {});
+        }
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 24),
+
+        // Section header
+        Row(
+          children: [
+            Icon(Icons.palette_outlined, size: 18, color: _brandingPrimary),
+            const SizedBox(width: 8),
+            Text(
+              L.tr('create_event_branding'),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: _brandingPrimary,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 1.2,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+
+        // Color pickers row
+        Row(
+          children: [
+            // Primary color picker
+            Expanded(
+              child: _BrandingColorTile(
+                label: L.tr('create_branding_primary'),
+                color: _brandingPrimary,
+                onTap: () => _showColorPicker(
+                  current: _brandingPrimary,
+                  onPicked: (c) => setState(() => _brandingPrimary = c),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Accent color picker
+            Expanded(
+              child: _BrandingColorTile(
+                label: L.tr('create_branding_accent'),
+                color: _brandingAccent,
+                onTap: () => _showColorPicker(
+                  current: _brandingAccent,
+                  onPicked: (c) => setState(() => _brandingAccent = c),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        // Preview — shows how branding colors dress up event page elements
+        Text(
+          L.tr('create_branding_preview'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            color: colorScheme.surfaceContainerLowest,
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Branded chips row
+              Row(
+                children: [
+                  if (_brandingLogoUrl != null) ...[
+                    Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _brandingPrimary, width: 1.5),
+                        image: DecorationImage(
+                          image: NetworkImage(_brandingLogoUrl!),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _brandingPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      L.tr('create_preview_invite_only'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: _brandingPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _brandingAccent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      L.tr('create_preview_live'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: _brandingAccent,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Branded icon row
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 14, color: _brandingPrimary),
+                  const SizedBox(width: 6),
+                  Text('Sat, Jul 12 at 7:00 PM', style: theme.textTheme.bodySmall),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.location_on_outlined, size: 14, color: _brandingPrimary),
+                  const SizedBox(width: 6),
+                  Text('Venue name, City', style: theme.textTheme.bodySmall),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Branded button
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _brandingPrimary,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {},
+                  child: Text(
+                    L.tr('create_preview_buy_tickets'),
+                    style: TextStyle(
+                      color: _brandingPrimary.computeLuminance() > 0.5 ? Colors.black : Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _brandingAccent,
+                    side: BorderSide(color: _brandingAccent),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  onPressed: () {},
+                  child: Text(L.tr('create_preview_join_waitlist')),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // Logo upload row
+        Row(
+          children: [
+            if (_brandingLogoUrl != null) ...[
+              Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundImage: NetworkImage(_brandingLogoUrl!),
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                  ),
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _brandingLogoUrl = null),
+                      child: CircleAvatar(
+                        radius: 10,
+                        backgroundColor: colorScheme.error,
+                        child: Icon(Icons.close, size: 12, color: colorScheme.onError),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _brandingPrimary,
+                  side: BorderSide(color: _brandingPrimary.withValues(alpha: 0.5)),
+                ),
+                onPressed: _brandingUploading ? null : _pickBrandingLogo,
+                icon: _brandingUploading
+                    ? SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: _brandingPrimary),
+                      )
+                    : const Icon(Icons.upload, size: 16),
+                label: Text(_brandingLogoUrl != null ? L.tr('create_change_logo') : L.tr('create_upload_logo')),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _showColorPicker({required Color current, required ValueChanged<Color> onPicked}) {
+    var picked = current;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(L.tr('create_pick_color')),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: current,
+            onColorChanged: (c) => picked = c,
+            enableAlpha: false,
+            labelTypes: const [],
+            pickerAreaHeightPercent: 0.7,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(L.tr('cancel')),
+          ),
+          FilledButton(
+            onPressed: () {
+              onPicked(picked);
+              Navigator.pop(context);
+            },
+            child: Text(L.tr('done')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickBrandingLogo() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (image == null) return;
+
+    setState(() => _brandingUploading = true);
+    try {
+      final bytes = await image.readAsBytes();
+      final ext = image.name.split('.').last;
+      final repo = BrandingRepository();
+      final url = await repo.uploadLogo(bytes, 'logo.$ext');
+      setState(() => _brandingLogoUrl = url);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Upload failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _brandingUploading = false);
+    }
   }
 
   Widget _buildDetailsStep(ThemeData theme, ColorScheme colorScheme) {
@@ -978,7 +1315,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   Icon(Icons.public_outlined, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Event Format',
+                    L.tr('create_event_format'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -989,21 +1326,21 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               SizedBox(
                 width: double.infinity,
                 child: SegmentedButton<String>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: 'in_person',
-                      label: Text('In-Person'),
-                      icon: Icon(Icons.location_on_outlined, size: 18),
+                      label: Text(L.tr('create_format_in_person')),
+                      icon: const Icon(Icons.location_on_outlined, size: 18),
                     ),
                     ButtonSegment(
                       value: 'virtual',
-                      label: Text('Virtual'),
-                      icon: Icon(Icons.videocam_outlined, size: 18),
+                      label: Text(L.tr('create_format_virtual')),
+                      icon: const Icon(Icons.videocam_outlined, size: 18),
                     ),
                     ButtonSegment(
                       value: 'hybrid',
-                      label: Text('Hybrid'),
-                      icon: Icon(Icons.groups_outlined, size: 18),
+                      label: Text(L.tr('create_format_hybrid')),
+                      icon: const Icon(Icons.groups_outlined, size: 18),
                     ),
                   ],
                   selected: {_eventFormat},
@@ -1034,7 +1371,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                     Icon(Icons.location_on_outlined, size: 20, color: colorScheme.primary),
                     const SizedBox(width: 8),
                     Text(
-                      'Location',
+                      L.tr('create_location'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -1088,7 +1425,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                     Icon(Icons.videocam_outlined, size: 20, color: Colors.cyan),
                     const SizedBox(width: 8),
                     Text(
-                      'Meeting Details',
+                      L.tr('create_meeting_details'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -1097,7 +1434,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Hidden until 1 hour before the event starts.',
+                  L.tr('create_meeting_hidden_hint'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -1106,7 +1443,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 TextField(
                   controller: _virtualUrlController,
                   decoration: InputDecoration(
-                    labelText: 'Meeting URL',
+                    labelText: L.tr('create_meeting_url'),
                     hintText: 'https://zoom.us/j/...',
                     prefixIcon: const Icon(Icons.link, size: 20),
                     border: OutlineInputBorder(
@@ -1119,8 +1456,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 TextField(
                   controller: _virtualPasswordController,
                   decoration: InputDecoration(
-                    labelText: 'Meeting Password (optional)',
-                    hintText: 'Enter password if required',
+                    labelText: L.tr('create_meeting_password'),
+                    hintText: L.tr('create_meeting_password_hint'),
                     prefixIcon: const Icon(Icons.lock_outline, size: 20),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -1148,7 +1485,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   Icon(Icons.notes_outlined, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Description',
+                    L.tr('create_description'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -1160,7 +1497,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 controller: _descriptionController,
                 maxLines: 3,
                 decoration: InputDecoration(
-                  hintText: 'Describe your event (optional)',
+                  hintText: L.tr('create_description_hint'),
                   hintStyle: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurface.withValues(alpha: 0.3),
                   ),
@@ -1171,6 +1508,68 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   contentPadding: EdgeInsets.zero,
                 ),
                 textCapitalization: TextCapitalization.sentences,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Website URL (Pro+ gated)
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.language, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    L.tr('Website'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (!TierLimits.canCustomizeBranding(AppState().tier)) ...[
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Pro',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _websiteUrlController,
+                enabled: TierLimits.canCustomizeBranding(AppState().tier),
+                decoration: InputDecoration(
+                  hintText: 'https://your-event-website.com',
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                keyboardType: TextInputType.url,
               ),
             ],
           ),
@@ -1191,7 +1590,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   Icon(Icons.event_outlined, size: 20, color: colorScheme.primary),
                   const SizedBox(width: 8),
                   Text(
-                    'Date & Time',
+                    L.tr('create_date_time'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -1257,7 +1656,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Venue Layout',
+                  L.tr('create_venue_layout'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -1297,7 +1696,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                     ),
                   );
                 },
-                child: const Text('Edit'),
+                child: Text(L.tr('edit')),
               ),
             )
           else
@@ -1314,7 +1713,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 );
               },
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Select Venue'),
+              label: Text(L.tr('create_select_venue')),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 44),
               ),
@@ -1341,7 +1740,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Repeat',
+                  L.tr('create_repeat'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -1359,11 +1758,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             const SizedBox(height: 12),
             // Frequency selector
             SegmentedButton<RecurrenceType>(
-              segments: const [
-                ButtonSegment(value: RecurrenceType.daily, label: Text('Daily')),
-                ButtonSegment(value: RecurrenceType.weekly, label: Text('Weekly')),
-                ButtonSegment(value: RecurrenceType.biweekly, label: Text('2 Wks')),
-                ButtonSegment(value: RecurrenceType.monthly, label: Text('Monthly')),
+              segments: [
+                ButtonSegment(value: RecurrenceType.daily, label: Text(L.tr('create_daily'))),
+                ButtonSegment(value: RecurrenceType.weekly, label: Text(L.tr('create_weekly'))),
+                ButtonSegment(value: RecurrenceType.biweekly, label: Text(L.tr('create_biweekly'))),
+                ButtonSegment(value: RecurrenceType.monthly, label: Text(L.tr('create_monthly'))),
               ],
               selected: {_recurrenceType},
               onSelectionChanged: (set) =>
@@ -1403,14 +1802,14 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    'Ends',
+                    L.tr('create_ends'),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
                 ChoiceChip(
-                  label: const Text('Never'),
+                  label: Text(L.tr('create_never')),
                   selected: _seriesEndDate == null,
                   onSelected: (_) => setState(() => _seriesEndDate = null),
                 ),
@@ -1419,7 +1818,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   label: Text(
                     _seriesEndDate != null
                         ? _formatDate(_seriesEndDate!)
-                        : 'Pick date',
+                        : L.tr('create_pick_date'),
                   ),
                   selected: _seriesEndDate != null,
                   onSelected: (_) => _pickSeriesEndDate(),
@@ -1493,7 +1892,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                     const Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
                     const SizedBox(width: 8),
                     Text(
-                      'Similar events found',
+                      L.tr('create_similar_events_found'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: Colors.amber,
@@ -1503,7 +1902,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Events with similar names already exist. Please make sure you\'re not creating a duplicate.',
+                  L.tr('create_similar_events_description'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -1546,10 +1945,10 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     if (!limitCheck.allowed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(limitCheck.message ?? 'Ticket type limit reached'),
+          content: Text(limitCheck.message ?? L.tr('create_ticket_type_limit')),
           behavior: SnackBarBehavior.floating,
           action: SnackBarAction(
-            label: 'Upgrade',
+            label: L.tr('upgrade'),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => const SubscriptionScreen(),
@@ -1596,7 +1995,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Entry Tickets',
+              L.tr('create_entry_tickets'),
               style: theme.textTheme.titleSmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: colorScheme.onSurfaceVariant,
@@ -1633,7 +2032,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
-                  'Redeemable Items',
+                  L.tr('create_redeemable_items'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: colorScheme.onSurfaceVariant,
@@ -1699,7 +2098,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             });
           },
           icon: const Icon(Icons.card_giftcard, size: 20),
-          label: const Text('Add Redeemable Item'),
+          label: Text(L.tr('create_add_redeemable_item')),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
             shape: RoundedRectangleBorder(
@@ -1709,7 +2108,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         ),
         const SizedBox(height: 16),
         Text(
-          'Price 0 = free entry. Redeemable items are single-use (merch, drinks, perks).',
+          L.tr('create_ticket_pricing_hint'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -1771,8 +2170,8 @@ class _TicketTypeRow extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: ticketType.nameController,
-                  decoration: const InputDecoration(
-                    hintText: 'Ticket name',
+                  decoration: InputDecoration(
+                    hintText: L.tr('create_ticket_name_hint'),
                     border: InputBorder.none,
                     isDense: true,
                     contentPadding: EdgeInsets.symmetric(vertical: 8),
@@ -1804,7 +2203,7 @@ class _TicketTypeRow extends StatelessWidget {
           TextField(
             controller: ticketType.descriptionController,
             decoration: InputDecoration(
-              hintText: 'Description (optional)',
+              hintText: L.tr('create_ticket_description_hint'),
               hintStyle: theme.textTheme.bodySmall?.copyWith(
                 color: colorScheme.onSurface.withValues(alpha: 0.4),
               ),
@@ -1839,7 +2238,7 @@ class _TicketTypeRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    ticketType.isRedeemable ? 'Redeemable Item' : 'Entry Ticket',
+                    ticketType.isRedeemable ? L.tr('create_redeemable_item') : L.tr('create_entry_ticket'),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: ticketType.isRedeemable ? Colors.amber.shade800 : colorScheme.primary,
                       fontWeight: FontWeight.w600,
@@ -1905,7 +2304,7 @@ class _TicketTypeRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Price',
+                      L.tr('create_price'),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
@@ -1940,7 +2339,7 @@ class _TicketTypeRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Quantity',
+                      L.tr('create_quantity'),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
@@ -1985,7 +2384,7 @@ class _TicketTypeRow extends StatelessWidget {
                   child: DropdownButtonFormField<String?>(
                     value: ticketType.venueSectionId,
                     decoration: InputDecoration(
-                      labelText: 'Venue Section',
+                      labelText: L.tr('create_venue_section'),
                       labelStyle: theme.textTheme.labelSmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
@@ -1999,9 +2398,9 @@ class _TicketTypeRow extends StatelessWidget {
                       fontWeight: FontWeight.w500,
                     ),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
-                        child: Text('No section (general)'),
+                        child: Text(L.tr('create_no_section')),
                       ),
                       ...venueSections.map((section) {
                         return DropdownMenuItem<String?>(
@@ -2159,7 +2558,7 @@ class _VisibilityToggle extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              isPublic ? 'Public' : 'Private',
+              isPublic ? L.tr('create_public') : L.tr('create_private'),
               style: theme.textTheme.labelMedium?.copyWith(
                 color: isPublic
                     ? colorScheme.primary
@@ -2209,7 +2608,7 @@ class _HideLocationToggle extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            value ? 'Secret location' : 'Public location',
+            value ? L.tr('create_secret_location') : L.tr('create_public_location'),
             style: theme.textTheme.labelSmall?.copyWith(
               color: value ? colorScheme.primary : colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
@@ -2246,7 +2645,7 @@ class _SecretLocationHint extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          'Location revealed after purchase',
+          L.tr('create_location_revealed'),
           style: theme.textTheme.labelSmall?.copyWith(
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
           ),
@@ -2375,7 +2774,7 @@ class _TicketSelectorState extends State<_TicketSelector> {
     return Column(
       children: [
         Text(
-          'How many tickets?',
+          L.tr('create_how_many_tickets'),
           style: theme.textTheme.titleMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -2747,7 +3146,7 @@ class _NoisePreviewCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 6),
                             Text(
-                              'Upload',
+                              L.tr('create_upload'),
                               style: theme.textTheme.labelMedium?.copyWith(
                                 color: Colors.white.withValues(alpha: 0.9),
                                 fontWeight: FontWeight.w500,
@@ -2766,7 +3165,7 @@ class _NoisePreviewCard extends StatelessWidget {
         // Hint text below the cover
         const SizedBox(height: 8),
         Text(
-          'Hold to generate new art',
+          L.tr('create_hold_to_generate'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
           ),
@@ -2834,6 +3233,57 @@ class _EventNoisePainter extends CustomPainter {
       oldDelegate.timeOffset != timeOffset ||
       oldDelegate.colors != colors ||
       oldDelegate.seed != seed;
+}
+
+/// Tappable color swatch tile for the branding section.
+class _BrandingColorTile extends StatelessWidget {
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _BrandingColorTile({
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final contrastColor = color.computeLuminance() > 0.5 ? Colors.black : Colors.white;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 56,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.colorize, size: 16, color: contrastColor.withValues(alpha: 0.7)),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: contrastColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Tag selection step with browsable category and vibe tag grids.

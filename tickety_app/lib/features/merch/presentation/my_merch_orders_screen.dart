@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/merch_provider.dart';
 import '../models/models.dart';
 
@@ -16,7 +17,7 @@ class MyMerchOrdersScreen extends ConsumerWidget {
     final ordersAsync = ref.watch(myMerchOrdersProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Orders')),
+      appBar: AppBar(title: Text(L.tr('my_orders'))),
       body: ordersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
@@ -33,7 +34,7 @@ class MyMerchOrdersScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No orders yet',
+                    L.tr('no_orders_yet'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -175,7 +176,7 @@ class _OrderCard extends StatelessWidget {
                 label: Text(
                   order.carrier != null
                       ? 'Track via ${order.carrier}'
-                      : 'Track Shipment',
+                      : L.tr('track_shipment'),
                 ),
                 style: TextButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 8),

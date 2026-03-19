@@ -65,6 +65,11 @@ abstract class EventMapper {
       virtualEventUrl: json['virtual_event_url'] as String?,
       virtualEventPassword: json['virtual_event_password'] as String?,
       virtualLocked: json['virtual_locked'] as bool? ?? false,
+      featuredAt: json['featured_at'] != null
+          ? DateTime.tryParse(json['featured_at'] as String)
+          : null,
+      organizerId: json['organizer_id'] as String?,
+      websiteUrl: json['website_url'] as String?,
     );
   }
 
@@ -101,6 +106,7 @@ abstract class EventMapper {
       if (event.hasVirtualComponent) 'event_format': event.eventFormat,
       if (event.hasVirtualComponent && event.virtualEventUrl != null) 'virtual_event_url': event.virtualEventUrl,
       if (event.hasVirtualComponent && event.virtualEventPassword != null) 'virtual_event_password': event.virtualEventPassword,
+      if (event.websiteUrl != null) 'website_url': event.websiteUrl,
     };
   }
 

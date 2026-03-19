@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/merch_provider.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/state/app_state.dart';
@@ -39,7 +40,7 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
 
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Merch Store'),
+            title: Text(L.tr('merch_store')),
             actions: [
               configAsync.when(
                 data: (config) {
@@ -68,7 +69,7 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
                 return FloatingActionButton.extended(
                   onPressed: () => _showCreateProductDialog(context),
                   icon: const Icon(Icons.add),
-                  label: const Text('Add Product'),
+                  label: Text(L.tr('add_product')),
                 );
               }
               return null;
@@ -143,14 +144,14 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
             ),
             const SizedBox(height: 16),
             Text(
-              'No products yet',
+              L.tr('no_products_yet'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Connect Shopify or create Stripe products\nto start selling merchandise.',
+              L.tr('merch_empty_state_description'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -170,13 +171,13 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
       ref.invalidate(organizerProductsProvider(_organizerId));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Products synced from Shopify')),
+          SnackBar(content: Text(L.tr('products_synced_from_shopify'))),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sync failed: $e')),
+          SnackBar(content: Text(L.tr('sync_failed'))),
         );
       }
     } finally {
@@ -206,7 +207,7 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('New Product'),
+        title: Text(L.tr('new_product')),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -243,7 +244,7 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () async {
@@ -268,7 +269,7 @@ class _OrganizerProductsScreenState extends ConsumerState<OrganizerProductsScree
               ref.invalidate(organizerProductsProvider(_organizerId));
               nav.pop();
             },
-            child: const Text('Create'),
+            child: Text(L.tr('create')),
           ),
         ],
       ),
@@ -299,13 +300,13 @@ class _ConfigBanner extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Set up your merch store to start selling',
+                L.tr('set_up_merch_store'),
                 style: theme.textTheme.bodyMedium,
               ),
             ),
             TextButton(
               onPressed: onSetup,
-              child: const Text('Set Up'),
+              child: Text(L.tr('set_up')),
             ),
           ],
         ),
@@ -346,7 +347,7 @@ class _ConfigBanner extends StatelessWidget {
           const Spacer(),
           TextButton(
             onPressed: onSetup,
-            child: const Text('Configure'),
+            child: Text(L.tr('configure')),
           ),
         ],
       ),
@@ -439,7 +440,7 @@ class _ProductManagementCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    'Inactive',
+                    L.tr('inactive'),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: colorScheme.error,
                     ),
@@ -504,7 +505,7 @@ class _MerchSetupSheetState extends ConsumerState<_MerchSetupSheet> {
           ),
           const SizedBox(height: 20),
           Text(
-            'Set Up Merch Store',
+            L.tr('set_up_merch_store'),
             style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
@@ -563,7 +564,7 @@ class _MerchSetupSheetState extends ConsumerState<_MerchSetupSheet> {
                     width: 20, height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                   )
-                : const Text('Save Configuration'),
+                : Text(L.tr('save_configuration')),
           ),
           const SizedBox(height: 8),
         ],
@@ -591,7 +592,7 @@ class _MerchSetupSheetState extends ConsumerState<_MerchSetupSheet> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to save: $e')),
+          SnackBar(content: Text(L.tr('save_failed'))),
         );
       }
     } finally {

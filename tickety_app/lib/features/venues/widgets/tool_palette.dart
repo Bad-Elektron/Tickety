@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/venue_provider.dart';
 
 /// Data carried during a drag from the tool palette.
@@ -54,16 +55,16 @@ class ToolPalette extends StatelessWidget {
     this.vertical = true,
   });
 
-  static const _tools = [
-    (VenueBuilderTool.select, Icons.near_me_outlined, 'Select'),
-    (VenueBuilderTool.seatedSection, Icons.event_seat_outlined, 'Seated'),
-    (VenueBuilderTool.standingArea, Icons.people_outline, 'Standing'),
-    (VenueBuilderTool.tableSection, Icons.table_restaurant_outlined, 'Tables'),
-    (VenueBuilderTool.stage, Icons.music_note_outlined, 'Stage'),
-    (VenueBuilderTool.bar, Icons.local_bar_outlined, 'Bar'),
-    (VenueBuilderTool.entrance, Icons.door_front_door_outlined, 'Entry'),
-    (VenueBuilderTool.restroom, Icons.wc_outlined, 'WC'),
-    (VenueBuilderTool.label, Icons.text_fields, 'Label'),
+  static final _tools = [
+    (VenueBuilderTool.select, Icons.near_me_outlined, L.tr('Select')),
+    (VenueBuilderTool.seatedSection, Icons.event_seat_outlined, L.tr('Seated')),
+    (VenueBuilderTool.standingArea, Icons.people_outline, L.tr('Standing')),
+    (VenueBuilderTool.tableSection, Icons.table_restaurant_outlined, L.tr('Tables')),
+    (VenueBuilderTool.stage, Icons.music_note_outlined, L.tr('Stage')),
+    (VenueBuilderTool.bar, Icons.local_bar_outlined, L.tr('Bar')),
+    (VenueBuilderTool.entrance, Icons.door_front_door_outlined, L.tr('Entry')),
+    (VenueBuilderTool.restroom, Icons.wc_outlined, L.tr('WC')),
+    (VenueBuilderTool.label, Icons.text_fields, L.tr('Label')),
   ];
 
   @override
@@ -128,7 +129,7 @@ class ToolPalette extends StatelessWidget {
         );
       } else {
         toolWidget = Tooltip(
-          message: '$label (drag onto canvas)',
+          message: '$label (${L.tr('drag onto canvas')})',
           child: Draggable<ToolDragData>(
             data: dragData,
             feedback: _DragFeedback(data: dragData),

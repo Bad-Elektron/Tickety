@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/wallet_pass_provider.dart';
 import '../../../core/services/supabase_service.dart';
 
@@ -40,6 +41,7 @@ class _TicketScreenState extends State<TicketScreen> {
   bool _nfcBroadcasting = false;
   final NfcService _nfcService = NfcService.instance;
   Timer? _mintPollTimer;
+  int _mintPollCount = 0;
   late Ticket _ticket;
 
   // Helper getters to extract event data
@@ -87,7 +89,7 @@ class _TicketScreenState extends State<TicketScreen> {
   void _navigateToEvent() {
     final event = _eventModel;
     if (event == null) {
-      _showMessage('Event details not available');
+      _showMessage(L.tr('event_details_not_available'));
       return;
     }
     Navigator.of(context).push(
@@ -114,9 +116,36 @@ class _TicketScreenState extends State<TicketScreen> {
     super.dispose();
   }
 
+  Future<void> _retryMint() async {
+    // Re-trigger the mint by calling the edge function directly
+    try {
+      _showMessage('Retrying NFT mint...');
+      await SupabaseService.instance.client.functions.invoke(
+        'mint-ticket-nft',
+        body: {
+          'ticket_id': _ticket.id,
+          'event_id': _ticket.eventId,
+        },
+      );
+      // Restart polling to check for completion
+      _startMintPollingIfNeeded();
+    } catch (e) {
+      _showMessage('Mint retry failed: $e');
+    }
+  }
+
   void _startMintPollingIfNeeded() {
     if (!_ticket.isAwaitingMint) return;
+    _mintPollCount = 0;
     _mintPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      _mintPollCount++;
+      // Stop polling after 2 minutes (24 polls × 5s)
+      if (_mintPollCount > 24) {
+        _mintPollTimer?.cancel();
+        _mintPollTimer = null;
+        if (mounted) setState(() {});
+        return;
+      }
       try {
         final data = await SupabaseService.instance.client
             .from('tickets')
@@ -164,9 +193,9 @@ class _TicketScreenState extends State<TicketScreen> {
   Future<void> _toggleNfcBroadcast() async {
     if (!_hceAvailable) {
       if (Platform.isIOS) {
-        _showMessage('NFC broadcasting is not available on iOS. Please use QR code.');
+        _showMessage(L.tr('nfc_not_available_ios'));
       } else {
-        _showMessage('NFC is not available on this device. Please use QR code.');
+        _showMessage(L.tr('nfc_not_available_device'));
       }
       return;
     }
@@ -189,9 +218,9 @@ class _TicketScreenState extends State<TicketScreen> {
         if (success) {
           setState(() => _nfcBroadcasting = true);
           HapticFeedback.mediumImpact();
-          _showMessage('NFC ready. Hold phone near usher device.');
+          _showMessage(L.tr('nfc_ready_hold_phone'));
         } else {
-          _showMessage('Failed to start NFC. Please use QR code.');
+          _showMessage(L.tr('failed_to_start_nfc'));
         }
       }
     }
@@ -283,8 +312,8 @@ class _TicketScreenState extends State<TicketScreen> {
     } else {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open maps'),
+          SnackBar(
+            content: Text(L.tr('could_not_open_maps')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -296,22 +325,21 @@ class _TicketScreenState extends State<TicketScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sell This Ticket?'),
-        content: const Text(
-          'By confirming, your ticket will be listed on the marketplace. '
-          'Other users will be able to purchase it. You can cancel the listing at any time.',
+        title: Text(L.tr('sell_this_ticket')),
+        content: Text(
+          L.tr('sell_ticket_confirmation'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _navigateToSellScreen();
             },
-            child: const Text('Continue'),
+            child: Text(L.tr('continue')),
           ),
         ],
       ),
@@ -437,7 +465,7 @@ class _TicketScreenState extends State<TicketScreen> {
                             ),
                           const SizedBox(height: 8),
                           Text(
-                            _ticket.isUsed ? 'Redeemed' : 'Show at event to redeem',
+                            _ticket.isUsed ? L.tr('redeemed') : L.tr('show_at_event_to_redeem'),
                             style: theme.textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w600,
                               color: _ticket.isUsed
@@ -459,30 +487,40 @@ class _TicketScreenState extends State<TicketScreen> {
                     const SizedBox(height: 12),
                   ],
 
-                  // Ticket number
-                  _InfoCard(
-                    icon: Icons.confirmation_number_outlined,
-                    label: 'Ticket Number',
-                    value: _ticket.ticketNumber,
-                    trailing: _StatusBadge(ticket: _ticket),
+                  // Ticket number (tap to copy)
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: _ticket.ticketNumber));
+                      _showMessage(L.tr('ticket_number_copied'));
+                    },
+                    child: _InfoCard(
+                      icon: Icons.confirmation_number_outlined,
+                      label: L.tr('ticket_number'),
+                      value: _ticket.ticketNumber,
+                      trailing: Icon(
+                        Icons.copy,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 12),
 
                   // Date and time
                   _InfoCard(
                     icon: Icons.calendar_today_outlined,
-                    label: 'Date',
+                    label: L.tr('date'),
                     value: _eventDate != null
                         ? _formatDate(_eventDate!)
-                        : 'To be announced',
+                        : L.tr('to_be_announced'),
                   ),
                   const SizedBox(height: 12),
 
                   // Location with navigation
                   _InfoCard(
                     icon: Icons.location_on_outlined,
-                    label: 'Location',
-                    value: _venue ?? 'TBA',
+                    label: L.tr('location'),
+                    value: _venue ?? L.tr('tba'),
                     subtitle: _city != null
                         ? '$_city${_country != null ? ", $_country" : ""}'
                         : null,
@@ -493,7 +531,7 @@ class _TicketScreenState extends State<TicketScreen> {
                         foregroundColor: colorScheme.primary,
                       ),
                       icon: const Icon(Icons.navigation_rounded, size: 20),
-                      tooltip: 'Get directions',
+                      tooltip: L.tr('get_directions'),
                     ),
                   ),
                   // Seat assignment
@@ -501,7 +539,7 @@ class _TicketScreenState extends State<TicketScreen> {
                     const SizedBox(height: 12),
                     _InfoCard(
                       icon: Icons.event_seat,
-                      label: 'Seat Assignment',
+                      label: L.tr('seat_assignment'),
                       value: _ticket.seatLabel!,
                     ),
                   ],
@@ -510,11 +548,15 @@ class _TicketScreenState extends State<TicketScreen> {
                   // Wallet Status Card
                   _WalletStatusCard(
                     ticket: _ticket,
+                    isPolling: _mintPollTimer != null,
                     onSellPressed: _ticket.canBeResold
                         ? _showSellConfirmation
                         : null,
                     onManagePressed: _ticket.isListedForSale
                         ? _navigateToSellScreen
+                        : null,
+                    onRetryMint: _ticket.isAwaitingMint && _mintPollTimer == null
+                        ? _retryMint
                         : null,
                   ),
 
@@ -547,32 +589,32 @@ class _TicketScreenState extends State<TicketScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Purchase Details',
+                          L.tr('purchase_details'),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 12),
                         _DetailRow(
-                          label: 'Price Paid',
+                          label: L.tr('price_paid'),
                           value: _ticket.formattedPrice,
                         ),
                         const SizedBox(height: 8),
                         _DetailRow(
-                          label: 'Purchased',
+                          label: L.tr('purchased'),
                           value: _formatDate(_ticket.soldAt),
                         ),
                         if (_ticket.ownerName != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
-                            label: 'Holder',
+                            label: L.tr('holder'),
                             value: _ticket.ownerName!,
                           ),
                         ],
                         if (_ticket.ownerEmail != null) ...[
                           const SizedBox(height: 8),
                           _DetailRow(
-                            label: 'Email',
+                            label: L.tr('email'),
                             value: _ticket.ownerEmail!,
                           ),
                         ],
@@ -612,7 +654,7 @@ class _TicketScreenState extends State<TicketScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Checked In',
+                                  L.tr('checked_in'),
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w600,
                                     color: Colors.green.shade800,
@@ -642,7 +684,7 @@ class _TicketScreenState extends State<TicketScreen> {
                         Navigator.of(context).popUntil((route) => route.isFirst);
                       },
                       icon: const Icon(Icons.explore_outlined),
-                      label: const Text('Discover More Events'),
+                      label: Text(L.tr('discover_more_events')),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -731,7 +773,7 @@ class _NfcCheckInCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isActive ? 'Ready to Tap' : 'Tap to Check In',
+                  isActive ? L.tr('ready_to_tap') : L.tr('tap_to_check_in'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                     color: isActive ? Colors.white : colorScheme.onSurface,
@@ -740,8 +782,8 @@ class _NfcCheckInCard extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   isActive
-                      ? 'Hold phone near usher device'
-                      : 'Enable NFC for instant check-in',
+                      ? L.tr('hold_phone_near_usher')
+                      : L.tr('enable_nfc_for_checkin'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: isActive
                         ? Colors.white.withValues(alpha: 0.9)
@@ -890,22 +932,22 @@ class _StatusBadge extends StatelessWidget {
       case TicketStatus.valid:
         backgroundColor = Colors.green.withValues(alpha: 0.1);
         textColor = Colors.green;
-        label = 'Valid';
+        label = L.tr('valid');
         icon = Icons.check_circle;
       case TicketStatus.used:
         backgroundColor = Colors.blue.withValues(alpha: 0.1);
         textColor = Colors.blue;
-        label = 'Used';
+        label = L.tr('used');
         icon = Icons.verified;
       case TicketStatus.cancelled:
         backgroundColor = Colors.red.withValues(alpha: 0.1);
         textColor = Colors.red;
-        label = 'Cancelled';
+        label = L.tr('cancelled');
         icon = Icons.cancel;
       case TicketStatus.refunded:
         backgroundColor = Colors.orange.withValues(alpha: 0.1);
         textColor = Colors.orange;
-        label = 'Refunded';
+        label = L.tr('refunded');
         icon = Icons.undo;
     }
 
@@ -1037,7 +1079,7 @@ class _TicketHeader extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Tap to present',
+                      L.tr('tap_to_present'),
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -1077,7 +1119,7 @@ class _TicketHeader extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        'NFC Ready',
+                        L.tr('nfc_ready'),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -1241,7 +1283,7 @@ class _QrCodeOverlayState extends State<_QrCodeOverlay> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'Show QR code to usher',
+                        L.tr('show_qr_to_usher'),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: Colors.white.withValues(alpha: 0.9),
                         ),
@@ -1263,7 +1305,7 @@ class _QrCodeOverlayState extends State<_QrCodeOverlay> {
                 const SizedBox(height: 48),
                 // Close hint
                 Text(
-                  'Tap anywhere to close',
+                  L.tr('tap_anywhere_to_close'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: Colors.white.withValues(alpha: 0.5),
                   ),
@@ -1387,13 +1429,17 @@ class _DetailRow extends StatelessWidget {
 class _WalletStatusCard extends StatelessWidget {
   const _WalletStatusCard({
     required this.ticket,
+    this.isPolling = false,
     this.onSellPressed,
     this.onManagePressed,
+    this.onRetryMint,
   });
 
   final Ticket ticket;
+  final bool isPolling;
   final VoidCallback? onSellPressed;
   final VoidCallback? onManagePressed;
+  final VoidCallback? onRetryMint;
 
   @override
   Widget build(BuildContext context) {
@@ -1453,7 +1499,7 @@ class _WalletStatusCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isOnSale ? 'Listed for Sale' : 'Secure in Wallet',
+                      isOnSale ? L.tr('listed_for_sale') : L.tr('secure_in_wallet'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
@@ -1463,7 +1509,7 @@ class _WalletStatusCard extends StatelessWidget {
                     Text(
                       isOnSale
                           ? 'Visible on marketplace \u2022 ${ticket.formattedListingPrice ?? "Price TBD"}'
-                          : 'Only you can access this ticket',
+                          : L.tr('only_you_can_access'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: Colors.white.withValues(alpha: 0.9),
                       ),
@@ -1500,7 +1546,7 @@ class _WalletStatusCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          'Expired',
+                          L.tr('expired'),
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: Colors.white.withValues(alpha: 0.8),
                             fontWeight: FontWeight.w600,
@@ -1589,9 +1635,9 @@ class _WalletStatusCard extends StatelessWidget {
                   ),
                 ),
                 icon: const Icon(Icons.sell_outlined, size: 20),
-                label: const Text(
-                  'Sell This Ticket',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                label: Text(
+                  L.tr('sell_this_ticket'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -1604,7 +1650,7 @@ class _WalletStatusCard extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(10),
@@ -1612,22 +1658,50 @@ class _WalletStatusCard extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
+                    if (isPolling) ...[
+                      SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        L.tr('preparing_ticket'),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ] else ...[
+                      Icon(
+                        Icons.schedule,
+                        size: 16,
                         color: Colors.white.withValues(alpha: 0.7),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Preparing ticket\u2026',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(width: 8),
+                      Text(
+                        'NFT mint pending',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      if (onRetryMint != null)
+                        GestureDetector(
+                          onTap: onRetryMint,
+                          child: Text(
+                            L.tr('common_retry'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.white,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -1637,7 +1711,7 @@ class _WalletStatusCard extends StatelessWidget {
           if (isOnSale) ...[
             const SizedBox(height: 12),
             Text(
-              'Tap to manage or cancel listing',
+              L.tr('tap_to_manage_listing'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.white.withValues(alpha: 0.8),
               ),
@@ -1734,7 +1808,7 @@ class _NfcActiveIndicatorState extends State<_NfcActiveIndicator>
             ),
             const SizedBox(height: 8),
             Text(
-              'NFC tap check-in',
+              L.tr('nfc_tap_check_in'),
               style: theme.textTheme.titleSmall?.copyWith(
                 color: Colors.white.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w500,
@@ -1742,7 +1816,7 @@ class _NfcActiveIndicatorState extends State<_NfcActiveIndicator>
             ),
             const SizedBox(height: 2),
             Text(
-              'Available on supported devices',
+              L.tr('available_on_supported_devices'),
               style: theme.textTheme.bodySmall?.copyWith(
                 color: Colors.white.withValues(alpha: 0.5),
               ),
@@ -1830,7 +1904,7 @@ class _NfcActiveIndicatorState extends State<_NfcActiveIndicator>
               const SizedBox(height: 12),
               // Main text
               Text(
-                'Move phone to usher',
+                L.tr('move_phone_to_usher'),
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -1839,7 +1913,7 @@ class _NfcActiveIndicatorState extends State<_NfcActiveIndicator>
               ),
               const SizedBox(height: 4),
               Text(
-                'NFC is ready for tap check-in',
+                L.tr('nfc_ready_for_tap_checkin'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.white.withValues(alpha: 0.8),
                 ),
@@ -1886,7 +1960,7 @@ class _VirtualAccessCard extends StatelessWidget {
               Icon(Icons.videocam_outlined, size: 20, color: Colors.cyan[600]),
               const SizedBox(width: 8),
               Text(
-                isVirtual ? 'Virtual Event' : 'Virtual Access',
+                isVirtual ? L.tr('virtual_event') : L.tr('virtual_access'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: Colors.cyan[600],
@@ -1938,9 +2012,9 @@ class _VirtualAccessCard extends StatelessWidget {
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: virtualPassword));
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Password copied'),
-                      duration: Duration(seconds: 2),
+                    SnackBar(
+                      content: Text(L.tr('password_copied')),
+                      duration: const Duration(seconds: 2),
                     ),
                   );
                 },
@@ -1979,7 +2053,7 @@ class _VirtualAccessCard extends StatelessWidget {
                   }
                 },
                 icon: const Icon(Icons.videocam),
-                label: const Text('Join Event'),
+                label: Text(L.tr('join_event')),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.cyan[600],
                 ),
@@ -2056,8 +2130,8 @@ class _WalletPassButtonsState extends ConsumerState<_WalletPassButtons> {
         if (showApple)
           _WalletButton(
             label: state.applePass?.isDelivered == true
-                ? 'View in Apple Wallet'
-                : 'Add to Apple Wallet',
+                ? L.tr('view_in_apple_wallet')
+                : L.tr('add_to_apple_wallet'),
             icon: Icons.wallet_rounded,
             backgroundColor: Colors.black,
             foregroundColor: Colors.white,
@@ -2072,8 +2146,8 @@ class _WalletPassButtonsState extends ConsumerState<_WalletPassButtons> {
         if (showGoogle)
           _WalletButton(
             label: state.googlePass?.isDelivered == true
-                ? 'View in Google Wallet'
-                : 'Add to Google Wallet',
+                ? L.tr('view_in_google_wallet')
+                : L.tr('add_to_google_wallet'),
             icon: Icons.wallet_rounded,
             backgroundColor: const Color(0xFF4285F4),
             foregroundColor: Colors.white,
@@ -2087,7 +2161,7 @@ class _WalletPassButtonsState extends ConsumerState<_WalletPassButtons> {
         if (state.error != null) ...[
           const SizedBox(height: 8),
           Text(
-            'Could not generate pass. Try again later.',
+            L.tr('could_not_generate_pass'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.error,
             ),

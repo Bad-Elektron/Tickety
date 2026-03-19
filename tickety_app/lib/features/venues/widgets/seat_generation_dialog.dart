@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/seat_data.dart';
 import '../utils/seat_generator.dart';
 
@@ -48,7 +49,7 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
     final totalSeats = _rowCount * _seatsPerRow;
 
     return AlertDialog(
-      title: const Text('Generate Seats'),
+      title: Text(L.tr('Generate Seats')),
       content: SizedBox(
         width: 320,
         child: SingleChildScrollView(
@@ -82,7 +83,7 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
               const SizedBox(height: 16),
               // Row count
               _SliderRow(
-                label: 'Rows',
+                label: L.tr('Rows'),
                 value: _rowCount.toDouble(),
                 min: 1,
                 max: 30,
@@ -92,7 +93,7 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
               ),
               // Seats per row
               _SliderRow(
-                label: 'Seats/Row',
+                label: L.tr('Seats/Row'),
                 value: _seatsPerRow.toDouble(),
                 min: 1,
                 max: 50,
@@ -102,7 +103,7 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
               ),
               // Spacing
               _SliderRow(
-                label: 'Spacing',
+                label: L.tr('Spacing'),
                 value: _spacing,
                 min: 0.5,
                 max: 2.0,
@@ -112,19 +113,19 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
               ),
               // Curve radius
               _SliderRow(
-                label: 'Curve',
+                label: L.tr('Curve'),
                 value: _curveRadius,
                 min: 0,
                 max: 300,
                 divisions: 30,
-                displayValue: _curveRadius == 0 ? 'Flat' : '${_curveRadius.round()}',
+                displayValue: _curveRadius == 0 ? L.tr('Flat') : '${_curveRadius.round()}',
                 onChanged: (v) => setState(() => _curveRadius = v),
               ),
               const SizedBox(height: 8),
               // Label start
               Row(
                 children: [
-                  Text('Start Label', style: theme.textTheme.bodySmall),
+                  Text(L.tr('Start Label'), style: theme.textTheme.bodySmall),
                   const Spacer(),
                   SegmentedButton<String>(
                     segments: const [
@@ -145,7 +146,7 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
               // Numbering direction
               Row(
                 children: [
-                  Text('Direction', style: theme.textTheme.bodySmall),
+                  Text(L.tr('Direction'), style: theme.textTheme.bodySmall),
                   const Spacer(),
                   SegmentedButton<bool>(
                     segments: const [
@@ -169,14 +170,14 @@ class _SeatGenerationDialogState extends State<SeatGenerationDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(L.tr('Cancel')),
         ),
         FilledButton(
           onPressed: () {
             widget.onGenerate(generateSeats(_params));
             Navigator.pop(context);
           },
-          child: const Text('Generate'),
+          child: Text(L.tr('Generate')),
         ),
       ],
     );

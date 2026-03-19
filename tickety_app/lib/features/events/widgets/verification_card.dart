@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/models/verification_result.dart';
 
 /// Animated card showing 3-tier verification progress.
@@ -54,7 +55,7 @@ class VerificationCard extends StatelessWidget {
                   const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: Text(
-              'VERIFYING TICKET',
+              L.tr('VERIFYING TICKET'),
               style: theme.textTheme.labelLarge?.copyWith(
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.2,
@@ -70,17 +71,17 @@ class VerificationCard extends StatelessWidget {
             child: Column(
               children: [
                 _TierRow(
-                  label: 'Offline Cache',
+                  label: L.tr('Offline Cache'),
                   tier: result.getTier(VerificationTier.offline),
                 ),
                 const SizedBox(height: 12),
                 _TierRow(
-                  label: 'Blockchain',
+                  label: L.tr('Blockchain'),
                   tier: result.getTier(VerificationTier.blockchain),
                 ),
                 const SizedBox(height: 12),
                 _TierRow(
-                  label: 'Database',
+                  label: L.tr('Database'),
                   tier: result.getTier(VerificationTier.database),
                 ),
               ],
@@ -99,7 +100,7 @@ class VerificationCard extends StatelessWidget {
                 children: [
                   _TicketInfoRow(
                     icon: Icons.person_outline,
-                    label: result.ticket!.ownerName ?? 'Guest',
+                    label: result.ticket!.ownerName ?? L.tr('Guest'),
                   ),
                   if (result.ticket!.ownerEmail != null) ...[
                     const SizedBox(height: 6),
@@ -113,6 +114,15 @@ class VerificationCard extends StatelessWidget {
                     icon: Icons.confirmation_number_outlined,
                     label: result.ticket!.ticketNumber,
                     mono: true,
+                  ),
+                  const SizedBox(height: 6),
+                  _TicketInfoRow(
+                    icon: result.ticket!.isRedeemable
+                        ? Icons.redeem_outlined
+                        : Icons.event_seat_outlined,
+                    label: result.ticket!.isRedeemable
+                        ? L.tr('Redeemable')
+                        : L.tr('Entry'),
                   ),
                 ],
               ),
@@ -137,7 +147,7 @@ class VerificationCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: isCheckingIn ? null : onDismiss,
-                    child: const Text('Dismiss'),
+                    child: Text(L.tr('Dismiss')),
                   ),
                 ),
                 if (result.isAdmittable) ...[
@@ -157,7 +167,7 @@ class VerificationCard extends StatelessWidget {
                             )
                           : const Icon(Icons.check),
                       label:
-                          Text(isCheckingIn ? 'Checking in...' : 'Check In'),
+                          Text(isCheckingIn ? L.tr('Checking in...') : L.tr('Check In')),
                       style: FilledButton.styleFrom(
                         backgroundColor: Colors.green,
                       ),
@@ -280,11 +290,11 @@ class _TierRow extends StatelessWidget {
       };
 
   String get _statusLabel => switch (tier.status) {
-        TierStatus.pending => 'Waiting',
-        TierStatus.verifying => 'Checking...',
-        TierStatus.verified => 'Verified',
-        TierStatus.failed => 'Failed',
-        TierStatus.skipped => 'Skipped',
+        TierStatus.pending => L.tr('Waiting'),
+        TierStatus.verifying => L.tr('Checking...'),
+        TierStatus.verified => L.tr('Verified'),
+        TierStatus.failed => L.tr('Failed'),
+        TierStatus.skipped => L.tr('Skipped'),
       };
 }
 
@@ -308,10 +318,10 @@ class _AdmissionBar extends StatelessWidget {
             ? const Color(0xFF4CAF50)
             : const Color(0xFFF44336);
     final label = isVerifying
-        ? 'VERIFYING...'
+        ? L.tr('VERIFYING...')
         : isAdmittable
-            ? 'ADMIT'
-            : 'DENY';
+            ? L.tr('ADMIT')
+            : L.tr('DENY');
     final icon = isVerifying
         ? Icons.hourglass_top
         : isAdmittable

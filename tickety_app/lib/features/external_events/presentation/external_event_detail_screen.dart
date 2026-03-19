@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/external_event.dart';
 
 class ExternalEventDetailScreen extends StatelessWidget {
@@ -115,7 +116,7 @@ class ExternalEventDetailScreen extends StatelessWidget {
                   if (event.description != null) ...[
                     const SizedBox(height: 24),
                     Text(
-                      'About',
+                      L.tr('about'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),

@@ -241,6 +241,58 @@ serve(async (req) => {
       }
     }
 
+    // Check for referral subscription benefit
+    let couponId: string | undefined
+    if (tier === 'pro' || tier === 'enterprise') {
+      const { data: referralProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('referred_by, referral_coupon_id')
+        .eq('id', user.id)
+        .single()
+
+      if (referralProfile?.referred_by && !referralProfile?.referral_coupon_id) {
+        // User was referred and hasn't used their subscription benefit yet
+        const { data: refConfig } = await supabaseAdmin
+          .from('referral_config')
+          .select('referee_sub_discount_percent, referee_sub_benefit_months, referral_enabled')
+          .eq('id', 1)
+          .single()
+
+        if (refConfig?.referral_enabled && refConfig.referee_sub_discount_percent > 0) {
+          const discountPercent = Math.round(Number(refConfig.referee_sub_discount_percent) * 100)
+          const months = refConfig.referee_sub_benefit_months || 6
+
+          console.log(`Applying referral coupon: ${discountPercent}% off for ${months} months`)
+
+          try {
+            const coupon = await stripe.coupons.create({
+              percent_off: discountPercent,
+              duration: 'repeating',
+              duration_in_months: months,
+              name: `Referral Discount - ${discountPercent}% off Pro`,
+              metadata: {
+                supabase_user_id: user.id,
+                type: 'referral_benefit',
+              },
+            })
+
+            couponId = coupon.id
+
+            // Store coupon ID on profile
+            await supabaseAdmin
+              .from('profiles')
+              .update({ referral_coupon_id: coupon.id })
+              .eq('id', user.id)
+
+            console.log(`Created referral coupon ${coupon.id} for user ${user.id}`)
+          } catch (couponError) {
+            console.error('Failed to create referral coupon:', couponError)
+            // Don't block checkout — continue without coupon
+          }
+        }
+      }
+    }
+
     // Create ephemeral key for the customer
     console.log('Step 4: Creating ephemeral key...')
     let ephemeralKey
@@ -260,7 +312,7 @@ serve(async (req) => {
     console.log('Step 5: Creating Stripe subscription with price:', priceId)
     let subscription
     try {
-      subscription = await stripe.subscriptions.create({
+      const subscriptionParams: any = {
         customer: customerId,
         items: [{ price: priceId }],
         payment_behavior: 'default_incomplete',
@@ -272,7 +324,15 @@ serve(async (req) => {
           supabase_user_id: user.id,
           tier: tier,
         },
-      })
+      }
+
+      // Apply referral coupon if available
+      if (couponId) {
+        subscriptionParams.coupon = couponId
+        console.log(`Applying referral coupon ${couponId} to subscription`)
+      }
+
+      subscription = await stripe.subscriptions.create(subscriptionParams)
       console.log('Subscription created:', subscription.id)
     } catch (subError) {
       console.error('Subscription creation failed:', subError)

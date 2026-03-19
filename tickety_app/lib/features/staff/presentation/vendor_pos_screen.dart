@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/data/supabase_event_repository.dart';
 import '../../events/models/event_model.dart';
@@ -128,8 +129,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
     // Validate ticket type selection if types exist
     if (_ticketTypes.isNotEmpty && _selectedTicketType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a ticket type'),
+        SnackBar(
+          content: Text(L.tr('please_select_ticket_type')),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -245,8 +246,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
       final email = _emailController.text.trim();
       if (email.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Email is required for email delivery'),
+          SnackBar(
+            content: Text(L.tr('email_required_for_delivery')),
             backgroundColor: Colors.orange,
             behavior: SnackBarBehavior.floating,
           ),
@@ -256,8 +257,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
       // Basic email validation
       if (!email.contains('@') || !email.contains('.')) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter a valid email address'),
+          SnackBar(
+            content: Text(L.tr('please_enter_valid_email')),
             backgroundColor: Colors.orange,
             behavior: SnackBarBehavior.floating,
           ),
@@ -287,7 +288,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result.error ?? 'Failed to process cash sale'),
+              content: Text(result.error ?? L.tr('failed_to_process_cash_sale')),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -408,14 +409,14 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
               color: Theme.of(context).colorScheme.primary,
             ),
             const SizedBox(width: 12),
-            const Text('Ticket Sold!'),
+            Text(L.tr('ticket_sold')),
           ],
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Tell the customer their ticket number:',
+              L.tr('tell_customer_ticket_number'),
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -435,7 +436,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'They can use this to check in at the event.',
+              L.tr('they_can_use_to_check_in'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -446,7 +447,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Done'),
+            child: Text(L.tr('done')),
           ),
         ],
       ),
@@ -475,7 +476,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(error ?? 'Failed to initialize payment'),
+              content: Text(error ?? L.tr('failed_to_initialize_payment')),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -529,7 +530,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sell Ticket'),
+        title: Text(L.tr('sell_ticket')),
         centerTitle: true,
         actions: [
           if (_ticketsSoldThisSession > 0)
@@ -605,7 +606,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                           ),
                         ),
                         Text(
-                          _selectedTicketType?.name ?? 'per ticket',
+                          _selectedTicketType?.name ?? L.tr('per_ticket'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -628,7 +629,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
               )
             else if (_ticketTypes.isNotEmpty) ...[
               Text(
-                'Select Ticket Type',
+                L.tr('select_ticket_type'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: colorScheme.onSurfaceVariant,
@@ -655,7 +656,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Customer Details',
+                    L.tr('customer_details'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colorScheme.onSurfaceVariant,
@@ -668,11 +669,11 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
                     textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'Customer Name',
-                      hintText: 'Optional',
-                      prefixIcon: Icon(Icons.person_outline),
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: L.tr('customer_name'),
+                      hintText: L.tr('optional'),
+                      prefixIcon: const Icon(Icons.person_outline),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -683,11 +684,11 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
                     decoration: InputDecoration(
-                      labelText: 'Email',
+                      labelText: L.tr('email'),
                       hintText: _paymentMethod == POSPaymentMethod.cash &&
                               _cashDeliveryMethod == CashDeliveryMethod.email
-                          ? 'Required for email delivery'
-                          : 'For ticket delivery (optional)',
+                          ? L.tr('required_for_email_delivery')
+                          : L.tr('for_ticket_delivery_optional'),
                       prefixIcon: const Icon(Icons.email_outlined),
                       border: const OutlineInputBorder(),
                     ),
@@ -698,18 +699,18 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                   TextFormField(
                     controller: _walletController,
                     textInputAction: TextInputAction.done,
-                    decoration: const InputDecoration(
-                      labelText: 'Cardano Wallet Address',
-                      hintText: 'For NFT ticket (optional)',
-                      prefixIcon: Icon(Icons.account_balance_wallet_outlined),
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: L.tr('cardano_wallet_address'),
+                      hintText: L.tr('for_nft_ticket_optional'),
+                      prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 24),
 
                   // Payment method selector
                   Text(
-                    'Payment Method',
+                    L.tr('payment_method'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: colorScheme.onSurfaceVariant,
@@ -721,8 +722,8 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       Expanded(
                         child: _PaymentMethodCard(
                           icon: Icons.credit_card,
-                          label: 'Card',
-                          sublabel: 'Apple/Google Pay',
+                          label: L.tr('card'),
+                          sublabel: L.tr('apple_google_pay'),
                           isSelected: _paymentMethod == POSPaymentMethod.card,
                           onTap: () => setState(() => _paymentMethod = POSPaymentMethod.card),
                         ),
@@ -731,10 +732,10 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       Expanded(
                         child: _PaymentMethodCard(
                           icon: Icons.payments_outlined,
-                          label: 'Cash',
+                          label: L.tr('cash'),
                           sublabel: _cashSalesEnabled
-                              ? 'Collect manually'
-                              : 'Not enabled',
+                              ? L.tr('collect_manually')
+                              : L.tr('not_enabled'),
                           isSelected: _paymentMethod == POSPaymentMethod.cash,
                           onTap: _cashSalesEnabled || _isCheckingCashSales
                               ? () => setState(() => _paymentMethod = POSPaymentMethod.cash)
@@ -749,7 +750,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                   if (_paymentMethod == POSPaymentMethod.cash && _cashSalesEnabled) ...[
                     const SizedBox(height: 24),
                     Text(
-                      'Ticket Delivery',
+                      L.tr('ticket_delivery'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurfaceVariant,
@@ -778,7 +779,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'Cash sales are not enabled for this event. The organizer needs to set up a payment method first.',
+                              L.tr('cash_sales_not_enabled'),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: Colors.orange.shade800,
                               ),
@@ -808,9 +809,9 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                             : Icons.point_of_sale),
                     label: Text(
                       _isProcessingPayment
-                          ? 'Processing Payment...'
+                          ? L.tr('processing_payment')
                           : _isLoading
-                              ? 'Creating Ticket...'
+                              ? L.tr('creating_ticket')
                               : _paymentMethod == POSPaymentMethod.card
                                   ? 'Charge $_formattedPrice'
                                   : 'Sell Ticket - $_formattedPrice',
@@ -845,7 +846,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
               const Divider(),
               const SizedBox(height: 16),
               Text(
-                'Last Sold Ticket',
+                L.tr('last_sold_ticket'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: colorScheme.onSurfaceVariant,
@@ -861,7 +862,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Ticket #'),
+                          Text(L.tr('ticket_number_label')),
                           Text(
                             _lastSoldTicket!.ticketNumber,
                             style: const TextStyle(fontWeight: FontWeight.bold),
@@ -873,7 +874,7 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Customer'),
+                            Text(L.tr('customer')),
                             Text(_lastSoldTicket!.ownerName!),
                           ],
                         ),
@@ -881,9 +882,9 @@ class _VendorPOSScreenState extends ConsumerState<VendorPOSScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Status'),
+                          Text(L.tr('status')),
                           Chip(
-                            label: const Text('Valid'),
+                            label: Text(L.tr('valid')),
                             backgroundColor: Colors.green.withValues(alpha: 0.2),
                             labelStyle: const TextStyle(color: Colors.green),
                             padding: EdgeInsets.zero,
@@ -1022,7 +1023,7 @@ class _DeliveryMethodSelector extends StatelessWidget {
         const SizedBox(width: 8),
         _DeliveryMethodChip(
           icon: Icons.person_outline,
-          label: 'In-Person',
+          label: L.tr('in_person'),
           isSelected: selectedMethod == CashDeliveryMethod.inPerson,
           onTap: () => onChanged(CashDeliveryMethod.inPerson),
         ),
@@ -1180,7 +1181,7 @@ class _TicketTypeCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            'Sold Out',
+                            L.tr('sold_out'),
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: Colors.red,
                               fontWeight: FontWeight.w600,

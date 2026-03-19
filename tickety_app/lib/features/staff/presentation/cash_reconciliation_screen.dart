@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/localization/localization.dart';
 import '../data/cash_transaction_repository.dart';
 import '../models/cash_transaction.dart';
 
@@ -112,8 +113,8 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
       _loadData();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Transaction marked as collected'),
+          SnackBar(
+            content: Text(L.tr('cash_recon_marked_collected')),
             backgroundColor: Colors.green,
           ),
         );
@@ -125,7 +126,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Mark as Disputed?'),
+        title: Text(L.tr('cash_recon_mark_disputed_title')),
         content: Text(
           'This will flag the transaction for ${tx.formattedAmount} as disputed. '
           'Use this if there\'s an issue with cash collection.',
@@ -133,14 +134,14 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.orange,
             ),
-            child: const Text('Mark Disputed'),
+            child: Text(L.tr('cash_recon_mark_disputed')),
           ),
         ],
       ),
@@ -152,8 +153,8 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
         _loadData();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Transaction marked as disputed'),
+            SnackBar(
+              content: Text(L.tr('cash_recon_marked_disputed')),
               backgroundColor: Colors.orange,
             ),
           );
@@ -169,13 +170,13 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cash Reconciliation'),
+        title: Text(L.tr('cash_recon_title')),
         centerTitle: true,
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Summary'),
-            Tab(text: 'Transactions'),
+          tabs: [
+            Tab(text: L.tr('cash_recon_summary')),
+            Tab(text: L.tr('transactions_title')),
           ],
         ),
       ),
@@ -216,7 +217,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Total Cash Sales',
+                    L.tr('cash_recon_total_cash_sales'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -235,20 +236,20 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                     children: [
                       _buildStatItem(
                         theme,
-                        'Transactions',
+                        L.tr('transactions_title'),
                         summary.transactionCount.toString(),
                         Icons.receipt_long,
                       ),
                       _buildStatItem(
                         theme,
-                        'Collected',
+                        L.tr('cash_recon_collected'),
                         summary.collectedCount.toString(),
                         Icons.check_circle,
                         color: Colors.green,
                       ),
                       _buildStatItem(
                         theme,
-                        'Pending',
+                        L.tr('cash_recon_pending'),
                         summary.pendingCount.toString(),
                         Icons.pending,
                         color: Colors.orange,
@@ -269,7 +270,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Platform Fees (5%)',
+                    L.tr('cash_recon_platform_fees'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -282,7 +283,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Charged',
+                              L.tr('cash_recon_charged'),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -303,7 +304,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Outstanding',
+                                L.tr('cash_recon_outstanding'),
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -328,7 +329,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
 
           // Per-seller breakdown
           Text(
-            'Cash by Seller',
+            L.tr('cash_recon_by_seller'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -349,7 +350,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'No cash sales yet',
+                        L.tr('cash_recon_no_sales'),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -469,23 +470,23 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              const Text('Filter: '),
+              Text(L.tr('cash_recon_filter')),
               const SizedBox(width: 8),
               Expanded(
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _buildFilterChip('All', null),
+                      _buildFilterChip(L.tr('cash_recon_all'), null),
                       const SizedBox(width: 8),
                       _buildFilterChip(
-                          'Pending', CashTransactionStatus.pending),
+                          L.tr('cash_recon_pending'), CashTransactionStatus.pending),
                       const SizedBox(width: 8),
                       _buildFilterChip(
-                          'Collected', CashTransactionStatus.collected),
+                          L.tr('cash_recon_collected'), CashTransactionStatus.collected),
                       const SizedBox(width: 8),
                       _buildFilterChip(
-                          'Disputed', CashTransactionStatus.disputed),
+                          L.tr('cash_recon_disputed'), CashTransactionStatus.disputed),
                     ],
                   ),
                 ),
@@ -510,7 +511,7 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No transactions found',
+                          L.tr('cash_recon_no_transactions'),
                           style: theme.textTheme.bodyLarge?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -674,12 +675,12 @@ class _CashReconciliationScreenState extends State<CashReconciliationScreen>
                 children: [
                   TextButton(
                     onPressed: () => _markDisputed(tx),
-                    child: const Text('Dispute'),
+                    child: Text(L.tr('cash_recon_dispute')),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
                     onPressed: () => _markCollected(tx),
-                    child: const Text('Mark Collected'),
+                    child: Text(L.tr('cash_recon_mark_collected')),
                   ),
                 ],
               ),

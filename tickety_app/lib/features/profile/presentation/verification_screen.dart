@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/services/services.dart';
 
 /// Screen for organizer identity verification via Stripe Identity.
@@ -103,7 +104,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Identity Verification'),
+        title: Text(L.tr('identity_verification')),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -135,26 +136,20 @@ class _VerificationScreenState extends State<VerificationScreen> {
             if (_status == 'none' || _status == 'failed') ...[
               _InfoTile(
                 icon: Icons.shield_outlined,
-                title: 'Why verify?',
-                description:
-                    'Events with 250+ capacity require identity verification '
-                    'to protect ticket buyers from fraud.',
+                title: L.tr('why_verify'),
+                description: L.tr('why_verify_description'),
               ),
               const SizedBox(height: 12),
               _InfoTile(
                 icon: Icons.badge_outlined,
-                title: 'What\'s needed?',
-                description:
-                    'A government-issued photo ID and a selfie. '
-                    'Powered by Stripe Identity for secure verification.',
+                title: L.tr('whats_needed'),
+                description: L.tr('whats_needed_description'),
               ),
               const SizedBox(height: 12),
               _InfoTile(
                 icon: Icons.speed_outlined,
-                title: 'Benefits',
-                description:
-                    'Verified organizers get a badge on their events, '
-                    'faster payouts (2 days vs 14), and instant event approval.',
+                title: L.tr('benefits'),
+                description: L.tr('benefits_description'),
               ),
               const SizedBox(height: 32),
             ],
@@ -199,10 +194,10 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     : const Icon(Icons.verified_user_outlined),
                 label: Text(
                   _status == 'pending'
-                      ? 'Continue Verification'
+                      ? L.tr('continue_verification')
                       : _status == 'failed'
-                          ? 'Try Again'
-                          : 'Verify with Stripe',
+                          ? L.tr('try_again')
+                          : L.tr('verify_with_stripe'),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -225,7 +220,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text('Refresh Status'),
+                child: Text(L.tr('refresh_status')),
               ),
             ],
           ],
@@ -254,21 +249,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
   }
 
   String get _statusTitle => switch (_status) {
-        'verified' => 'You\'re Verified',
-        'pending' => 'Verification Pending',
-        'failed' => 'Verification Failed',
-        _ => 'Get Verified',
+        'verified' => L.tr('youre_verified'),
+        'pending' => L.tr('verification_pending'),
+        'failed' => L.tr('verification_failed'),
+        _ => L.tr('get_verified'),
       };
 
   String get _statusSubtitle => switch (_status) {
-        'verified' =>
-          'Your identity has been verified. You can create events of any size.',
-        'pending' =>
-          'Your verification is being reviewed. This usually takes a few minutes.',
-        'failed' =>
-          'Your verification could not be completed. Please try again with a clear photo of your ID.',
-        _ =>
-          'Verify your identity to create large events and earn buyer trust.',
+        'verified' => L.tr('verification_verified_subtitle'),
+        'pending' => L.tr('verification_pending_subtitle'),
+        'failed' => L.tr('verification_failed_subtitle'),
+        _ => L.tr('verification_default_subtitle'),
       };
 }
 

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/analytics_provider.dart';
 import '../models/platform_engagement.dart';
 import '../widgets/widgets.dart';
@@ -37,7 +38,7 @@ class _AnalyticsDashboardScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Market Analytics'),
+        title: Text(L.tr('market_analytics')),
         actions: [
           if (state.lastRefreshed != null)
             Padding(
@@ -95,14 +96,14 @@ class _AnalyticsDashboardScreenState
 
                         // Trending tags section
                         Text(
-                          'Trending Tags',
+                          L.tr('trending_tags'),
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Tags ranked by week-over-week growth',
+                          L.tr('tags_ranked_by_growth'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -127,7 +128,7 @@ class _AnalyticsDashboardScreenState
                             ),
                             child: Center(
                               child: Text(
-                                'No trending data available yet',
+                                L.tr('no_trending_data_yet'),
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: colorScheme.onSurfaceVariant,
                                 ),
@@ -177,7 +178,7 @@ class _MarketOverview extends StatelessWidget {
       children: [
         Expanded(
           child: MetricCard(
-            label: 'This Week',
+            label: L.tr('this_week'),
             value: '${state.totalEventsThisWeek}',
             subtitle: 'events',
             icon: Icons.event,
@@ -187,7 +188,7 @@ class _MarketOverview extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: MetricCard(
-            label: 'Hottest Tag',
+            label: L.tr('hottest_tag'),
             value: state.hottestTag?.label ?? '-',
             subtitle: state.hottestTag?.formattedTrendScore,
             icon: Icons.local_fire_department,
@@ -197,7 +198,7 @@ class _MarketOverview extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: MetricCard(
-            label: 'Top Price',
+            label: L.tr('top_price'),
             value: state.highestPriceTag?.formattedAvgPrice ?? '-',
             subtitle: state.highestPriceTag?.label,
             icon: Icons.attach_money,
@@ -248,14 +249,14 @@ class _EngagementSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Engagement',
+          L.tr('engagement'),
           style: theme.textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w600,
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          'Views and conversion over the last 30 days',
+          L.tr('views_and_conversion_30d'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -267,7 +268,7 @@ class _EngagementSection extends StatelessWidget {
           children: [
             Expanded(
               child: MetricCard(
-                label: 'Views',
+                label: L.tr('views'),
                 value: _formatCompact(engagement.totalViews30d),
                 subtitle: '30 days',
                 icon: Icons.visibility,
@@ -277,7 +278,7 @@ class _EngagementSection extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: MetricCard(
-                label: 'Unique',
+                label: L.tr('unique'),
                 value: _formatCompact(engagement.uniqueViewers30d),
                 subtitle: 'viewers',
                 icon: Icons.people,
@@ -287,7 +288,7 @@ class _EngagementSection extends StatelessWidget {
             const SizedBox(width: 12),
             Expanded(
               child: MetricCard(
-                label: 'Conversion',
+                label: L.tr('conversion'),
                 value: '${engagement.avgConversionRate}%',
                 subtitle: 'avg rate',
                 icon: Icons.trending_up,
@@ -310,7 +311,7 @@ class _EngagementSection extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Weekly Views',
+                  L.tr('weekly_views'),
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -343,7 +344,7 @@ class _EngagementSection extends StatelessWidget {
         // Top events by views
         if (engagement.topEvents.isNotEmpty) ...[
           Text(
-            'Top Events by Views',
+            L.tr('top_events_by_views'),
             style: theme.textTheme.labelLarge?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -495,7 +496,7 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Unable to load analytics',
+              L.tr('unable_to_load_analytics'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -512,7 +513,7 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Retry'),
+              label: Text(L.tr('retry')),
             ),
           ],
         ),

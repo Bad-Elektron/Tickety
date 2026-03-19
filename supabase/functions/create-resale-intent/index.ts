@@ -266,6 +266,13 @@ serve(async (req) => {
 
     // Record referral earnings if applicable
     if (referralInfo && referralInfo.referral_active && payment?.id) {
+      // Fetch the referred user's channel for attribution
+      const { data: referredProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('referral_channel')
+        .eq('id', user.id)
+        .single()
+
       const { error: earningsError } = await supabaseAdmin
         .from('referral_earnings')
         .insert({
@@ -278,6 +285,7 @@ serve(async (req) => {
           discount_percent_applied: Number(referralInfo.discount_percent),
           revenue_share_percent_applied: Number(referralInfo.revenue_share_percent),
           status: 'pending',
+          channel: referredProfile?.referral_channel || null,
         })
 
       if (earningsError) {

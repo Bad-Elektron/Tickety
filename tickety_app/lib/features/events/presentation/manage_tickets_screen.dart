@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../favor_tickets/presentation/create_favor_ticket_screen.dart';
@@ -125,7 +126,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
           );
         },
         icon: const Icon(Icons.card_giftcard),
-        label: const Text('Favor Ticket'),
+        label: Text(L.tr('favor_ticket')),
       ),
       body: CustomScrollView(
         slivers: [
@@ -149,8 +150,8 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                       : TextButton.icon(
                           onPressed: _pushChanges,
                           icon: const Icon(Icons.cloud_upload_outlined, size: 18, color: Colors.white),
-                          label: const Text(
-                            'Push Changes',
+                          label: Text(
+                            L.tr('push_changes'),
                             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -158,7 +159,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
             ],
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
-                'Tickets',
+                L.tr('tickets'),
                 style: theme.textTheme.titleLarge?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -232,7 +233,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
-                                'Redeemable Items',
+                                L.tr('redeemable_items'),
                                 style: theme.textTheme.titleSmall?.copyWith(
                                   fontWeight: FontWeight.w600,
                                   color: colorScheme.onSurfaceVariant,
@@ -323,7 +324,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                   );
                 },
                 icon: const Icon(Icons.discount_outlined, size: 18),
-                label: const Text('Promo Codes'),
+                label: Text(L.tr('promo_codes')),
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.orange,
                 ),
@@ -354,7 +355,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
               Expanded(
                 child: _SummaryChip(
                   icon: Icons.confirmation_number_outlined,
-                  label: 'Sold',
+                  label: L.tr('sold'),
                   value: totalMax != null ? '$totalSold / $totalMax' : '$totalSold',
                   color: colorScheme.primary,
                 ),
@@ -363,7 +364,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
               Expanded(
                 child: _SummaryChip(
                   icon: Icons.attach_money,
-                  label: 'Revenue',
+                  label: L.tr('revenue'),
                   value: revenueStr,
                   color: colorScheme.secondary,
                 ),
@@ -373,7 +374,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                 Expanded(
                   child: _SummaryChip(
                     icon: Icons.token_outlined,
-                    label: 'Minted',
+                    label: L.tr('minted'),
                     value: pendingCount > 0
                         ? '$mintedCount (+$pendingCount)'
                         : '$mintedCount',
@@ -384,7 +385,7 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
                 Expanded(
                   child: _SummaryChip(
                     icon: Icons.style_outlined,
-                    label: 'Types',
+                    label: L.tr('types'),
                     value: '${_ticketTypes.length}',
                     color: colorScheme.tertiary,
                   ),
@@ -434,8 +435,8 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
           _isSaving = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Changes saved'),
+          SnackBar(
+            content: Text(L.tr('changes_saved')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -462,21 +463,21 @@ class _ManageTicketsScreenState extends ConsumerState<ManageTicketsScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           icon: const Icon(Icons.workspace_premium, color: Colors.amber, size: 40),
-          title: const Text('Enterprise Feature'),
-          content: const Text(
-            'Venue layouts and seating charts are available on the Enterprise plan. Upgrade to create and link venues to your events.',
+          title: Text(L.tr('enterprise_feature')),
+          content: Text(
+            L.tr('venue_enterprise_upgrade_message'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Maybe Later'),
+              child: Text(L.tr('maybe_later')),
             ),
             FilledButton(
               onPressed: () {
                 Navigator.pop(ctx);
                 // TODO: Navigate to subscription screen
               },
-              child: const Text('View Plans'),
+              child: Text(L.tr('view_plans')),
             ),
           ],
         ),
@@ -723,14 +724,14 @@ class _TicketTypeCard extends StatelessWidget {
             child: Row(
               children: [
                 _TicketStat(
-                  label: 'Sold',
+                  label: L.tr('sold'),
                   value: '${ticketType.soldCount}',
                   color: colorScheme.primary,
                 ),
                 const SizedBox(width: 24),
                 if (ticketType.hasLimit) ...[
                   _TicketStat(
-                    label: 'Remaining',
+                    label: L.tr('remaining'),
                     value: '${ticketType.remainingQuantity}',
                     color: ticketType.remainingQuantity! <= 10
                         ? Colors.orange
@@ -738,14 +739,14 @@ class _TicketTypeCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 24),
                   _TicketStat(
-                    label: 'Total',
+                    label: L.tr('total'),
                     value: '${ticketType.maxQuantity}',
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ] else
                   _TicketStat(
-                    label: 'Limit',
-                    value: 'Unlimited',
+                    label: L.tr('limit'),
+                    value: L.tr('unlimited'),
                     color: colorScheme.onSurfaceVariant,
                   ),
                 const Spacer(),
@@ -804,7 +805,7 @@ class _TicketTypeCard extends StatelessWidget {
                   child: TextButton.icon(
                     onPressed: onMint,
                     icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('Adjust Limit'),
+                    label: Text(L.tr('adjust_limit')),
                     style: TextButton.styleFrom(
                       foregroundColor: colorScheme.primary,
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -820,7 +821,7 @@ class _TicketTypeCard extends StatelessWidget {
                   child: TextButton.icon(
                     onPressed: onDiscount,
                     icon: const Icon(Icons.percent, size: 18),
-                    label: const Text('Discount'),
+                    label: Text(L.tr('discount')),
                     style: TextButton.styleFrom(
                       foregroundColor: colorScheme.secondary,
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -888,19 +889,19 @@ class _StatusBadge extends StatelessWidget {
     if (ticketType.isSoldOut) {
       bgColor = Colors.red.withValues(alpha: 0.1);
       textColor = Colors.red;
-      text = 'Sold Out';
+      text = L.tr('sold_out');
     } else if (!ticketType.isActive) {
       bgColor = Colors.grey.withValues(alpha: 0.1);
       textColor = Colors.grey;
-      text = 'Inactive';
+      text = L.tr('inactive');
     } else if (ticketType.hasLimit && ticketType.remainingQuantity! <= 10) {
       bgColor = Colors.orange.withValues(alpha: 0.1);
       textColor = Colors.orange;
-      text = 'Low Stock';
+      text = L.tr('low_stock');
     } else {
       bgColor = Colors.green.withValues(alpha: 0.1);
       textColor = Colors.green;
-      text = 'On Sale';
+      text = L.tr('on_sale');
     }
 
     return Container(
@@ -1033,7 +1034,7 @@ class _MintTicketsSheetState extends State<_MintTicketsSheet> {
           ),
           const SizedBox(height: 12),
           Text(
-            'tickets',
+            L.tr('tickets_label'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -1059,7 +1060,7 @@ class _MintTicketsSheetState extends State<_MintTicketsSheet> {
           const SizedBox(height: 12),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
         ],
       ),
@@ -1203,14 +1204,14 @@ class _DiscountSheetState extends State<_DiscountSheet> {
                 children: [
                   Expanded(
                     child: _ToggleOption(
-                      label: 'Percentage',
+                      label: L.tr('percentage'),
                       isSelected: _isPercentage,
                       onTap: () => setState(() => _isPercentage = true),
                     ),
                   ),
                   Expanded(
                     child: _ToggleOption(
-                      label: 'Fixed Amount',
+                      label: L.tr('fixed_amount'),
                       isSelected: !_isPercentage,
                       onTap: () => setState(() => _isPercentage = false),
                     ),
@@ -1271,7 +1272,7 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               child: Column(
                 children: [
                   Text(
-                    'Price Preview',
+                    L.tr('price_preview'),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -1292,8 +1293,8 @@ class _DiscountSheetState extends State<_DiscountSheet> {
               controller: _codeController,
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
-                labelText: 'Discount Code (optional)',
-                hintText: 'e.g. EARLYBIRD20',
+                labelText: L.tr('discount_code_optional'),
+                hintText: L.tr('discount_code_hint'),
                 prefixIcon: const Icon(Icons.code, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1323,15 +1324,15 @@ class _DiscountSheetState extends State<_DiscountSheet> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Text(
-                'Apply Discount',
+              child: Text(
+                L.tr('apply_discount'),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(L.tr('cancel')),
             ),
           ],
         ),
@@ -1453,7 +1454,7 @@ class _VenueSectionPicker extends StatelessWidget {
                       ),
                     )
                   : Text(
-                      'Assign venue section',
+                      L.tr('assign_venue_section'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -1499,7 +1500,7 @@ class _VenueSectionPicker extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Text(
-                  'Assign Venue Section',
+                  L.tr('assign_venue_section'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -1512,7 +1513,7 @@ class _VenueSectionPicker extends StatelessWidget {
                   Icons.close,
                   color: colorScheme.onSurfaceVariant,
                 ),
-                title: const Text('No section (general)'),
+                title: Text(L.tr('no_section_general')),
                 selected: currentSectionId == null,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1604,7 +1605,7 @@ class _VenueLinkCard extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    hasVenue ? 'Venue Linked' : 'Link Venue',
+                    hasVenue ? L.tr('venue_linked') : L.tr('link_venue'),
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: hasVenue ? Colors.teal : colorScheme.onSurface,
@@ -1613,8 +1614,8 @@ class _VenueLinkCard extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     hasVenue
-                        ? 'Tap to edit seating layout'
-                        : 'Add a seating chart to this event',
+                        ? L.tr('tap_to_edit_seating')
+                        : L.tr('add_seating_chart'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -1659,14 +1660,14 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No Ticket Types',
+              L.tr('no_ticket_types'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'This event doesn\'t have any ticket types configured yet.',
+              L.tr('no_ticket_types_message'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -1703,7 +1704,7 @@ class _ErrorState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Failed to load tickets',
+              L.tr('failed_to_load_tickets'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -1720,7 +1721,7 @@ class _ErrorState extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(L.tr('retry')),
             ),
           ],
         ),

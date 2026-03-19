@@ -15,23 +15,27 @@ final referralRepositoryProvider = Provider<ReferralRepository>((ref) {
 class ReferralState {
   final ReferralInfo? info;
   final bool isLoading;
+  final bool isWithdrawing;
   final String? error;
 
   const ReferralState({
     this.info,
     this.isLoading = false,
+    this.isWithdrawing = false,
     this.error,
   });
 
   ReferralState copyWith({
     ReferralInfo? info,
     bool? isLoading,
+    bool? isWithdrawing,
     String? error,
     bool clearError = false,
   }) {
     return ReferralState(
       info: info ?? this.info,
       isLoading: isLoading ?? this.isLoading,
+      isWithdrawing: isWithdrawing ?? this.isWithdrawing,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -74,6 +78,39 @@ class ReferralNotifier extends StateNotifier<ReferralState> {
     state = state.copyWith(isLoading: false);
     await load();
   }
+
+  /// Withdraw referral earnings.
+  /// Returns the result map from the edge function.
+  Future<Map<String, dynamic>?> withdrawEarnings() async {
+    if (state.isWithdrawing) return null;
+
+    state = state.copyWith(isWithdrawing: true, clearError: true);
+
+    try {
+      final result = await _repository.withdrawEarnings();
+
+      // Refresh info after withdrawal
+      if (result['success'] == true) {
+        await load();
+      }
+
+      state = state.copyWith(isWithdrawing: false);
+      return result;
+    } catch (e, s) {
+      final appError = ErrorHandler.normalize(e, s);
+      AppLogger.error(
+        'Failed to withdraw referral earnings',
+        error: appError.technicalDetails ?? e,
+        stackTrace: s,
+        tag: _tag,
+      );
+      state = state.copyWith(
+        isWithdrawing: false,
+        error: appError.userMessage,
+      );
+      return null;
+    }
+  }
 }
 
 /// Provider for referral state.
@@ -81,4 +118,11 @@ final referralProvider =
     StateNotifierProvider<ReferralNotifier, ReferralState>((ref) {
   final repository = ref.watch(referralRepositoryProvider);
   return ReferralNotifier(repository);
+});
+
+/// Provider for referral leaderboard (admin dashboard).
+final referralLeaderboardProvider =
+    FutureProvider.autoDispose<List<ReferralLeaderEntry>>((ref) async {
+  final repository = ref.watch(referralRepositoryProvider);
+  return repository.getLeaderboard();
 });

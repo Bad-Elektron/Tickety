@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/state/app_state.dart';
 import '../models/tier_benefits.dart';
 
@@ -113,7 +114,7 @@ class TierCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Current',
+                L.tr('Current'),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -128,7 +129,7 @@ class TierCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                'Popular',
+                L.tr('Popular'),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.onPrimary,
                   fontWeight: FontWeight.bold,
@@ -152,7 +153,7 @@ class TierCard extends StatelessWidget {
         textBaseline: TextBaseline.alphabetic,
         children: [
           Text(
-            priceString == 'Free' ? 'Free' : priceString.replaceAll('/mo', ''),
+            priceString == 'Free' ? L.tr('Free') : priceString.replaceAll('/mo', ''),
             style: theme.textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -160,7 +161,7 @@ class TierCard extends StatelessWidget {
           if (priceString != 'Free') ...[
             const SizedBox(width: 4),
             Text(
-              '/month',
+              L.tr('/month'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -239,10 +240,10 @@ class TierCard extends StatelessWidget {
               )
             : Text(
                 isCurrentTier
-                    ? 'Current Plan'
+                    ? L.tr('Current Plan')
                     : tier == AccountTier.base
-                        ? 'Downgrade'
-                        : 'Upgrade',
+                        ? L.tr('Downgrade')
+                        : L.tr('Upgrade'),
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
       ),

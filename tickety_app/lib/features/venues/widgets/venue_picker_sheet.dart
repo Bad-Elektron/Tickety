@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/venue_provider.dart';
 import '../models/venue.dart';
 
@@ -44,7 +45,7 @@ class VenuePickerSheet extends ConsumerWidget {
               child: Row(
                 children: [
                   Text(
-                    'Select Venue',
+                    L.tr('Select Venue'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -53,7 +54,7 @@ class VenuePickerSheet extends ConsumerWidget {
                   TextButton.icon(
                     onPressed: () => _createVenue(context, ref),
                     icon: const Icon(Icons.add, size: 18),
-                    label: const Text('New'),
+                    label: Text(L.tr('New')),
                   ),
                 ],
               ),
@@ -78,7 +79,7 @@ class VenuePickerSheet extends ConsumerWidget {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'No venues yet',
+                            L.tr('No venues yet'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -87,7 +88,7 @@ class VenuePickerSheet extends ConsumerWidget {
                           FilledButton.icon(
                             onPressed: () => _createVenue(context, ref),
                             icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Create Venue'),
+                            label: Text(L.tr('Create Venue')),
                           ),
                         ],
                       ),
@@ -136,24 +137,24 @@ class VenuePickerSheet extends ConsumerWidget {
       builder: (context) {
         final controller = TextEditingController();
         return AlertDialog(
-          title: const Text('New Venue'),
+          title: Text(L.tr('New Venue')),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Venue Name',
-              hintText: 'e.g., Madison Square Garden',
+            decoration: InputDecoration(
+              labelText: L.tr('Venue Name'),
+              hintText: L.tr('e.g., Madison Square Garden'),
             ),
             textCapitalization: TextCapitalization.words,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(L.tr('Cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Create'),
+              child: Text(L.tr('Create')),
             ),
           ],
         );

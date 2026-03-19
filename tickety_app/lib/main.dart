@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/config/config.dart';
 import 'core/debug/debug.dart';
 import 'core/errors/errors.dart';
+import 'core/localization/localization.dart';
+import 'core/providers/locale_provider.dart';
 import 'core/providers/subscription_provider.dart';
 import 'core/providers/theme_provider.dart';
 import 'core/services/services.dart';
@@ -56,6 +58,10 @@ Future<void> main() async {
         tag: 'Main',
       );
     }
+
+    // Initialize localization (CSV-based, all languages)
+    await L.init();
+    AppLogger.info('Localization initialized (${L.locale})', tag: 'Main');
 
     // Wrap with ProviderScope for Riverpod state management
     runApp(const ProviderScope(child: TicketyApp()));
@@ -112,8 +118,9 @@ class _TicketyAppState extends ConsumerState<TicketyApp> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch theme mode from Riverpod provider
+    // Watch theme mode and locale from Riverpod providers
     final themeMode = ref.watch(themeModeProvider);
+    ref.watch(localeProvider); // triggers rebuild on language change
 
     // Initialize subscription provider at app start so tier is loaded when authenticated
     ref.watch(subscriptionProvider);

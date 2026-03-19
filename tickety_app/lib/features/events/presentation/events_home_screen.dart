@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../external_events/external_events.dart';
 import '../../notifications/notifications.dart';
@@ -40,6 +41,8 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
   bool _isSearching = false;
   String _searchQuery = '';
   EventModel? _inviteCodeResult;
+  List<EventModel> _serverSearchResults = [];
+  bool _isServerSearching = false;
   final _eventRepo = SupabaseEventRepository();
 
   @override
@@ -68,6 +71,22 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
           setState(() => _inviteCodeResult = null);
         }
       }
+      // Server-side search for events not in the feed
+      if (trimmed.length >= 2) {
+        setState(() => _isServerSearching = true);
+        _eventRepo.searchEvents(trimmed).then((results) {
+          if (mounted) {
+            setState(() {
+              _serverSearchResults = results;
+              _isServerSearching = false;
+            });
+          }
+        }).catchError((_) {
+          if (mounted) setState(() => _isServerSearching = false);
+        });
+      } else {
+        setState(() => _serverSearchResults = []);
+      }
     });
   }
 
@@ -78,6 +97,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
         _searchFocusNode.unfocus();
         _searchQuery = '';
         _inviteCodeResult = null;
+        _serverSearchResults = [];
       }
       _isSearching = !_isSearching;
     });
@@ -85,18 +105,34 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Watch the events state - automatically rebuilds when it changes
+    // Watch discovery feed (scored) + external events
+    final discoveryState = ref.watch(discoveryFeedProvider);
     final eventsState = ref.watch(eventsProvider);
     final externalState = ref.watch(externalEventsProvider);
     final selectedCategories = ref.watch(_selectedCategoriesProvider);
     final selectedCity = ref.watch(_selectedCityProvider);
     final selectedTags = ref.watch(_selectedTagsProvider);
 
-    // Build mixed feed items
-    final nativeItems = eventsState.events.map(NativeEventFeedItem.new).toList();
+    // Build mixed feed: scored native events + external events
+    // Native events come from discovery feed (already scored/ranked)
+    final nativeItems = discoveryState.events.map(NativeEventFeedItem.new).toList();
     final externalItems = externalState.events.map(ExternalEventFeedItem.new).toList();
-    final allItems = [...nativeItems, ...externalItems]
-      ..sort((a, b) => a.sortDate.compareTo(b.sortDate));
+    // Keep native items in score order (don't re-sort by date)
+    final allItems = [...nativeItems, ...externalItems];
+
+    // When searching, merge server search results (deduped) into feed items
+    if (_searchQuery.isNotEmpty && _serverSearchResults.isNotEmpty) {
+      final existingIds = allItems
+          .whereType<NativeEventFeedItem>()
+          .map((i) => i.event.id)
+          .toSet();
+      for (final event in _serverSearchResults) {
+        if (!existingIds.contains(event.id)) {
+          allItems.add(NativeEventFeedItem(event));
+          existingIds.add(event.id);
+        }
+      }
+    }
 
     // Compute filtered events (works on FeedItem)
     final filteredFeed = _filterFeed(
@@ -107,13 +143,14 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
       _searchQuery,
     );
 
+    // Use discovery state for loading flags; fall back to eventsState for cities
+    final isLoading = discoveryState.isLoading;
 
-    // Compute available cities
-    final availableCities = eventsState.events
-        .map((e) => e.city)
-        .whereType<String>()
-        .toSet()
-        .toList()
+    // Compute available cities from both sources
+    final availableCities = [
+      ...discoveryState.events.map((e) => e.city),
+      ...eventsState.events.map((e) => e.city),
+    ].whereType<String>().toSet().toList()
       ..sort();
 
     return Scaffold(
@@ -121,19 +158,19 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
         child: RefreshIndicator(
           onRefresh: () async {
             await Future.wait([
-              ref.read(eventsProvider.notifier).refresh(),
+              ref.read(discoveryFeedProvider.notifier).refresh(),
               ref.read(externalEventsProvider.notifier).refresh(),
             ]);
           },
           child: CustomScrollView(
             slivers: [
               _Header(),
-              if (eventsState.isLoading)
+              if (isLoading)
                 const SliverFillRemaining(
                   child: Center(child: CircularProgressIndicator()),
                 )
               else ...[
-                if (eventsState.isUsingPlaceholders)
+                if (eventsState.isUsingPlaceholders && discoveryState.events.isEmpty)
                   SliverToBoxAdapter(
                     child: Container(
                       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -152,7 +189,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Showing sample events. Configure Supabase to load real data.',
+                              L.tr('showing_sample_events'),
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
                               ),
@@ -163,9 +200,9 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                     ),
                   ),
                 SliverToBoxAdapter(
-                  child: _CarouselSection(events: eventsState.featuredEvents),
+                  child: _ScoredCarouselSection(),
                 ),
-                _SectionHeader(title: 'Upcoming Events'),
+                _SectionHeader(title: L.tr('events_home_upcoming')),
                 SliverToBoxAdapter(
                   child: EventFilterChips(
                     selectedCategories: selectedCategories,
@@ -352,7 +389,7 @@ class _CarouselSection extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Text(
-            'Featured',
+            L.tr('events_home_featured'),
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -375,6 +412,25 @@ class _CarouselSection extends StatelessWidget {
         const SizedBox(height: 8),
       ],
     );
+  }
+}
+
+/// Featured carousel powered by discovery scores.
+/// Shows hand-pinned events first, then top-scored events.
+/// Falls back to chronological if the RPC is unavailable.
+class _ScoredCarouselSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final featuredAsync = ref.watch(discoveryFeaturedProvider);
+    final fallbackEvents = ref.watch(eventsProvider).featuredEvents;
+
+    final events = featuredAsync.when(
+      data: (scored) => scored.isNotEmpty ? scored : fallbackEvents,
+      loading: () => fallbackEvents,
+      error: (_, __) => fallbackEvents,
+    );
+
+    return _CarouselSection(events: events);
   }
 }
 
@@ -482,7 +538,7 @@ class _EmptyFilterState extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               Text(
-                'No events found',
+                L.tr('events_home_no_events'),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -490,8 +546,8 @@ class _EmptyFilterState extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 hasSearch
-                    ? 'No events match your search'
-                    : 'Try adjusting your filters to find more events',
+                    ? L.tr('no_events_match_filter')
+                    : L.tr('try_different_search_or_filter'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -501,7 +557,7 @@ class _EmptyFilterState extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onClearFilters,
                 icon: const Icon(Icons.filter_alt_off, size: 18),
-                label: Text(hasSearch ? 'Clear Search & Filters' : 'Clear Filters'),
+                label: Text(hasSearch ? 'Clear Search & Filters' : L.tr('events_home_clear_filters')),
               ),
             ],
           ),
@@ -672,8 +728,8 @@ class _MixedFeedList extends ConsumerStatefulWidget {
 class _MixedFeedListState extends ConsumerState<_MixedFeedList> {
   @override
   Widget build(BuildContext context) {
-    final isLoadingMore = ref.watch(eventsLoadingMoreProvider);
-    final canLoadMore = ref.watch(eventsCanLoadMoreProvider);
+    final isLoadingMore = ref.watch(discoveryLoadingMoreProvider);
+    final canLoadMore = ref.watch(discoveryCanLoadMoreProvider);
     final itemCount = widget.items.length + (isLoadingMore || canLoadMore ? 1 : 0);
 
     return SliverList(
@@ -687,7 +743,7 @@ class _MixedFeedListState extends ConsumerState<_MixedFeedList> {
               );
             }
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              ref.read(eventsProvider.notifier).loadMore();
+              ref.read(discoveryFeedProvider.notifier).loadMore();
               ref.read(externalEventsProvider.notifier).loadMore();
             });
             return const SizedBox(height: 16);
@@ -695,7 +751,7 @@ class _MixedFeedListState extends ConsumerState<_MixedFeedList> {
 
           if (index >= widget.items.length - 3 && canLoadMore && !isLoadingMore) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              ref.read(eventsProvider.notifier).loadMore();
+              ref.read(discoveryFeedProvider.notifier).loadMore();
               ref.read(externalEventsProvider.notifier).loadMore();
             });
           }

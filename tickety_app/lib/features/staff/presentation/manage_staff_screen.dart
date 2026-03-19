@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/limit_reached_banner.dart';
 import '../../events/models/event_model.dart';
@@ -68,7 +69,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
             content: Text(limitCheck.message ?? 'Staff limit reached'),
             behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
-              label: 'Upgrade',
+              label: L.tr('upgrade'),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const SubscriptionScreen(),
@@ -90,7 +91,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
               content: Text(limitCheck.message ?? 'Role limit reached'),
               behavior: SnackBarBehavior.floating,
               action: SnackBarAction(
-                label: 'Upgrade',
+                label: L.tr('upgrade'),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => const SubscriptionScreen(),
@@ -161,7 +162,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
             content: Text(limitCheck.message ?? 'Role limit reached'),
             behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
-              label: 'Upgrade',
+              label: L.tr('upgrade'),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const SubscriptionScreen(),
@@ -195,21 +196,21 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Staff'),
+        title: Text(L.tr('remove_staff')),
         content: Text(
           'Remove ${staff.userName ?? staff.userEmail ?? 'this user'} from the event staff?',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Remove'),
+            child: Text(L.tr('remove')),
           ),
         ],
       ),
@@ -223,7 +224,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
         SnackBar(
           content: Text(
             success
-                ? 'Staff member removed'
+                ? L.tr('staff_member_removed')
                 : 'Failed to remove: ${ref.read(staffProvider).error ?? "Unknown error"}',
           ),
           backgroundColor: success ? null : Colors.red,
@@ -262,7 +263,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
       appBar: AppBar(
         title: Column(
           children: [
-            const Text('Manage Staff'),
+            Text(L.tr('manage_staff')),
             Text(
               widget.event.title,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -276,7 +277,7 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _addStaff,
         icon: const Icon(Icons.person_add),
-        label: const Text('Add Staff'),
+        label: Text(L.tr('add_staff')),
       ),
       body: staffState.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -305,21 +306,21 @@ class _ManageStaffScreenState extends ConsumerState<ManageStaffScreen> {
                               context,
                               role: StaffRole.usher,
                               staff: staffState.ushers,
-                              statsText: 'People let in: \u2014  \u00B7  Check-in rate: \u2014  \u00B7  Current rate: \u2014/hr',
+                              statsText: L.tr('usher_stats_placeholder'),
                             ),
                             const SizedBox(height: 16),
                             _buildRoleCard(
                               context,
                               role: StaffRole.seller,
                               staff: staffState.sellers,
-                              statsText: 'Tickets sold: \u2014  \u00B7  Revenue: \u2014  \u00B7  Cash collected: \u2014',
+                              statsText: L.tr('seller_stats_placeholder'),
                             ),
                             const SizedBox(height: 16),
                             _buildRoleCard(
                               context,
                               role: StaffRole.manager,
                               staff: staffState.managers,
-                              statsText: 'Can check tickets, sell, and manage staff',
+                              statsText: L.tr('manager_stats_placeholder'),
                             ),
                           ]),
                         ),
@@ -494,7 +495,7 @@ class _SummaryRow extends StatelessWidget {
       children: [
         Expanded(
           child: _MiniStatCard(
-            label: 'Total Staff',
+            label: L.tr('total_staff'),
             value: '${staffState.totalCount}',
             icon: Icons.groups,
             color: colorScheme.primary,
@@ -503,7 +504,7 @@ class _SummaryRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _MiniStatCard(
-            label: 'Checked In',
+            label: L.tr('checked_in'),
             value: '\u2014',
             icon: Icons.login,
             color: Colors.blue,
@@ -512,7 +513,7 @@ class _SummaryRow extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _MiniStatCard(
-            label: 'Revenue',
+            label: L.tr('revenue'),
             value: '\u2014',
             icon: Icons.attach_money,
             color: Colors.green,
@@ -623,7 +624,7 @@ class _StaffMemberRow extends StatelessWidget {
           ),
         ),
         title: Text(
-          staff.userName ?? staff.userEmail ?? 'Unknown User',
+          staff.userName ?? staff.userEmail ?? L.tr('unknown_user'),
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w500,
           ),
@@ -667,7 +668,7 @@ class _RoleBadgeDropdown extends StatelessWidget {
     return PopupMenuButton<StaffRole>(
       padding: EdgeInsets.zero,
       position: PopupMenuPosition.under,
-      tooltip: 'Change role',
+      tooltip: L.tr('change_role'),
       onSelected: onChanged,
       itemBuilder: (context) => StaffRole.values.map((role) {
         final isCurrent = role == currentRole;
@@ -801,7 +802,7 @@ class _StaffMemberDetailSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            staff.userName ?? staff.userEmail ?? 'Unknown User',
+            staff.userName ?? staff.userEmail ?? L.tr('unknown_user'),
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -856,7 +857,7 @@ class _StaffMemberDetailSheet extends StatelessWidget {
                   onPressed: onRemove,
                   icon: Icon(Icons.person_remove, color: colorScheme.error),
                   label: Text(
-                    'Remove',
+                    L.tr('remove'),
                     style: TextStyle(color: colorScheme.error),
                   ),
                   style: OutlinedButton.styleFrom(
@@ -878,20 +879,20 @@ class _StaffMemberDetailSheet extends StatelessWidget {
 
     final stats = switch (staff.role) {
       StaffRole.usher => [
-          ('Check-ins today', '\u2014'),
-          ('Total check-ins', '\u2014'),
-          ('Avg check-in rate', '\u2014'),
+          (L.tr('check_ins_today'), '\u2014'),
+          (L.tr('total_check_ins'), '\u2014'),
+          (L.tr('avg_check_in_rate'), '\u2014'),
         ],
       StaffRole.seller => [
-          ('Tickets sold today', '\u2014'),
-          ('Revenue today', '\u2014'),
-          ('Cash collected', '\u2014'),
+          (L.tr('tickets_sold_today'), '\u2014'),
+          (L.tr('revenue_today'), '\u2014'),
+          (L.tr('cash_collected'), '\u2014'),
         ],
       StaffRole.manager => [
-          ('Check-ins today', '\u2014'),
-          ('Tickets sold today', '\u2014'),
-          ('Revenue today', '\u2014'),
-          ('Cash collected', '\u2014'),
+          (L.tr('check_ins_today'), '\u2014'),
+          (L.tr('tickets_sold_today'), '\u2014'),
+          (L.tr('revenue_today'), '\u2014'),
+          (L.tr('cash_collected'), '\u2014'),
         ],
     };
 
@@ -906,7 +907,7 @@ class _StaffMemberDetailSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Performance',
+            L.tr('performance'),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -961,7 +962,7 @@ class _ErrorView extends StatelessWidget {
           children: [
             Icon(Icons.error_outline, color: colorScheme.error, size: 48),
             const SizedBox(height: 16),
-            Text('Failed to load staff', style: theme.textTheme.titleMedium),
+            Text(L.tr('failed_to_load_staff'), style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text(
               error,
@@ -971,7 +972,7 @@ class _ErrorView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+            OutlinedButton(onPressed: onRetry, child: Text(L.tr('retry'))),
           ],
         ),
       ),
@@ -1047,7 +1048,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
     final colorScheme = theme.colorScheme;
 
     return AlertDialog(
-      title: const Text('Add Staff Member'),
+      title: Text(L.tr('add_staff_member')),
       content: SizedBox(
         width: double.maxFinite,
         child: Column(
@@ -1057,7 +1058,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             TextField(
               controller: _emailController,
               decoration: InputDecoration(
-                labelText: 'Search by email or handle',
+                labelText: L.tr('search_by_email_or_handle'),
                 border: const OutlineInputBorder(),
                 suffixIcon: _isSearching
                     ? const Padding(
@@ -1099,7 +1100,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                     ),
                   ),
                   title: Text(
-                    _selectedUser!.displayName ?? 'No name',
+                    _selectedUser!.displayName ?? L.tr('no_name'),
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   subtitle: Text(
@@ -1142,7 +1143,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
-                      title: Text(user.displayName ?? 'No name'),
+                      title: Text(user.displayName ?? L.tr('no_name')),
                       subtitle: isOnStaff
                           ? Row(
                               children: [
@@ -1167,7 +1168,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'on staff',
+                                  L.tr('on_staff'),
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: colorScheme.onSurfaceVariant,
@@ -1196,7 +1197,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
                 !_isSearching) ...[
               const SizedBox(height: 8),
               Text(
-                'No users found',
+                L.tr('no_users_found'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -1205,9 +1206,9 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
             const SizedBox(height: 16),
             DropdownButtonFormField<StaffRole>(
               initialValue: _selectedRole,
-              decoration: const InputDecoration(
-                labelText: 'Role',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: L.tr('role'),
+                border: const OutlineInputBorder(),
               ),
               items: StaffRole.values.map((role) {
                 return DropdownMenuItem(
@@ -1234,7 +1235,7 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(L.tr('cancel')),
         ),
         FilledButton(
           onPressed: _selectedUser == null
@@ -1254,8 +1255,8 @@ class _AddStaffDialogState extends State<_AddStaffDialog> {
           child: Text(
             _selectedUser != null &&
                     _getExistingStaff(_selectedUser!.id) != null
-                ? 'Update Role'
-                : 'Add',
+                ? L.tr('update_role')
+                : L.tr('add'),
           ),
         ),
       ],

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/limit_reached_banner.dart';
 import '../../subscriptions/models/tier_limits.dart';
@@ -40,7 +41,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
 
     if (ticketState.isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Event Data')),
+        appBar: AppBar(title: Text(L.tr('event_data'))),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -53,8 +54,8 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
             expandedHeight: 120,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text(
-                'Event Data',
+              title: Text(
+                L.tr('event_data'),
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               background: Container(
@@ -73,8 +74,8 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
                 onPressed: () {
                   ref.read(ticketProvider.notifier).loadAnalytics(widget.event.id);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Refreshing statistics...'),
+                    SnackBar(
+                      content: Text(L.tr('refreshing_statistics')),
                       behavior: SnackBarBehavior.floating,
                       duration: Duration(seconds: 1),
                     ),
@@ -103,7 +104,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
 
                 // Hourly chart (Enterprise)
                 _SectionHeader(
-                  title: 'Check-ins by Hour',
+                  title: L.tr('checkins_by_hour'),
                   icon: Icons.bar_chart,
                 ),
                 const SizedBox(height: 12),
@@ -115,7 +116,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
 
                 // Usher performance (Enterprise)
                 _SectionHeader(
-                  title: 'Usher Performance',
+                  title: L.tr('usher_performance'),
                   icon: Icons.people_outline,
                 ),
                 const SizedBox(height: 12),
@@ -127,7 +128,7 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
 
                 // Ticket type breakdown (Pro+)
                 _SectionHeader(
-                  title: 'Ticket Types',
+                  title: L.tr('ticket_types'),
                   icon: Icons.confirmation_number_outlined,
                 ),
                 const SizedBox(height: 12),
@@ -135,6 +136,30 @@ class _EventDataScreenState extends ConsumerState<EventDataScreen> {
                   _TicketTypeBreakdownCard(analytics: analytics)
                 else
                   const LockedAnalyticsSection(section: AnalyticsSection.ticketTypeBreakdown),
+                const SizedBox(height: 24),
+
+                // Market Comparison (Enterprise)
+                _SectionHeader(
+                  title: L.tr('market_comparison'),
+                  icon: Icons.trending_up,
+                ),
+                const SizedBox(height: 12),
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.marketComparison)))
+                  _MarketComparisonPlaceholder()
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.marketComparison),
+                const SizedBox(height: 24),
+
+                // Tag Performance (Enterprise)
+                _SectionHeader(
+                  title: L.tr('tag_performance'),
+                  icon: Icons.label_outline,
+                ),
+                const SizedBox(height: 12),
+                if (ref.watch(canViewAnalyticsSectionProvider(AnalyticsSection.tagPerformance)))
+                  _TagPerformancePlaceholder()
+                else
+                  const LockedAnalyticsSection(section: AnalyticsSection.tagPerformance),
                 const SizedBox(height: 32),
               ]),
             ),
@@ -190,7 +215,7 @@ class _SummaryCardsSection extends StatelessWidget {
             Expanded(
               child: _SummaryCard(
                 icon: Icons.check_circle_outline,
-                label: 'Checked In',
+                label: L.tr('checked_in'),
                 value: '${analytics.checkedIn}',
                 subtitle: 'of ${analytics.totalSold} tickets',
                 color: colorScheme.primary,
@@ -200,9 +225,9 @@ class _SummaryCardsSection extends StatelessWidget {
             Expanded(
               child: _SummaryCard(
                 icon: Icons.trending_up,
-                label: 'Check-in Rate',
+                label: L.tr('checkin_rate'),
                 value: '${analytics.checkInRate.toStringAsFixed(1)}%',
-                subtitle: 'attendance',
+                subtitle: L.tr('attendance'),
                 color: Colors.green,
               ),
             ),
@@ -214,7 +239,7 @@ class _SummaryCardsSection extends StatelessWidget {
             Expanded(
               child: _SummaryCard(
                 icon: Icons.confirmation_number_outlined,
-                label: 'Tickets Sold',
+                label: L.tr('tickets_sold'),
                 value: '${analytics.totalSold}',
                 subtitle: '${analytics.remaining} remaining',
                 color: colorScheme.tertiary,
@@ -224,9 +249,9 @@ class _SummaryCardsSection extends StatelessWidget {
             Expanded(
               child: _SummaryCard(
                 icon: Icons.attach_money,
-                label: 'Revenue',
+                label: L.tr('revenue'),
                 value: analytics.formattedRevenue,
-                subtitle: 'total earned',
+                subtitle: L.tr('total_earned'),
                 color: colorScheme.secondary,
               ),
             ),
@@ -345,7 +370,7 @@ class _CheckInProgressCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Check-in Progress',
+                      L.tr('checkin_progress'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -402,12 +427,12 @@ class _CheckInProgressCard extends StatelessWidget {
             children: [
               _LegendItem(
                 color: colorScheme.primary,
-                label: 'Checked in',
+                label: L.tr('checked_in'),
                 value: '${analytics.checkedIn}',
               ),
               _LegendItem(
                 color: colorScheme.surfaceContainerHighest,
-                label: 'Remaining',
+                label: L.tr('remaining'),
                 value: '${analytics.remaining}',
               ),
             ],
@@ -481,7 +506,7 @@ class _HourlyCheckInChart extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'No check-ins yet',
+            L.tr('no_checkins_yet'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -635,7 +660,7 @@ class _UsherPerformanceCard extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'No check-ins yet',
+            L.tr('no_checkins_yet'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -856,7 +881,7 @@ class _TicketTypeBreakdownCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'General Admission',
+                    L.tr('general_admission'),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -993,5 +1018,99 @@ class _PieChartPainter extends CustomPainter {
   @override
   bool shouldRepaint(_PieChartPainter oldDelegate) {
     return oldDelegate.values != values || oldDelegate.colors != colors;
+  }
+}
+
+/// Placeholder for market comparison analytics (Enterprise).
+/// Shows avg ticket price, volume comparison vs similar events.
+class _MarketComparisonPlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _MarketStat(label: L.tr('avg_ticket_price'), value: '--', icon: Icons.attach_money),
+              const SizedBox(width: 16),
+              _MarketStat(label: L.tr('market_avg'), value: '--', icon: Icons.trending_up),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            L.tr('market_data_coming_soon'),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MarketStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _MarketStat({required this.label, required this.value, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 20, color: colorScheme.primary),
+            const SizedBox(height: 4),
+            Text(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(label, style: theme.textTheme.labelSmall?.copyWith(color: colorScheme.onSurfaceVariant)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Placeholder for tag performance analytics (Enterprise).
+/// Shows how event tags compare to platform averages.
+class _TagPerformancePlaceholder extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        child: Text(
+          L.tr('tag_analytics_coming_soon'),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
   }
 }

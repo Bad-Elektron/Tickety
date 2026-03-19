@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../../../shared/widgets/widgets.dart';
@@ -33,6 +34,24 @@ final _logEventViewProvider =
   _recentlyViewedEvents.add(eventId);
   final repo = ref.read(eventRepositoryProvider);
   await repo.logEventView(eventId, source: 'direct');
+});
+
+/// Tracks tag affinity when viewing an event (keyed by event ID, session deduped).
+final _trackTagAffinityOnViewProvider =
+    FutureProvider.autoDispose
+        .family<void, ({String eventId, List<String> tags})>((ref, args) async {
+  // Dedup: reuse the same set as event views
+  if (_recentlyViewedEvents.contains('tags_${args.eventId}')) return;
+  _recentlyViewedEvents.add('tags_${args.eventId}');
+  if (args.tags.isEmpty) return;
+  final userId = SupabaseService.instance.currentUser?.id;
+  if (userId == null) return;
+  final tracker = ref.read(trackTagAffinityProvider);
+  await tracker.track(
+    userId: userId,
+    tags: args.tags,
+    interactionType: 'view',
+  );
 });
 
 /// Provider that fetches the cheapest entry ticket price for an event.
@@ -96,8 +115,26 @@ class EventDetailsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Log view for engagement analytics (fire-and-forget, session deduped)
     ref.watch(_logEventViewProvider(event.id));
+    // Track tag affinity for personalized feed
+    if (event.tags.isNotEmpty) {
+      ref.watch(_trackTagAffinityOnViewProvider(
+        (eventId: event.id, tags: event.tags),
+      ));
+    }
 
-    final theme = Theme.of(context);
+    // Fetch organizer branding for color overrides
+    final branding = ref.watch(organizerBrandingProvider(event.organizerId)).valueOrNull;
+
+    final baseTheme = Theme.of(context);
+    // If organizer has custom branding, override primary/secondary colors
+    final theme = branding != null
+        ? baseTheme.copyWith(
+            colorScheme: baseTheme.colorScheme.copyWith(
+              primary: branding.primaryColorValue,
+              secondary: branding.accentColorValue,
+            ),
+          )
+        : baseTheme;
     final colorScheme = theme.colorScheme;
     final config = event.getNoiseConfig();
     final availabilityAsync = ref.watch(_ticketAvailabilityProvider(event.id));
@@ -105,7 +142,9 @@ class EventDetailsScreen extends ConsumerWidget {
     final locationText = event.getDisplayLocation(hasTicket: hasTicket);
     final showMapLink = event.hasCoordinates && (!event.hideLocation || hasTicket);
 
-    return Scaffold(
+    return Theme(
+      data: theme,
+      child: Scaffold(
       body: CustomScrollView(
         slivers: [
           // Hero header with gradient
@@ -191,7 +230,7 @@ class EventDetailsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Invite Only',
+                            L.tr('invite_only'),
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
@@ -223,7 +262,7 @@ class EventDetailsScreen extends ConsumerWidget {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            event.isVirtual ? 'Virtual Event' : 'Hybrid Event',
+                            event.isVirtual ? L.tr('virtual_event') : L.tr('hybrid_event'),
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: Colors.cyan[600],
                               fontWeight: FontWeight.w600,
@@ -265,7 +304,7 @@ class EventDetailsScreen extends ConsumerWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              '\u00B7 See all dates',
+                              '\u00B7 ${L.tr('see_all_dates')}',
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: Colors.deepPurple[300],
                               ),
@@ -363,7 +402,7 @@ class EventDetailsScreen extends ConsumerWidget {
                   // Info cards
                   _InfoCard(
                     icon: Icons.calendar_today_rounded,
-                    title: 'Date & Time',
+                    title: L.tr('date_and_time'),
                     value: _formatDateTime(event.date),
                     color: colorScheme.primary,
                   ),
@@ -374,7 +413,7 @@ class EventDetailsScreen extends ConsumerWidget {
                       icon: event.hideLocation && !hasTicket
                           ? Icons.lock_outlined
                           : Icons.location_on_outlined,
-                      title: 'Location',
+                      title: L.tr('location'),
                       value: locationText,
                       color: colorScheme.tertiary,
                       onTap: showMapLink
@@ -392,12 +431,12 @@ class EventDetailsScreen extends ConsumerWidget {
                       const SizedBox(height: 12),
                     _InfoCard(
                       icon: Icons.videocam_outlined,
-                      title: event.isVirtual ? 'Online Event' : 'Virtual Access',
+                      title: event.isVirtual ? L.tr('online_event') : L.tr('virtual_access'),
                       value: event.virtualLocked && hasTicket && event.virtualEventUrl != null
-                          ? 'Meeting link available — check your ticket!'
+                          ? L.tr('meeting_link_available')
                           : event.virtualLocked
-                              ? 'Link revealed to ticket holders'
-                              : 'Link reveals 1 hour before event',
+                              ? L.tr('link_revealed_to_holders')
+                              : L.tr('link_reveals_before_event'),
                       color: Colors.cyan,
                     ),
                   ],
@@ -406,19 +445,19 @@ class EventDetailsScreen extends ConsumerWidget {
                   availabilityAsync.when(
                     loading: () => _InfoCard(
                       icon: Icons.confirmation_number_outlined,
-                      title: 'Official Tickets',
-                      value: 'Loading...',
+                      title: L.tr('official_tickets'),
+                      value: L.tr('loading'),
                       color: colorScheme.secondary,
                     ),
                     error: (_, __) => _InfoCard(
                       icon: Icons.confirmation_number_outlined,
-                      title: 'Official Tickets',
-                      value: 'Available',
+                      title: L.tr('official_tickets'),
+                      value: L.tr('available'),
                       color: colorScheme.secondary,
                     ),
                     data: (availability) => _InfoCard(
                       icon: Icons.confirmation_number_outlined,
-                      title: 'Official Tickets',
+                      title: L.tr('official_tickets'),
                       value: availability.officialAvailabilityText,
                       color: colorScheme.secondary,
                     ),
@@ -428,15 +467,15 @@ class EventDetailsScreen extends ConsumerWidget {
                   availabilityAsync.when(
                     loading: () => _InfoCard(
                       icon: Icons.swap_horiz_rounded,
-                      title: 'Resale Tickets',
-                      value: 'Loading...',
+                      title: L.tr('resale_tickets'),
+                      value: L.tr('loading'),
                       color: colorScheme.tertiary,
                     ),
                     error: (_, __) => const SizedBox.shrink(),
                     data: (availability) => availability.resaleCount > 0
                         ? _InfoCard(
                             icon: Icons.swap_horiz_rounded,
-                            title: 'Resale Tickets',
+                            title: L.tr('resale_tickets'),
                             value: availability.resaleAvailabilityText,
                             color: colorScheme.tertiary,
                           )
@@ -456,7 +495,7 @@ class EventDetailsScreen extends ConsumerWidget {
                             children: [
                               const SizedBox(height: 24),
                               Text(
-                                'Shop',
+                                L.tr('shop'),
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -489,11 +528,55 @@ class EventDetailsScreen extends ConsumerWidget {
                       );
                     },
                   ),
+                  // Website link (if provided)
+                  if (event.websiteUrl != null && event.websiteUrl!.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () async {
+                          final uri = Uri.parse(event.websiteUrl!.startsWith('http')
+                              ? event.websiteUrl!
+                              : 'https://${event.websiteUrl!}');
+                          if (await canLaunchUrl(uri)) {
+                            await launchUrl(uri, mode: LaunchMode.externalApplication);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: colorScheme.primary.withValues(alpha: 0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.language, size: 20, color: colorScheme.primary),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  event.websiteUrl!.replaceFirst(RegExp(r'https?://'), ''),
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: colorScheme.primary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Icon(Icons.open_in_new, size: 16, color: colorScheme.primary),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   // Organizer info
                   if (event.organizerName != null || event.organizerHandle != null) ...[
                     Text(
-                      'Organizer',
+                      L.tr('organizer'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -528,7 +611,7 @@ class EventDetailsScreen extends ConsumerWidget {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        event.organizerName ?? 'Organizer',
+                                        event.organizerName ?? L.tr('organizer'),
                                         style: theme.textTheme.bodyMedium?.copyWith(
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -568,7 +651,7 @@ class EventDetailsScreen extends ConsumerWidget {
                           color: colorScheme.onSurfaceVariant,
                         ),
                         label: Text(
-                          'Report this event',
+                          L.tr('report_this_event'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -580,7 +663,7 @@ class EventDetailsScreen extends ConsumerWidget {
                   // Description
                   if (event.description != null) ...[
                     Text(
-                      'About',
+                      L.tr('about'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -609,17 +692,20 @@ class EventDetailsScreen extends ConsumerWidget {
           _showBuyTicketSheet(context);
         },
       ),
+      ),
     );
   }
 
   String _formatDateTime(DateTime date) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+    final months = [
+      L.tr('month_jan'), L.tr('month_feb'), L.tr('month_mar'),
+      L.tr('month_apr'), L.tr('month_may'), L.tr('month_jun'),
+      L.tr('month_jul'), L.tr('month_aug'), L.tr('month_sep'),
+      L.tr('month_oct'), L.tr('month_nov'), L.tr('month_dec'),
     ];
-    const weekdays = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday'
+    final weekdays = [
+      L.tr('day_mon'), L.tr('day_tue'), L.tr('day_wed'),
+      L.tr('day_thu'), L.tr('day_fri'), L.tr('day_sat'), L.tr('day_sun'),
     ];
 
     final weekday = weekdays[date.weekday - 1];
@@ -629,7 +715,7 @@ class EventDetailsScreen extends ConsumerWidget {
     final minute = date.minute.toString().padLeft(2, '0');
     final period = date.hour >= 12 ? 'PM' : 'AM';
 
-    return '$weekday, $month $day at $hour:$minute $period';
+    return '$weekday, $month $day, $hour:$minute $period';
   }
 
   void _shareEvent(BuildContext context) {
@@ -804,7 +890,7 @@ class _BottomBuyBar extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Price per ticket',
+                L.tr('price_per_ticket'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -830,14 +916,14 @@ class _BottomBuyBar extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.confirmation_number_outlined, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.confirmation_number_outlined, size: 20),
+                  const SizedBox(width: 8),
                   Text(
-                    'Buy Tickets',
-                    style: TextStyle(
+                    L.tr('buy_tickets'),
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1014,7 +1100,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
             // Title
             Center(
               child: Text(
-                'Get Tickets',
+                L.tr('get_tickets'),
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -1085,7 +1171,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                       }
                     },
                     icon: const Icon(Icons.fullscreen, size: 18),
-                    label: const Text('Full Screen'),
+                    label: Text(L.tr('full_screen')),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                       visualDensity: VisualDensity.compact,
@@ -1130,7 +1216,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
-                        'Add-ons',
+                        L.tr('add_ons'),
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
@@ -1163,7 +1249,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Text(
-                      'Select an entry ticket to add items',
+                      L.tr('select_entry_ticket_to_add_items'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontStyle: FontStyle.italic,
@@ -1185,7 +1271,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                 child: Text(
                   _totalQuantity() > 0
                       ? 'Buy ${_totalQuantity()} item${_totalQuantity() > 1 ? 's' : ''} \u2022 ${_formatPrice(_totalCents())}'
-                      : 'Select tickets above',
+                      : L.tr('select_tickets_above'),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1239,7 +1325,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                 child: Text(
                   _totalCents() > 0
                       ? 'Buy Official \u2022 ${_formatPrice(_totalCents())}'
-                      : 'Get Free Ticket',
+                      : L.tr('get_free_ticket'),
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
@@ -1272,8 +1358,8 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
               loading: () => _TicketOptionCard(
                 icon: Icons.swap_horiz_rounded,
                 iconColor: colorScheme.secondary,
-                title: 'Resale Tickets',
-                subtitle: 'Loading...',
+                title: L.tr('resale_tickets'),
+                subtitle: L.tr('loading'),
                 trailing: const SizedBox(
                   width: 20,
                   height: 20,
@@ -1284,8 +1370,8 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
               error: (_, __) => _TicketOptionCard(
                 icon: Icons.swap_horiz_rounded,
                 iconColor: colorScheme.secondary,
-                title: 'Resale Tickets',
-                subtitle: 'Unable to load',
+                title: L.tr('resale_tickets'),
+                subtitle: L.tr('unable_to_load'),
                 trailing: Icon(
                   Icons.chevron_right,
                   color: colorScheme.onSurfaceVariant,
@@ -1295,10 +1381,10 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
               data: (availability) => _TicketOptionCard(
                 icon: Icons.swap_horiz_rounded,
                 iconColor: colorScheme.secondary,
-                title: 'Resale Tickets',
+                title: L.tr('resale_tickets'),
                 subtitle: availability.hasResaleTickets
                     ? '${availability.resaleCount} available from other fans'
-                    : 'None available',
+                    : L.tr('none_available'),
                 trailing: availability.hasResaleTickets
                     ? Icon(
                         Icons.chevron_right,
@@ -1337,7 +1423,7 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
-                            'sold out?',
+                            L.tr('sold_out_question'),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -1350,8 +1436,8 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                     _TicketOptionCard(
                       icon: Icons.notifications_outlined,
                       iconColor: Colors.orange,
-                      title: 'Join Waitlist',
-                      subtitle: 'Get notified or auto-buy when available',
+                      title: L.tr('join_waitlist'),
+                      subtitle: L.tr('get_notified_or_auto_buy'),
                       trailing: Icon(
                         Icons.chevron_right,
                         color: colorScheme.onSurfaceVariant,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../models/event_model.dart';
 import '../models/event_series.dart';
@@ -176,7 +177,7 @@ class EventBannerCard extends StatelessWidget {
             const Icon(Icons.videocam, size: 12, color: Colors.white),
             const SizedBox(width: 3),
             Text(
-              event.isVirtual ? 'Virtual' : 'Hybrid',
+              event.isVirtual ? L.tr('Virtual') : L.tr('Hybrid'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -203,7 +204,7 @@ class EventBannerCard extends StatelessWidget {
             const Icon(Icons.repeat, size: 12, color: Colors.white),
             const SizedBox(width: 3),
             Text(
-              recurrence?.shortLabel ?? 'Recurring',
+              recurrence?.shortLabel ?? L.tr('Recurring'),
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -353,11 +354,11 @@ class EventBannerCard extends StatelessWidget {
     final eventDay = DateTime(date.year, date.month, date.day);
     final difference = eventDay.difference(today).inDays;
 
-    if (difference == 0) return 'Today';
-    if (difference == 1) return 'Tomorrow';
-    if (difference == -1) return 'Yesterday';
+    if (difference == 0) return L.tr('Today');
+    if (difference == 1) return L.tr('Tomorrow');
+    if (difference == -1) return L.tr('Yesterday');
     if (difference < -1) {
-      return 'Ended · ${months[date.month - 1]} ${date.day}';
+      return '${L.tr('Ended')} · ${months[date.month - 1]} ${date.day}';
     }
     if (difference < 7) return 'In $difference days';
 

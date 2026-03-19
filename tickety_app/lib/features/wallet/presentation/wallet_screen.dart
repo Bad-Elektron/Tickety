@@ -3,9 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/graphics/graphics.dart';
-import '../../../core/providers/cardano_wallet_provider.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/currency_provider.dart';
-import '../../../core/providers/nft_mint_provider.dart';
 import '../../../core/providers/payment_methods_provider.dart';
 import '../../../core/providers/seller_balance_provider.dart';
 import '../../../core/services/services.dart';
@@ -15,11 +14,7 @@ import '../../payments/models/seller_balance.dart';
 import '../../payments/presentation/ready_to_pay_screen.dart';
 import '../data/wallet_repository.dart';
 import '../models/linked_bank_account.dart';
-import 'cardano_receive_screen.dart';
-import 'cardano_send_screen.dart';
-import '../models/nft_ticket.dart';
 import 'link_bank_screen.dart';
-import 'nft_ticket_detail_screen.dart';
 import 'transactions_screen.dart';
 
 /// Screen displaying the user's wallets and payment methods.
@@ -47,8 +42,6 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
     super.initState();
     Future.microtask(() {
       ref.read(sellerBalanceProvider.notifier).loadBalance();
-      ref.read(cardanoWalletProvider.notifier).ensureWallet();
-      ref.read(nftMintProvider.notifier).loadNfts();
       ref.read(paymentMethodsProvider.notifier).load();
       _loadBankAccounts();
     });
@@ -72,8 +65,6 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
   Future<void> _refreshAll() async {
     await Future.wait([
       ref.read(sellerBalanceProvider.notifier).refresh(),
-      ref.read(cardanoWalletProvider.notifier).loadBalance(),
-      ref.read(nftMintProvider.notifier).loadNfts(),
       ref.read(paymentMethodsProvider.notifier).load(),
     ]);
     _loadBankAccounts();
@@ -138,7 +129,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Wallet'),
+        title: Text(L.tr('wallet_title')),
         centerTitle: true,
         actions: [
           _CurrencySelector(),
@@ -155,7 +146,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
           );
         },
         icon: const Icon(Icons.contactless),
-        label: const Text('Ready to Pay'),
+        label: Text(L.tr('wallet_ready_to_pay')),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshAll,
@@ -166,21 +157,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ============================
-              // 1. CRYPTO BALANCE CARD (always visible)
-              // ============================
-              const _CryptoBalanceSection(),
-
-              const SizedBox(height: 16),
-
-              // ============================
-              // NFT TICKETS (horizontal scroll)
-              // ============================
-              const _NftTicketsSection(),
-
-              const SizedBox(height: 16),
-
-              // ============================
-              // 3. SELLER BALANCE (only shown if account exists)
+              // 1. SELLER BALANCE (only shown if account exists)
               // ============================
               if (sellerState.balance != null && sellerState.balance!.hasAccount) ...[
                 _SellerBalanceCard(balance: sellerState.balance!),
@@ -198,16 +175,16 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
-                      title: const Text('Remove Bank Account'),
+                      title: Text(L.tr('wallet_remove_bank_account')),
                       content: Text('Remove ${bank.displayName}?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancel'),
+                          child: Text(L.tr('wallet_cancel')),
                         ),
                         FilledButton(
                           onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Remove'),
+                          child: Text(L.tr('wallet_remove')),
                         ),
                       ],
                     ),
@@ -258,7 +235,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
 
               // Info section
               Text(
-                'About Your Wallet',
+                L.tr('wallet_about'),
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -266,39 +243,34 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
               const SizedBox(height: 16),
               _InfoCard(
                 icon: Icons.savings_outlined,
-                title: 'Save on Fees',
-                description:
-                    'Link your bank account and pay via ACH at checkout — just 5% platform fee + 0.8% processing (max \$5). No card fees.',
+                title: L.tr('wallet_info_save_fees_title'),
+                description: L.tr('wallet_info_save_fees_desc'),
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 icon: Icons.security,
-                title: 'Secure & Compliant',
-                description:
-                    'All payments are processed securely by Stripe.',
+                title: L.tr('wallet_info_secure_title'),
+                description: L.tr('wallet_info_secure_desc'),
               ),
               const SizedBox(height: 12),
               _InfoCard(
                 icon: Icons.flash_on,
-                title: 'Instant Tickets',
-                description:
-                    'Get your tickets immediately when paying with your bank. ACH settles in 4-5 business days.',
+                title: L.tr('wallet_info_instant_title'),
+                description: L.tr('wallet_info_instant_desc'),
               ),
               if (sellerState.balance != null) ...[
                 const SizedBox(height: 12),
                 _InfoCard(
                   icon: Icons.percent,
-                  title: '95% Seller Earnings',
-                  description:
-                      'You keep 95% of each sale. Only a 5% platform fee is deducted.',
+                  title: L.tr('wallet_info_seller_earnings_title'),
+                  description: L.tr('wallet_info_seller_earnings_desc'),
                 ),
                 if (!sellerState.balance!.payoutsEnabled) ...[
                   const SizedBox(height: 12),
                   _InfoCard(
                     icon: Icons.account_balance,
-                    title: 'Add Bank Details to Withdraw',
-                    description:
-                        'To withdraw your earnings, you\'ll need to add your bank account details.',
+                    title: L.tr('wallet_info_add_bank_title'),
+                    description: L.tr('wallet_info_add_bank_desc'),
                     isHighlighted: true,
                   ),
                 ],
@@ -324,225 +296,6 @@ final _walletRepoProvider = Provider((_) {
 // ============================================================
 
 // ============================================================
-// NFT TICKETS SECTION (horizontal scroll)
-// ============================================================
-
-class _NftTicketsSection extends ConsumerWidget {
-  const _NftTicketsSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final nftState = ref.watch(nftMintProvider);
-    final nfts = nftState.nfts;
-
-    if (nfts.isEmpty && !nftState.isLoading) return const SizedBox.shrink();
-
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Row(
-            children: [
-              Icon(Icons.token_rounded, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                'NFT Tickets',
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              if (nftState.isLoading)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 100,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: nfts.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              final nft = nfts[index];
-              return _NftTicketCard(nft: nft);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _NftTicketCard extends StatelessWidget {
-  final NftTicket nft;
-
-  const _NftTicketCard({required this.nft});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => NftTicketDetailScreen(nft: nft),
-          ),
-        );
-      },
-      child: Container(
-        width: 160,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              colorScheme.primaryContainer,
-              colorScheme.primaryContainer.withValues(alpha: 0.6),
-            ],
-          ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: colorScheme.primary.withValues(alpha: 0.3),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.token_rounded,
-                  size: 20,
-                  color: colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'CIP-68',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Text(
-              nft.displayName,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (nft.eventTitle != null)
-              Text(
-                nft.eventTitle!,
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CryptoBalanceSection extends ConsumerWidget {
-  const _CryptoBalanceSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final cardanoState = ref.watch(cardanoWalletProvider);
-    final hasCardanoWallet = cardanoState.hasWallet;
-    final cardanoBalance = cardanoState.balance;
-    final isCardanoLoading = cardanoState.isLoading;
-
-    final hasLockedAda = cardanoBalance != null && cardanoBalance.lockedLovelace > 0;
-
-    return Column(
-      children: [
-        _BalanceCard(
-          title: 'Available',
-          amount: isCardanoLoading
-              ? '...'
-              : (cardanoBalance?.formattedAvailableAda ?? '0 ADA'),
-          subtitle: hasLockedAda
-              ? '${cardanoBalance.formattedLockedAda} locked with tickets'
-              : 'Cardano Preview',
-          tag: 'Crypto Balance',
-          icon: Icons.currency_bitcoin,
-          gradientColors: NoisePresets.vibrantEvents(108).colors,
-          isLoading: isCardanoLoading,
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const TransactionsScreen(
-                    initialCurrencyFilter: TransactionCurrencyFilter.crypto),
-              ),
-            );
-          },
-        ),
-        if (hasCardanoWallet) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _CardanoActionButton(
-                  icon: Icons.arrow_downward,
-                  label: 'Receive',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const CardanoReceiveScreen(),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _CardanoActionButton(
-                  icon: Icons.arrow_upward,
-                  label: 'Send',
-                  onTap: () {
-                    Navigator.of(context).push<bool>(
-                      MaterialPageRoute(
-                        builder: (_) => const CardanoSendScreen(),
-                      ),
-                    ).then((sent) {
-                      if (sent == true) {
-                        ref.read(cardanoWalletProvider.notifier).refresh();
-                      }
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-// ============================================================
 // SELLER BALANCE CARD (single card, not side-by-side)
 // ============================================================
 
@@ -555,16 +308,16 @@ class _SellerBalanceCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currency = ref.watch(currencyProvider);
     return _BalanceCard(
-      title: 'Available',
+      title: L.tr('wallet_available'),
       amount: CurrencyFormatter.displayAmount(
         balance.availableBalanceCents,
         fromCurrency: balance.currency,
         displayCurrency: currency.code,
       ),
       subtitle: balance.payoutsEnabled
-          ? 'Ready to withdraw'
-          : 'Add bank to withdraw',
-      tag: 'Seller Balance',
+          ? L.tr('wallet_ready_to_withdraw')
+          : L.tr('wallet_add_bank_to_withdraw'),
+      tag: L.tr('wallet_seller_balance'),
       icon: Icons.account_balance_wallet,
       gradientColors: NoisePresets.subtle(42).colors,
       onTap: () {
@@ -599,7 +352,7 @@ class _SavedCardsSection extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Saved Cards',
+              L.tr('wallet_saved_cards'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -609,7 +362,7 @@ class _SavedCardsSection extends ConsumerWidget {
                   ? () => ref.read(paymentMethodsProvider.notifier).addCard()
                   : null,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Card'),
+              label: Text(L.tr('wallet_add_card')),
             ),
           ],
         ),
@@ -643,14 +396,14 @@ class _SavedCardsSection extends ConsumerWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'No cards saved',
+                  L.tr('wallet_no_cards'),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Add a card to speed up checkout',
+                  L.tr('wallet_add_card_hint'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                   ),
@@ -674,21 +427,21 @@ class _SavedCardsSection extends ConsumerWidget {
                     final confirmed = await showDialog<bool>(
                       context: context,
                       builder: (ctx) => AlertDialog(
-                        title: const Text('Remove Card'),
+                        title: Text(L.tr('wallet_remove_card')),
                         content: Text(
                           'Remove ${card.displayBrand} ending in ${card.last4}?',
                         ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(ctx, false),
-                            child: const Text('Cancel'),
+                            child: Text(L.tr('wallet_cancel')),
                           ),
                           FilledButton(
                             onPressed: () => Navigator.pop(ctx, true),
                             style: FilledButton.styleFrom(
                               backgroundColor: colorScheme.error,
                             ),
-                            child: const Text('Remove'),
+                            child: Text(L.tr('wallet_remove')),
                           ),
                         ],
                       ),
@@ -795,7 +548,7 @@ class _SavedCardTile extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                'Default',
+                L.tr('wallet_default'),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.primary,
                   fontWeight: FontWeight.w600,
@@ -814,13 +567,13 @@ class _SavedCardTile extends StatelessWidget {
             },
             itemBuilder: (context) => [
               if (!card.isDefault)
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'default',
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle_outline, size: 20),
-                      SizedBox(width: 12),
-                      Text('Set as Default'),
+                      const Icon(Icons.check_circle_outline, size: 20),
+                      const SizedBox(width: 12),
+                      Text(L.tr('wallet_set_default')),
                     ],
                   ),
                 ),
@@ -832,7 +585,7 @@ class _SavedCardTile extends StatelessWidget {
                         size: 20,
                         color: Theme.of(context).colorScheme.error),
                     const SizedBox(width: 12),
-                    Text('Remove',
+                    Text(L.tr('wallet_remove'),
                         style: TextStyle(
                             color: Theme.of(context).colorScheme.error)),
                   ],
@@ -841,50 +594,6 @@ class _SavedCardTile extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _CardanoActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _CardanoActionButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Material(
-      color: colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 18, color: colorScheme.primary),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -919,7 +628,7 @@ class _LinkedBankSection extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Linked Banks',
+              L.tr('wallet_linked_banks'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
@@ -927,7 +636,7 @@ class _LinkedBankSection extends StatelessWidget {
             TextButton.icon(
               onPressed: onLink,
               icon: const Icon(Icons.add, size: 18),
-              label: const Text('Link Bank'),
+              label: Text(L.tr('wallet_link_bank')),
             ),
           ],
         ),
@@ -972,13 +681,13 @@ class _LinkedBankSection extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'No bank accounts linked',
+                        L.tr('wallet_no_banks'),
                         style: theme.textTheme.titleSmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                       Text(
-                        'Link a bank to fund your wallet via ACH',
+                        L.tr('wallet_link_bank_hint'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                         ),
@@ -1043,7 +752,7 @@ class _LinkedBankSection extends StatelessWidget {
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Default',
+                            L.tr('wallet_default'),
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: colorScheme.primary,
                               fontWeight: FontWeight.w600,
@@ -1220,8 +929,8 @@ class _WalletActions extends ConsumerWidget {
         if (needsBankSetup)
           _ActionButton(
             icon: Icons.account_balance,
-            label: 'Add Bank Details',
-            sublabel: 'Required to withdraw earnings',
+            label: L.tr('wallet_add_bank_details'),
+            sublabel: L.tr('wallet_required_to_withdraw'),
             isLoading: isLoading,
             isPrimary: true,
             onTap: onAddBank,
@@ -1234,9 +943,9 @@ class _WalletActions extends ConsumerWidget {
             label: canWithdraw
                 ? 'Withdraw ${CurrencyFormatter.displayAmount(balance.availableBalanceCents, fromCurrency: balance.currency, displayCurrency: currency.code)}'
                 : needsBankSetup
-                    ? 'Add bank to withdraw'
-                    : 'No funds to withdraw',
-            sublabel: canWithdraw ? 'Transfer to your bank account' : null,
+                    ? L.tr('wallet_add_bank_to_withdraw')
+                    : L.tr('wallet_no_funds'),
+            sublabel: canWithdraw ? L.tr('wallet_transfer_to_bank') : null,
             isLoading: false,
             isPrimary: canWithdraw,
             onTap: canWithdraw ? onWithdraw : null,
@@ -1363,7 +1072,7 @@ class _CurrencySelector extends ConsumerWidget {
     final theme = Theme.of(context);
 
     return PopupMenuButton<AppCurrency>(
-      tooltip: 'Change currency',
+      tooltip: L.tr('wallet_change_currency'),
       offset: const Offset(0, 48),
       onSelected: (currency) {
         ref.read(currencyStateProvider.notifier).setCurrency(currency);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/merch_provider.dart';
 import '../../payments/models/payment.dart';
 import '../models/models.dart';
@@ -115,7 +116,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   if (product.variants.length > 1) ...[
                     const SizedBox(height: 20),
                     Text(
-                      'Options',
+                      L.tr('options'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -147,22 +148,22 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   if (product.eventId != null) ...[
                     const SizedBox(height: 20),
                     Text(
-                      'Delivery',
+                      L.tr('delivery'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 8),
                     SegmentedButton<FulfillmentType>(
-                      segments: const [
+                      segments: [
                         ButtonSegment(
                           value: FulfillmentType.ship,
-                          label: Text('Ship to me'),
+                          label: Text(L.tr('ship_to_me')),
                           icon: Icon(Icons.local_shipping_outlined),
                         ),
                         ButtonSegment(
                           value: FulfillmentType.pickup,
-                          label: Text('Pick up at event'),
+                          label: Text(L.tr('pick_up_at_event')),
                           icon: Icon(Icons.store_outlined),
                         ),
                       ],
@@ -177,7 +178,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                   Row(
                     children: [
                       Text(
-                        'Quantity',
+                        L.tr('quantity'),
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -216,11 +217,11 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                       child: Column(
                         children: [
                           _PriceRow(
-                            label: 'Subtotal',
+                            label: L.tr('subtotal'),
                             amount: _totalCents,
                           ),
                           _PriceRow(
-                            label: 'Service fee',
+                            label: L.tr('service_fee'),
                             amount: MerchFeeCalculator.calculate(_totalCents).totalCents - _totalCents,
                           ),
                           Divider(
@@ -228,7 +229,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                             height: 16,
                           ),
                           _PriceRow(
-                            label: 'Total',
+                            label: L.tr('total'),
                             amount: MerchFeeCalculator.calculate(_totalCents).totalCents,
                             isBold: true,
                           ),
@@ -258,7 +259,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
                         : Text(
                             product.inStock
                                 ? 'Buy Now \u2022 \$${(MerchFeeCalculator.calculate(_totalCents).totalCents / 100).toStringAsFixed(2)}'
-                                : 'Out of Stock',
+                                : L.tr('out_of_stock'),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -290,12 +291,12 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
         if (result['client_secret'] != null) {
           // TODO: Present Stripe PaymentSheet
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Payment initiated! Complete checkout.')),
+            SnackBar(content: Text(L.tr('payment_initiated'))),
           );
         } else if (result['checkout_url'] != null) {
           // TODO: Open Shopify checkout URL
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Redirecting to checkout...')),
+            SnackBar(content: Text(L.tr('redirecting_to_checkout'))),
           );
         }
       }

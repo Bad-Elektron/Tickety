@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import '../../../core/localization/localization.dart';
+
 /// Camera-based QR code scanner for ticket check-in.
 ///
 /// Displays a camera viewfinder with targeting overlay and
@@ -155,7 +157,7 @@ class _QrScannerViewState extends State<QrScannerView>
 
     if (_hasError) {
       return _ErrorView(
-        message: _errorMessage ?? 'Scanner unavailable',
+        message: _errorMessage ?? L.tr('Scanner unavailable'),
         onRetry: () {
           setState(() {
             _hasError = false;
@@ -182,7 +184,7 @@ class _QrScannerViewState extends State<QrScannerView>
             onDetect: _onDetect,
             errorBuilder: (context, error, child) {
               return _ErrorView(
-                message: error.errorDetails?.message ?? 'Camera error',
+                message: error.errorDetails?.message ?? L.tr('Camera error'),
                 onRetry: () => _controller?.start(),
               );
             },
@@ -206,14 +208,14 @@ class _QrScannerViewState extends State<QrScannerView>
               // Torch toggle
               _ControlButton(
                 icon: _torchEnabled ? Icons.flash_on : Icons.flash_off,
-                label: 'Flash',
+                label: L.tr('Flash'),
                 isActive: _torchEnabled,
                 onPressed: _toggleTorch,
               ),
               // Camera switch
               _ControlButton(
                 icon: Icons.flip_camera_ios,
-                label: 'Flip',
+                label: L.tr('Flip'),
                 onPressed: _switchCamera,
               ),
             ],
@@ -249,7 +251,7 @@ class _QrScannerViewState extends State<QrScannerView>
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Processing...',
+                      L.tr('Processing...'),
                       style: theme.textTheme.labelMedium?.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -565,7 +567,7 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Camera Unavailable',
+              L.tr('Camera Unavailable'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -582,7 +584,7 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(L.tr('Retry')),
             ),
           ],
         ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/models.dart';
 
 /// Context-sensitive properties panel for editing the selected element.
@@ -50,7 +51,7 @@ class PropertiesPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Select an element\nto edit properties',
+            L.tr('Select an element to edit properties'),
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
@@ -75,7 +76,7 @@ class PropertiesPanel extends StatelessWidget {
             children: [
               Icon(Icons.dashboard_outlined, size: 18, color: colorScheme.primary),
               const SizedBox(width: 8),
-              Text('Section', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+              Text(L.tr('Section'), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 18),
@@ -89,8 +90,8 @@ class PropertiesPanel extends StatelessWidget {
           // Name
           TextFormField(
             initialValue: section.name,
-            decoration: const InputDecoration(
-              labelText: 'Name',
+            decoration: InputDecoration(
+              labelText: L.tr('Name'),
               isDense: true,
             ),
             onChanged: (value) => onSectionUpdated(section.copyWith(name: value)),
@@ -99,8 +100,8 @@ class PropertiesPanel extends StatelessWidget {
           // Type
           DropdownButtonFormField<SectionType>(
             value: section.type,
-            decoration: const InputDecoration(
-              labelText: 'Type',
+            decoration: InputDecoration(
+              labelText: L.tr('Type'),
               isDense: true,
             ),
             items: SectionType.values.map((t) {
@@ -114,9 +115,9 @@ class PropertiesPanel extends StatelessWidget {
           // Pricing tier
           TextFormField(
             initialValue: section.pricingTier ?? '',
-            decoration: const InputDecoration(
-              labelText: 'Pricing Tier',
-              hintText: 'e.g., VIP, General',
+            decoration: InputDecoration(
+              labelText: L.tr('Pricing Tier'),
+              hintText: L.tr('e.g., VIP, General'),
               isDense: true,
             ),
             onChanged: (value) => onSectionUpdated(
@@ -128,8 +129,8 @@ class PropertiesPanel extends StatelessWidget {
           if (section.type != SectionType.seated)
             TextFormField(
               initialValue: section.capacity.toString(),
-              decoration: const InputDecoration(
-                labelText: 'Capacity',
+              decoration: InputDecoration(
+                labelText: L.tr('Capacity'),
                 isDense: true,
               ),
               keyboardType: TextInputType.number,
@@ -140,7 +141,7 @@ class PropertiesPanel extends StatelessWidget {
             ),
           // Color picker
           const SizedBox(height: 12),
-          Text('Color', style: theme.textTheme.bodySmall),
+          Text(L.tr('Color'), style: theme.textTheme.bodySmall),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -177,7 +178,7 @@ class PropertiesPanel extends StatelessWidget {
             FilledButton.icon(
               onPressed: onGenerateSeats,
               icon: const Icon(Icons.grid_view, size: 18),
-              label: Text(section.rows.isEmpty ? 'Generate Seats' : 'Regenerate Seats'),
+              label: Text(section.rows.isEmpty ? L.tr('Generate Seats') : L.tr('Regenerate Seats')),
               style: FilledButton.styleFrom(
                 minimumSize: const Size(double.infinity, 40),
               ),
@@ -210,7 +211,7 @@ class PropertiesPanel extends StatelessWidget {
             children: [
               Icon(Icons.category_outlined, size: 18, color: colorScheme.primary),
               const SizedBox(width: 8),
-              Text('Element', style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+              Text(L.tr('Element'), style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
               const Spacer(),
               IconButton(
                 icon: const Icon(Icons.delete_outline, size: 18),
@@ -223,8 +224,8 @@ class PropertiesPanel extends StatelessWidget {
           const SizedBox(height: 12),
           TextFormField(
             initialValue: element.label,
-            decoration: const InputDecoration(
-              labelText: 'Label',
+            decoration: InputDecoration(
+              labelText: L.tr('Label'),
               isDense: true,
             ),
             onChanged: (value) => onElementUpdated(element.copyWith(label: value)),

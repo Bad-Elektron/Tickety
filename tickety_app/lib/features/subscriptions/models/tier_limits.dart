@@ -7,7 +7,9 @@ enum AnalyticsSection {
   ticketTypeBreakdown('Ticket Type Breakdown'),
   hourlyCheckins('Hourly Check-ins'),
   usherPerformance('Usher Performance'),
-  platformTrends('Platform Trends');
+  platformTrends('Platform Trends'),
+  marketComparison('Market Comparison'),
+  tagPerformance('Tag Performance');
 
   const AnalyticsSection(this.label);
 
@@ -84,6 +86,13 @@ class TierLimits {
     AccountTier.enterprise: true,
   };
 
+  // ── Branding access ────────────────────────────────────
+  static const Map<AccountTier, bool> _brandingAccess = {
+    AccountTier.base: false,
+    AccountTier.pro: true,
+    AccountTier.enterprise: true,
+  };
+
   // ── Embed widget access ─────────────────────────────────
   static const Map<AccountTier, bool> _widgetAccess = {
     AccountTier.base: true,   // Base gets widget with "Powered by Tickety" branding
@@ -99,6 +108,8 @@ class TierLimits {
       AnalyticsSection.summaryCards,
       AnalyticsSection.checkInProgress,
       AnalyticsSection.ticketTypeBreakdown,
+      AnalyticsSection.hourlyCheckins,
+      AnalyticsSection.usherPerformance,
     },
     AccountTier.enterprise: {
       AnalyticsSection.summaryCards,
@@ -107,6 +118,8 @@ class TierLimits {
       AnalyticsSection.hourlyCheckins,
       AnalyticsSection.usherPerformance,
       AnalyticsSection.platformTrends,
+      AnalyticsSection.marketComparison,
+      AnalyticsSection.tagPerformance,
     },
   };
 
@@ -121,6 +134,7 @@ class TierLimits {
   static bool canUseCustomTags(AccountTier tier) => _customTagsAllowed[tier] ?? false;
   static bool canUseVenueBuilder(AccountTier tier) => _venueBuilderAccess[tier] ?? false;
   static bool canUseMerchStore(AccountTier tier) => _merchStoreAccess[tier] ?? false;
+  static bool canCustomizeBranding(AccountTier tier) => _brandingAccess[tier] ?? false;
   static bool canUseWidget(AccountTier tier) => _widgetAccess[tier] ?? false;
 
   /// Whether [tier] can view the given analytics [section].

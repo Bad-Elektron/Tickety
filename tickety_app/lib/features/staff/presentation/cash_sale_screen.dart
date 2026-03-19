@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/services/nfc_service.dart';
 import '../../events/models/event_model.dart';
 import '../../events/models/ticket_type.dart';
@@ -151,13 +152,13 @@ class _CashSaleScreenState extends State<CashSaleScreen>
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Sale'),
+        title: Text(L.tr('cash_sale_confirm_title')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Transfer ticket to:',
+              L.tr('cash_sale_transfer_to'),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -210,7 +211,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'No account - ticket sent via email',
+                            L.tr('cash_sale_no_account'),
                             style:
                                 Theme.of(context).textTheme.labelSmall?.copyWith(
                                       color: Colors.orange.shade700,
@@ -230,7 +231,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Ticket Type',
+                  L.tr('cash_sale_ticket_type'),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 Text(
@@ -246,7 +247,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'Price',
+                  L.tr('cash_sale_price'),
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 Text(
@@ -263,11 +264,11 @@ class _CashSaleScreenState extends State<CashSaleScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm Sale'),
+            child: Text(L.tr('cash_sale_confirm_button')),
           ),
         ],
       ),
@@ -434,7 +435,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cash Sale'),
+        title: Text(L.tr('cash_sale_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -452,7 +453,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Event',
+                            L.tr('cash_sale_event'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -473,7 +474,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Ticket',
+                            L.tr('cash_sale_ticket'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -491,7 +492,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Price',
+                            L.tr('cash_sale_price'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -536,7 +537,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                     _startNfcReading();
                   },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Try Again'),
+                  label: Text(L.tr('try_again')),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                   ),
@@ -549,7 +550,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  child: const Text('Cancel'),
+                  child: Text(L.tr('cancel')),
                 ),
               ] else if (_showEmailInput) ...[
                 // Email input mode - just show cancel
@@ -560,7 +561,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  child: const Text('Cancel'),
+                  child: Text(L.tr('cancel')),
                 ),
               ] else ...[
                 // NFC mode - show email option and cancel
@@ -570,7 +571,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                       child: OutlinedButton.icon(
                         onPressed: _toggleEmailInput,
                         icon: const Icon(Icons.email_outlined, size: 18),
-                        label: const Text('Email'),
+                        label: Text(L.tr('cash_sale_email')),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -578,7 +579,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                       child: OutlinedButton.icon(
                         onPressed: _simulateCustomerTap,
                         icon: const Icon(Icons.bug_report, size: 18),
-                        label: const Text('Test'),
+                        label: Text(L.tr('cash_sale_test')),
                       ),
                     ),
                   ],
@@ -591,7 +592,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  child: const Text('Cancel'),
+                  child: Text(L.tr('cancel')),
                 ),
               ],
             ],
@@ -626,14 +627,14 @@ class _CashSaleScreenState extends State<CashSaleScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Waiting for Customer',
+          L.tr('staff_waiting_for_customer'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Ask the customer to open the Tickety app\nand tap their phone to receive the ticket',
+          L.tr('cash_sale_waiting_desc'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -662,7 +663,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Enter Customer Email',
+                        L.tr('cash_sale_enter_email'),
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
@@ -710,7 +711,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
                   child: FilledButton(
                     onPressed: _isLookingUpEmail ? null : _lookupByEmail,
                     child: Text(
-                        _isLookingUpEmail ? 'Looking up...' : 'Look Up'),
+                        _isLookingUpEmail ? L.tr('cash_sale_looking_up') : L.tr('cash_sale_look_up')),
                   ),
                 ),
               ],
@@ -741,14 +742,14 @@ class _CashSaleScreenState extends State<CashSaleScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Processing Sale...',
+          L.tr('cash_sale_processing'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Creating ticket and charging platform fee',
+          L.tr('cash_sale_processing_desc'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -776,7 +777,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Sale Complete!',
+          L.tr('cash_sale_complete'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -812,7 +813,7 @@ class _CashSaleScreenState extends State<CashSaleScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Error',
+          L.tr('error'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.red,

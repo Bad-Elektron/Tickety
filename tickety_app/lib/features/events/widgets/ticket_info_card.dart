@@ -1,36 +1,37 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../staff/models/ticket.dart';
 
 /// Validation status for scanned tickets at check-in.
 enum CheckInValidationStatus {
   valid(
-    label: 'Valid Ticket',
+    label: 'valid_ticket',
     icon: Icons.check_circle,
     color: Color(0xFF4CAF50),
   ),
   alreadyUsed(
-    label: 'Already Checked In',
+    label: 'already_checked_in',
     icon: Icons.cancel,
     color: Color(0xFFF44336),
   ),
   cancelled(
-    label: 'Ticket Cancelled',
+    label: 'ticket_cancelled',
     icon: Icons.block,
     color: Color(0xFFF44336),
   ),
   refunded(
-    label: 'Ticket Refunded',
+    label: 'ticket_refunded',
     icon: Icons.undo,
     color: Color(0xFFFF9800),
   ),
   wrongEvent(
-    label: 'Wrong Event',
+    label: 'wrong_event',
     icon: Icons.event_note,
     color: Color(0xFFFF9800),
   ),
   notFound(
-    label: 'Ticket Not Found',
+    label: 'ticket_not_found',
     icon: Icons.error,
     color: Color(0xFFF44336),
   );
@@ -125,7 +126,7 @@ class TicketInfoCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  _status.label,
+                  L.tr(_status.label),
                   style: theme.textTheme.titleMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -143,15 +144,15 @@ class TicketInfoCard extends StatelessWidget {
                 // Holder info
                 _InfoRow(
                   icon: Icons.person_outline,
-                  label: 'Ticket Holder',
-                  value: ticket.ownerName ?? 'Guest',
+                  label: L.tr('Ticket Holder'),
+                  value: ticket.ownerName ?? L.tr('Guest'),
                 ),
                 const SizedBox(height: 16),
 
                 if (ticket.ownerEmail != null) ...[
                   _InfoRow(
                     icon: Icons.email_outlined,
-                    label: 'Email',
+                    label: L.tr('Email'),
                     value: ticket.ownerEmail!,
                   ),
                   const SizedBox(height: 16),
@@ -159,7 +160,7 @@ class TicketInfoCard extends StatelessWidget {
 
                 _InfoRow(
                   icon: Icons.confirmation_number_outlined,
-                  label: 'Ticket Number',
+                  label: L.tr('Ticket Number'),
                   value: ticket.ticketNumber,
                   mono: true,
                 ),
@@ -167,7 +168,7 @@ class TicketInfoCard extends StatelessWidget {
 
                 _InfoRow(
                   icon: Icons.payments_outlined,
-                  label: 'Price Paid',
+                  label: L.tr('Price Paid'),
                   value: ticket.formattedPrice,
                 ),
 
@@ -213,7 +214,7 @@ class TicketInfoCard extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton(
                     onPressed: isLoading ? null : onDismiss,
-                    child: const Text('Dismiss'),
+                    child: Text(L.tr('Dismiss')),
                   ),
                 ),
                 if (_status == CheckInValidationStatus.valid) ...[
@@ -232,7 +233,7 @@ class TicketInfoCard extends StatelessWidget {
                               ),
                             )
                           : const Icon(Icons.check),
-                      label: Text(isLoading ? 'Checking in...' : 'Check In'),
+                      label: Text(isLoading ? L.tr('Checking in...') : L.tr('Check In')),
                       style: FilledButton.styleFrom(
                         backgroundColor: _status.color,
                       ),

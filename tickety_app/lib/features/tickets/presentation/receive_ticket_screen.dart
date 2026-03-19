@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/localization/localization.dart';
+
 /// Screen for customers to receive a ticket via NFC transfer.
 ///
 /// Shows a "Ready to receive" animation while waiting for the vendor
@@ -105,7 +107,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Test: Enter Transfer Token'),
+        title: Text(L.tr('receive_ticket_test_title')),
         content: TextField(
           controller: controller,
           decoration: const InputDecoration(
@@ -126,7 +128,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                 _claimTicket(controller.text.trim());
               }
             },
-            child: const Text('Claim'),
+            child: Text(L.tr('receive_ticket_claim')),
           ),
         ],
       ),
@@ -140,7 +142,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Receive Ticket'),
+        title: Text(L.tr('receive_ticket_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -168,7 +170,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                     minimumSize: const Size.fromHeight(48),
                     backgroundColor: Colors.green,
                   ),
-                  child: const Text('View My Tickets'),
+                  child: Text(L.tr('payments_view_my_tickets')),
                 )
               else if (_error != null)
                 Column(
@@ -182,7 +184,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
-                      child: const Text('Try Again'),
+                      child: Text(L.tr('common_try_again')),
                     ),
                     const SizedBox(height: 12),
                     OutlinedButton(
@@ -190,7 +192,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
-                      child: const Text('Cancel'),
+                      child: Text(L.tr('common_cancel')),
                     ),
                   ],
                 )
@@ -209,14 +211,14 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                       style: OutlinedButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
-                      child: const Text('Cancel'),
+                      child: Text(L.tr('common_cancel')),
                     ),
                     const SizedBox(height: 12),
                     // Test button for development
                     TextButton.icon(
                       onPressed: _isReceiving ? null : _showTestDialog,
                       icon: const Icon(Icons.bug_report, size: 18),
-                      label: const Text('Test: Manual Token Entry'),
+                      label: Text(L.tr('receive_ticket_test_manual')),
                     ),
                   ],
                 ),
@@ -248,14 +250,14 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Ready to Receive',
+          L.tr('receive_ticket_ready'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Hold your phone near the vendor\'s device\nto receive your ticket',
+          L.tr('receive_ticket_instructions'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -278,7 +280,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  'Make sure NFC is enabled on your device',
+                  L.tr('receive_ticket_nfc_enabled'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -324,7 +326,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Ticket Received!',
+          L.tr('receive_ticket_success'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -341,7 +343,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Event',
+                      L.tr('common_event'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -384,7 +386,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'Location',
+                        L.tr('common_location'),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -407,7 +409,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
         ),
         const SizedBox(height: 16),
         Text(
-          'Your ticket is now in My Tickets',
+          L.tr('receive_ticket_in_my_tickets'),
           style: theme.textTheme.bodySmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -434,7 +436,7 @@ class _ReceiveTicketScreenState extends State<ReceiveTicketScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Transfer Failed',
+          L.tr('receive_ticket_transfer_failed'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: colorScheme.error,

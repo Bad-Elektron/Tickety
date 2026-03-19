@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/venue_provider.dart';
 import '../models/models.dart';
 import '../utils/hit_test.dart';
@@ -83,20 +84,20 @@ class _VenueBuilderScreenState extends ConsumerState<VenueBuilderScreen> {
         final shouldSave = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Unsaved changes'),
-            content: const Text('You have unsaved changes. Do you want to save before leaving?'),
+            title: Text(L.tr('unsaved_changes')),
+            content: Text(L.tr('unsaved_changes_prompt')),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(null), // cancel
-                child: const Text('Cancel'),
+                child: Text(L.tr('cancel')),
               ),
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false), // discard
-                child: const Text('Discard'),
+                child: Text(L.tr('discard')),
               ),
               FilledButton(
                 onPressed: () => Navigator.of(ctx).pop(true), // save
-                child: const Text('Save'),
+                child: Text(L.tr('save')),
               ),
             ],
           ),
@@ -116,7 +117,7 @@ class _VenueBuilderScreenState extends ConsumerState<VenueBuilderScreen> {
             children: [
               Flexible(
                 child: Text(
-                  state.venueName.isEmpty ? 'New Venue' : state.venueName,
+                  state.venueName.isEmpty ? L.tr('new_venue') : state.venueName,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -147,7 +148,7 @@ class _VenueBuilderScreenState extends ConsumerState<VenueBuilderScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.save_outlined, size: 18),
-              label: const Text('Save'),
+              label: Text(L.tr('save')),
             ),
           ),
         ],
@@ -885,21 +886,21 @@ class _VenueBuilderScreenState extends ConsumerState<VenueBuilderScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Venue Name'),
+        title: Text(L.tr('venue_name')),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name'),
+          decoration: InputDecoration(labelText: L.tr('name')),
           textCapitalization: TextCapitalization.words,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
+            child: Text(L.tr('save')),
           ),
         ],
       ),
@@ -916,8 +917,8 @@ class _VenueBuilderScreenState extends ConsumerState<VenueBuilderScreen> {
       await notifier.save();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Venue saved'),
+          SnackBar(
+            content: Text(L.tr('venue_saved')),
             behavior: SnackBarBehavior.floating,
           ),
         );

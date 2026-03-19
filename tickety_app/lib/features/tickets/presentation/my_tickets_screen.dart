@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/graphics/graphics.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../staff/models/ticket.dart';
@@ -180,14 +181,14 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
                 autofocus: true,
                 style: theme.textTheme.bodyLarge,
                 decoration: InputDecoration(
-                  hintText: 'Search events...',
+                  hintText: L.tr('common_search'),
                   hintStyle: theme.textTheme.bodyLarge?.copyWith(
                     color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                   border: InputBorder.none,
                 ),
               )
-            : const Text('My Tickets'),
+            : Text(L.tr('tickets_my_title')),
         centerTitle: !_isSearching,
         actions: [
           IconButton(
@@ -274,7 +275,7 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
             ),
             const SizedBox(height: 16),
             Text(
-              'No matching tickets',
+              L.tr('no_matching_tickets'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -282,8 +283,8 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
             const SizedBox(height: 8),
             Text(
               hasSearch
-                  ? 'Try a different search term or filter.'
-                  : 'No tickets match the selected filter.',
+                  ? L.tr('try_different_search_or_filter')
+                  : L.tr('no_matching_tickets'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -292,7 +293,7 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
             const SizedBox(height: 16),
             TextButton(
               onPressed: _clearFilters,
-              child: const Text('Clear filters'),
+              child: Text(L.tr('clear_filters')),
             ),
           ],
         ),
@@ -359,14 +360,14 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
             ),
             const SizedBox(height: 32),
             Text(
-              'No tickets yet',
+              L.tr('tickets_empty_title'),
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'When you purchase tickets to events,\nthey\'ll appear here.',
+              L.tr('tickets_empty_subtitle'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -377,7 +378,7 @@ class _MyTicketsScreenState extends ConsumerState<MyTicketsScreen> {
             FilledButton.icon(
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.explore_outlined),
-              label: const Text('Discover Events'),
+              label: Text(L.tr('tickets_discover')),
             ),
           ],
         ),
@@ -412,6 +413,9 @@ class _EventTicketGroup {
   int get noiseSeed =>
       firstTicket.eventData?['noise_seed'] as int? ?? eventId.hashCode;
 
+  String? get organizerId =>
+      firstTicket.eventData?['organizer_id'] as String?;
+
   int get ticketCount => tickets.length;
 
   int get usedCount => tickets.where((t) => t.isUsed).length;
@@ -439,16 +443,16 @@ class _EventTicketGroup {
 }
 
 /// Card showing an event with expandable ticket list.
-class _EventTicketCard extends StatefulWidget {
+class _EventTicketCard extends ConsumerStatefulWidget {
   const _EventTicketCard({required this.group});
 
   final _EventTicketGroup group;
 
   @override
-  State<_EventTicketCard> createState() => _EventTicketCardState();
+  ConsumerState<_EventTicketCard> createState() => _EventTicketCardState();
 }
 
-class _EventTicketCardState extends State<_EventTicketCard>
+class _EventTicketCardState extends ConsumerState<_EventTicketCard>
     with SingleTickerProviderStateMixin {
   bool _isExpanded = false;
   late AnimationController _controller;
@@ -520,6 +524,7 @@ class _EventTicketCardState extends State<_EventTicketCard>
     final colorScheme = theme.colorScheme;
     final config = _getNoiseConfig();
     final group = widget.group;
+    final branding = ref.watch(organizerBrandingProvider(group.organizerId)).valueOrNull;
 
     return Card(
       elevation: 0,
@@ -645,13 +650,34 @@ class _EventTicketCardState extends State<_EventTicketCard>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  'Used',
+                                  L.tr('used'),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ],
+                            ),
+                          ),
+                        ),
+                      // Organizer logo
+                      if (branding != null && branding.hasLogo)
+                        Positioned(
+                          top: group.allUsed ? 42 : 12,
+                          left: 12,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                              image: DecorationImage(
+                                image: NetworkImage(branding.logoUrl!),
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                         ),
@@ -830,10 +856,12 @@ class _TicketListItem extends ConsumerWidget {
                   Text(
                     ticket.ticketTypeName != null
                         ? '${ticket.ticketTypeName} · ${ticket.ticketNumber.substring(ticket.ticketNumber.length - 4)}'
-                        : ticket.ticketNumber,
+                        : 'Ticket · ${ticket.ticketNumber.length > 8 ? ticket.ticketNumber.substring(ticket.ticketNumber.length - 8) : ticket.ticketNumber}',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -867,7 +895,7 @@ class _TicketListItem extends ConsumerWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Used',
+                      L.tr('used'),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.green,
                         fontWeight: FontWeight.w600,
@@ -893,7 +921,7 @@ class _TicketListItem extends ConsumerWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      'Listed',
+                      L.tr('listed_for_sale'),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.orange,
                         fontWeight: FontWeight.w600,

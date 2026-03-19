@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../events/models/event_model.dart';
 import '../../tickets/presentation/my_tickets_screen.dart';
 
@@ -124,7 +125,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                 child: Column(
                   children: [
                     Text(
-                      'Payment Successful!',
+                      L.tr('payments_success_title'),
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -181,12 +182,12 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
 
                       // Order summary
                       _DetailRow(
-                        label: 'Quantity',
+                        label: L.tr('payments_quantity'),
                         value: '${widget.quantity} ${widget.quantity == 1 ? "ticket" : "tickets"}',
                       ),
                       const SizedBox(height: 8),
                       _DetailRow(
-                        label: 'Amount Paid',
+                        label: L.tr('payments_amount_paid'),
                         value: _formatAmount(widget.amountCents),
                         valueStyle: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
@@ -218,7 +219,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'A confirmation email has been sent to your registered email address.',
+                          L.tr('payments_confirmation_email_sent'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.onSurface,
                           ),
@@ -250,7 +251,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Your bank payment will settle in 4-5 business days. Your tickets are ready to use now.',
+                            L.tr('payments_ach_settlement_note'),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurface,
                             ),
@@ -290,7 +291,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('View My Tickets'),
+                        child: Text(L.tr('payments_view_my_tickets')),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -308,7 +309,7 @@ class _PaymentSuccessScreenState extends State<PaymentSuccessScreen>
                             borderRadius: BorderRadius.circular(12),
                           ),
                         ),
-                        child: const Text('Done'),
+                        child: Text(L.tr('common_done')),
                       ),
                     ),
                   ],

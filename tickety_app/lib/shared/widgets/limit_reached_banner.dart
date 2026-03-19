@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/localization/localization.dart';
 import '../../features/subscriptions/models/tier_limits.dart';
 import '../../features/subscriptions/presentation/subscription_screen.dart';
 
@@ -47,7 +48,7 @@ class LimitReachedBanner extends StatelessWidget {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text('Upgrade'),
+            child: Text(L.tr('upgrade')),
           ),
         ],
       ),
@@ -116,7 +117,7 @@ class LockedAnalyticsSection extends StatelessWidget {
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             ),
-            child: Text('Upgrade to ${requiredTier.label}'),
+            child: Text(L.tr('upgrade_to', [requiredTier.label])),
           ),
         ],
       ),

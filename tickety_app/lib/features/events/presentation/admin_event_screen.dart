@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../../shared/widgets/widgets.dart';
-import '../../analytics/analytics.dart';
 import '../../merch/presentation/organizer_products_screen.dart';
 import '../../subscriptions/subscriptions.dart';
 import '../../staff/data/ticket_repository.dart';
@@ -107,12 +107,76 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'Event Admin',
+                            L.tr('admin_event_badge'),
                             style: theme.textTheme.labelMedium?.copyWith(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Date & location overlay (bottom-right)
+                  Positioned(
+                    bottom: 12,
+                    right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.calendar_today,
+                                size: 13,
+                                color: Colors.white70,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _formatDateTime(event.date),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (event.displayLocation != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.location_on,
+                                  size: 13,
+                                  color: Colors.white70,
+                                ),
+                                const SizedBox(width: 6),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 200),
+                                  child: Text(
+                                    event.displayLocation!,
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: Colors.white70,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -152,7 +216,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Pending Review',
+                                  L.tr('admin_pending_review'),
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w600,
                                     color: Colors.amber,
@@ -160,7 +224,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  event.statusReason ?? 'This event is under review and not yet visible to buyers.',
+                                  event.statusReason ?? L.tr('admin_pending_review_description'),
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onSurfaceVariant,
                                   ),
@@ -194,7 +258,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Event Suspended',
+                                  L.tr('admin_event_suspended'),
                                   style: theme.textTheme.titleSmall?.copyWith(
                                     fontWeight: FontWeight.w600,
                                     color: colorScheme.onErrorContainer,
@@ -202,7 +266,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  event.statusReason ?? 'This event has been suspended by an admin.',
+                                  event.statusReason ?? L.tr('admin_event_suspended_description'),
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: colorScheme.onErrorContainer,
                                   ),
@@ -304,7 +368,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                                   ),
                                 if (event.virtualLocked)
                                   Text(
-                                    'Link revealed to attendees',
+                                    L.tr('admin_link_revealed'),
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: Colors.cyan[700],
                                       fontWeight: FontWeight.w500,
@@ -341,7 +405,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 24),
                   // Admin actions
                   Text(
-                    'Admin Actions',
+                    L.tr('admin_actions'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
@@ -349,8 +413,8 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 16),
                   _AdminActionCard(
                     icon: Icons.pie_chart,
-                    title: 'Data',
-                    subtitle: 'View event analytics and statistics',
+                    title: L.tr('admin_data'),
+                    subtitle: L.tr('admin_data_subtitle'),
                     color: Colors.deepPurple,
                     onTap: () {
                       Navigator.of(context).push(
@@ -363,8 +427,8 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.confirmation_number,
-                    title: 'Tickets',
-                    subtitle: 'View ticket types, mint more, or add discounts',
+                    title: L.tr('admin_tickets'),
+                    subtitle: L.tr('admin_tickets_subtitle'),
                     color: colorScheme.primary,
                     onTap: () {
                       Navigator.of(context).push(
@@ -377,8 +441,8 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.discount_outlined,
-                    title: 'Promo Codes',
-                    subtitle: 'Create and manage discount codes',
+                    title: L.tr('admin_promo_codes'),
+                    subtitle: L.tr('admin_promo_codes_subtitle'),
                     color: Colors.orange,
                     onTap: () {
                       Navigator.of(context).push(
@@ -392,16 +456,16 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   _AdminActionCard(
                     icon: Icons.content_cut,
                     customIcon: const _TicketTearIcon(size: 28),
-                    title: 'Manage Staff',
-                    subtitle: 'Add and manage your event team',
+                    title: L.tr('admin_manage_staff'),
+                    subtitle: L.tr('admin_manage_staff_subtitle'),
                     color: colorScheme.tertiary,
                     onTap: () => _showManageUshersSheet(context),
                   ),
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.edit_outlined,
-                    title: 'Edit Event',
-                    subtitle: 'Update event details',
+                    title: L.tr('admin_edit_event'),
+                    subtitle: L.tr('admin_edit_event_subtitle'),
                     color: colorScheme.secondary,
                     onTap: () async {
                       final result = await Navigator.of(context).push<bool>(
@@ -420,21 +484,22 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.map_outlined,
-                    title: 'Venue Layout',
+                    title: L.tr('admin_venue_layout'),
                     subtitle: _effectiveVenueId != null
-                        ? 'Edit the seating chart'
-                        : 'Link a venue to this event',
+                        ? L.tr('admin_venue_edit_chart')
+                        : L.tr('admin_venue_link'),
                     color: Colors.teal,
                     onTap: () => _handleVenueAction(context, ref, event),
                   ),
+                  // Event Branding — Pro+ gated
                   // Merch Store action — enterprise-gated
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.shopping_bag_outlined,
-                    title: 'Merch Store',
+                    title: L.tr('admin_merch_store'),
                     subtitle: AppState().tier == AccountTier.enterprise
-                        ? 'Sell merchandise for this event'
-                        : 'Enterprise plan required',
+                        ? L.tr('admin_merch_subtitle')
+                        : L.tr('admin_enterprise_required'),
                     color: Colors.amber,
                     onTap: () {
                       if (AppState().tier == AccountTier.enterprise) {
@@ -444,30 +509,34 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                           ),
                         );
                       } else {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const SubscriptionScreen(),
-                          ),
-                        );
+                        _showEnterpriseGate(context, L.tr('admin_merch_store'),
+                            'Sell physical and digital merchandise for your events. Available on the Enterprise plan.');
                       }
                     },
                   ),
-                  // Embed Widget action
+                  // Embed Widget action — enterprise-gated
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.code,
-                    title: 'Embed Widget',
-                    subtitle: 'Add checkout to your website',
+                    title: L.tr('admin_embed_widget'),
+                    subtitle: AppState().tier == AccountTier.enterprise
+                        ? L.tr('admin_embed_widget_subtitle')
+                        : L.tr('admin_enterprise_required'),
                     color: Colors.indigo,
                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => WidgetSettingsScreen(
-                            eventId: event.id,
-                            eventTitle: event.title,
+                      if (AppState().tier == AccountTier.enterprise) {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => WidgetSettingsScreen(
+                              eventId: event.id,
+                              eventTitle: event.title,
+                            ),
                           ),
-                        ),
-                      );
+                        );
+                      } else {
+                        _showEnterpriseGate(context, L.tr('admin_embed_widget'),
+                            'Embed a checkout widget on your website so visitors can buy tickets directly. Available on the Enterprise plan.');
+                      }
                     },
                   ),
                   // Cancel Series action (only for series events)
@@ -475,8 +544,8 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                     const SizedBox(height: 12),
                     _AdminActionCard(
                       icon: Icons.event_busy,
-                      title: 'Cancel Series',
-                      subtitle: 'Stop all future occurrences',
+                      title: L.tr('admin_cancel_series'),
+                      subtitle: L.tr('admin_cancel_series_subtitle'),
                       color: Colors.red,
                       onTap: () => _confirmCancelSeries(context, ref),
                     ),
@@ -484,61 +553,13 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   const SizedBox(height: 12),
                   _AdminActionCard(
                     icon: Icons.payments_outlined,
-                    title: 'Cash Sales',
+                    title: L.tr('admin_cash_sales'),
                     subtitle: event.cashSalesEnabled
-                        ? 'View cash transactions'
-                        : 'Enable cash payments at door',
+                        ? L.tr('admin_cash_sales_view')
+                        : L.tr('admin_cash_sales_enable'),
                     color: Colors.green,
                     onTap: () => _showCashSalesSheet(context),
                   ),
-                  const SizedBox(height: 12),
-                  _AdminActionCard(
-                    icon: Icons.analytics_outlined,
-                    title: 'Market Analytics',
-                    subtitle: AppState().tier == AccountTier.enterprise
-                        ? 'Platform trends & insights'
-                        : 'Enterprise plan required',
-                    color: Colors.indigo,
-                    onTap: () {
-                      if (AppState().tier == AccountTier.enterprise) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                const AnalyticsDashboardScreen(),
-                          ),
-                        );
-                      } else {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const SubscriptionScreen(),
-                          ),
-                        );
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  // Event info
-                  Text(
-                    'Event Details',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  _InfoCard(
-                    icon: Icons.calendar_today_rounded,
-                    title: 'Date & Time',
-                    value: _formatDateTime(event.date),
-                    color: colorScheme.primary,
-                  ),
-                  const SizedBox(height: 12),
-                  if (event.displayLocation != null)
-                    _InfoCard(
-                      icon: Icons.location_on_outlined,
-                      title: 'Location',
-                      value: event.displayLocation!,
-                      color: colorScheme.tertiary,
-                    ),
                   const SizedBox(height: 32),
                 ],
               ),
@@ -569,6 +590,32 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
     return '$weekday, $month $day at $hour:$minute $period';
   }
 
+  void _showEnterpriseGate(BuildContext context, String featureName, String description) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.lock_outlined, size: 32, color: Colors.teal),
+        title: Text(L.tr('admin_enterprise_feature')),
+        content: Text(description),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(L.tr('admin_maybe_later')),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
+              );
+            },
+            child: Text(L.tr('admin_view_plans')),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleVenueAction(BuildContext context, WidgetRef ref, EventModel event) {
     final tier = ref.read(currentTierProvider);
     final canUse = TierLimits.canUseVenueBuilder(tier);
@@ -579,15 +626,14 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           icon: const Icon(Icons.lock_outlined, size: 32, color: Colors.teal),
-          title: const Text('Enterprise Feature'),
-          content: const Text(
-            'Venue builder and seating charts are available on the Enterprise plan. '
-            'Upgrade to create visual venue layouts for your events.',
+          title: Text(L.tr('admin_enterprise_feature')),
+          content: Text(
+            L.tr('admin_venue_enterprise_description'),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Maybe Later'),
+              child: Text(L.tr('admin_maybe_later')),
             ),
             FilledButton(
               onPressed: () {
@@ -596,7 +642,7 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                   MaterialPageRoute(builder: (_) => const SubscriptionScreen()),
                 );
               },
-              child: const Text('View Plans'),
+              child: Text(L.tr('admin_view_plans')),
             ),
           ],
         ),
@@ -649,23 +695,21 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Series'),
-        content: const Text(
-          'This will stop all future occurrences of this recurring event. '
-          'Past and current events will not be affected.\n\n'
-          'This action cannot be undone.',
+        title: Text(L.tr('admin_cancel_series')),
+        content: Text(
+          L.tr('admin_cancel_series_confirm'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Keep Series'),
+            child: Text(L.tr('admin_keep_series')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: const Text('Cancel Series'),
+            child: Text(L.tr('admin_cancel_series')),
           ),
         ],
       ),
@@ -680,8 +724,8 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Series cancelled — no future occurrences will be created'),
+          SnackBar(
+            content: Text(L.tr('admin_series_cancelled')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -747,7 +791,7 @@ class _StatsSection extends StatelessWidget {
       children: [
         Expanded(
           child: _StatCard(
-            label: 'Tickets Sold',
+            label: L.tr('admin_tickets_sold'),
             value: '${ticketStats?.totalSold ?? 0}',
             color: colorScheme.primary,
           ),
@@ -755,7 +799,7 @@ class _StatsSection extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
-            label: 'Revenue',
+            label: L.tr('admin_revenue'),
             value: ticketStats?.formattedRevenue ?? '\$0.00',
             color: colorScheme.secondary,
           ),
@@ -763,7 +807,7 @@ class _StatsSection extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: _StatCard(
-            label: 'Staff',
+            label: L.tr('admin_staff'),
             value: '$staffCount',
             color: colorScheme.tertiary,
           ),
@@ -1131,8 +1175,8 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
         if (mounted) {
           Navigator.pop(context, true);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Cash sales are already enabled'),
+            SnackBar(
+              content: Text(L.tr('admin_cash_already_enabled')),
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -1232,8 +1276,8 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
       if (mounted) {
         Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Cash sales enabled! Staff can now accept cash payments.'),
+          SnackBar(
+            content: Text(L.tr('admin_cash_sales_enabled')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -1283,14 +1327,14 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
           ),
           const SizedBox(height: 16),
           Text(
-            'Enable Cash Sales',
+            L.tr('admin_enable_cash_sales'),
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Allow staff to sell tickets for cash at the door',
+            L.tr('admin_cash_sales_description'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -1320,14 +1364,14 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '5% Platform Fee',
+                        L.tr('admin_platform_fee'),
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'A 5% fee will be charged to your card for each cash sale to cover platform costs.',
+                        L.tr('admin_platform_fee_description'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -1350,7 +1394,7 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'How it works:',
+                  L.tr('admin_how_it_works'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -1359,19 +1403,19 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
                 _buildInfoRow(
                   context,
                   Icons.credit_card,
-                  'Add a payment method for platform fees',
+                  L.tr('admin_cash_step_payment'),
                 ),
                 const SizedBox(height: 8),
                 _buildInfoRow(
                   context,
                   Icons.point_of_sale,
-                  'Staff can sell tickets for cash via POS',
+                  L.tr('admin_cash_step_pos'),
                 ),
                 const SizedBox(height: 8),
                 _buildInfoRow(
                   context,
                   Icons.receipt_long,
-                  'Track all cash sales in reconciliation',
+                  L.tr('admin_cash_step_reconciliation'),
                 ),
               ],
             ),
@@ -1424,14 +1468,14 @@ class _CashSalesSetupSheetState extends State<_CashSalesSetupSheet> {
                     ),
                   )
                 : Text(
-                    _isSettingUpStripe ? 'Complete Setup' : 'Add Payment Method',
+                    _isSettingUpStripe ? L.tr('admin_complete_setup') : L.tr('admin_add_payment_method'),
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
           ),
           const SizedBox(height: 12),
           TextButton(
             onPressed: _isLoading ? null : () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
         ],
       ),
@@ -1497,7 +1541,7 @@ class _InviteCodeCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'Private Event',
+                L.tr('admin_private_event'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: colorScheme.primary,
@@ -1522,15 +1566,15 @@ class _InviteCodeCard extends StatelessWidget {
                   onPressed: () {
                     Clipboard.setData(ClipboardData(text: inviteCode));
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Invite code copied!'),
+                      SnackBar(
+                        content: Text(L.tr('admin_invite_code_copied')),
                         behavior: SnackBarBehavior.floating,
                         duration: Duration(seconds: 2),
                       ),
                     );
                   },
                   icon: const Icon(Icons.copy, size: 18),
-                  label: const Text('Copy'),
+                  label: Text(L.tr('copy')),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1542,7 +1586,7 @@ class _InviteCodeCard extends StatelessWidget {
                     );
                   },
                   icon: const Icon(Icons.share, size: 18),
-                  label: const Text('Share'),
+                  label: Text(L.tr('share')),
                 ),
               ),
             ],

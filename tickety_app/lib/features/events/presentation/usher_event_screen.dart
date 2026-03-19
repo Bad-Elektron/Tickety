@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/offline_checkin_provider.dart';
 import '../../../core/services/nfc_service.dart';
 import '../../../shared/widgets/widgets.dart';
@@ -96,7 +97,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
 
   Future<void> _startNfcScanning() async {
     if (!_isNfcAvailable) {
-      _showError('NFC is not available on this device');
+      _showError(L.tr('nfc_not_available'));
       return;
     }
 
@@ -109,7 +110,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
         if (payload.eventId == widget.event.id) {
           _verifyTicket(payload.ticketId);
         } else {
-          _showError('Ticket is for a different event');
+          _showError(L.tr('ticket_wrong_event'));
           HapticFeedback.heavyImpact();
         }
       },
@@ -164,7 +165,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
   /// Run 3-tier verification pipeline for a scanned ticket.
   Future<void> _verifyTicket(String ticketIdOrNumber) async {
     if (ticketIdOrNumber.trim().isEmpty) {
-      _showError('Please enter a ticket number');
+      _showError(L.tr('enter_ticket_number'));
       return;
     }
 
@@ -208,10 +209,10 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
       });
       ref.read(offlineCheckInProvider.notifier).clearVerification();
       HapticFeedback.heavyImpact();
-      _showSuccess('Ticket checked in!');
+      _showSuccess(L.tr('ticket_checked_in'));
     } else {
       setState(() => _isCheckingIn = false);
-      _showError('Failed to check in ticket');
+      _showError(L.tr('failed_to_check_in'));
     }
   }
 
@@ -434,7 +435,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                       _StatItem(
                         icon: Icons.login,
                         value: '${offlineState.checkedInCount}',
-                        label: 'Checked In',
+                        label: L.tr('checked_in'),
                         color: Colors.green,
                       ),
                       Container(
@@ -445,7 +446,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                       _StatItem(
                         icon: Icons.confirmation_number_outlined,
                         value: '${offlineState.totalTickets}',
-                        label: 'Total',
+                        label: L.tr('total'),
                         color: colorScheme.tertiary,
                       ),
                       Container(
@@ -456,9 +457,22 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                       _StatItem(
                         icon: Icons.nfc_rounded,
                         value: '$_sessionCheckedIn',
-                        label: 'This Session',
+                        label: L.tr('this_session'),
                         color: colorScheme.primary,
                       ),
+                      if (offlineState.totalRedeemable > 0) ...[
+                        Container(
+                          width: 1,
+                          height: 40,
+                          color: colorScheme.outline.withValues(alpha: 0.3),
+                        ),
+                        _StatItem(
+                          icon: Icons.redeem,
+                          value: '${offlineState.redeemedCount}/${offlineState.totalRedeemable}',
+                          label: L.tr('Redeemed'),
+                          color: Colors.deepPurple,
+                        ),
+                      ],
                       if (offlineState.pendingSyncCount > 0) ...[
                         Container(
                           width: 1,
@@ -468,7 +482,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                         _StatItem(
                           icon: Icons.sync,
                           value: '${offlineState.pendingSyncCount}',
-                          label: 'Pending',
+                          label: L.tr('pending'),
                           color: Colors.amber.shade700,
                         ),
                       ],
@@ -499,7 +513,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                     const LinearProgressIndicator(),
                     const SizedBox(height: 8),
                     Text(
-                      'Downloading door list...',
+                      L.tr('downloading_door_list'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -612,7 +626,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _isNfcScanning ? 'Scanning...' : 'Hold to Scan',
+                      _isNfcScanning ? L.tr('scanning') : L.tr('hold_to_scan'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: _isNfcScanning
                             ? Colors.white
@@ -631,12 +645,12 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
           // Instructions
           Text(
             !_isNfcAvailable
-                ? 'NFC not available. Use QR scanner instead.'
+                ? L.tr('nfc_not_available_use_qr')
                 : _isNfcScanning
-                    ? 'Hold device near attendee\'s phone'
+                    ? L.tr('hold_device_near_phone')
                     : offlineState.isDoorListLoaded
-                        ? 'Hold the button to activate NFC scanning'
-                        : 'Downloading door list...',
+                        ? L.tr('hold_button_to_scan')
+                        : L.tr('downloading_door_list'),
             style: theme.textTheme.bodyLarge?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -669,7 +683,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  'Continuous Scanning',
+                  L.tr('continuous_scanning'),
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: FontWeight.w500,
                   ),
@@ -702,7 +716,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Verifying ticket...',
+                    L.tr('verifying_ticket'),
                     style: theme.textTheme.bodyMedium,
                   ),
                 ],
@@ -713,7 +727,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
           TextButton.icon(
             onPressed: () => _showManualEntryDialog(),
             icon: const Icon(Icons.keyboard, size: 18),
-            label: const Text('Enter ticket manually'),
+            label: Text(L.tr('enter_ticket_manually')),
           ),
 
           const SizedBox(height: 16),
@@ -727,7 +741,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Enter Ticket Number'),
+        title: Text(L.tr('enter_ticket_number_title')),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -744,14 +758,14 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _verifyTicket(controller.text);
             },
-            child: const Text('Look Up'),
+            child: Text(L.tr('look_up')),
           ),
         ],
       ),
@@ -843,7 +857,7 @@ class _CameraOverlay extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'Scan QR Code',
+                              L.tr('scan_qr_code'),
                               style: theme.textTheme.titleMedium?.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
@@ -886,7 +900,7 @@ class _CameraOverlay extends StatelessWidget {
                 child: Padding(
                   padding: const EdgeInsets.all(24),
                   child: Text(
-                    'Point camera at the ticket QR code',
+                    L.tr('point_camera_at_qr'),
                     style: theme.textTheme.bodyLarge?.copyWith(
                       color: Colors.white,
                     ),

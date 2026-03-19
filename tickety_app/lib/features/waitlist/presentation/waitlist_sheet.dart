@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 
@@ -83,7 +84,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
           // Title
           Center(
             child: Text(
-              'Join Waitlist',
+              L.tr('waitlist_join_title'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -123,7 +124,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
             if (_isAutoBuy) ...[
               // Max price input
               Text(
-                'Maximum price (including fees)',
+                L.tr('waitlist_max_price'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
@@ -149,7 +150,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
 
               // Payment method selection
               Text(
-                'Payment method for auto-purchase',
+                L.tr('waitlist_payment_method'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   fontWeight: FontWeight.w500,
                 ),
@@ -176,7 +177,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'No saved payment methods. Add a card in your wallet first.',
+                          L.tr('waitlist_no_payment_methods'),
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: colorScheme.error,
                           ),
@@ -256,8 +257,8 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
                     )
                   : Text(
                       _isAutoBuy
-                          ? 'Enable Auto-Purchase'
-                          : 'Notify Me When Available',
+                          ? L.tr('waitlist_enable_auto_purchase')
+                          : L.tr('waitlist_notify_when_available'),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -277,7 +278,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
       final maxPriceText = _maxPriceController.text.trim();
       if (maxPriceText.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a maximum price')),
+          SnackBar(content: Text(L.tr('waitlist_enter_max_price'))),
         );
         return;
       }
@@ -285,7 +286,7 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
       final maxPriceDollars = int.tryParse(maxPriceText);
       if (maxPriceDollars == null || maxPriceDollars <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please enter a valid price')),
+          SnackBar(content: Text(L.tr('waitlist_enter_valid_price'))),
         );
         return;
       }
@@ -295,8 +296,8 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
           _selectedPaymentMethodId ?? paymentMethodsState.defaultMethod?.id;
       if (selectedId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('Please add a payment method in your wallet')),
+          SnackBar(
+              content: Text(L.tr('waitlist_add_payment_method'))),
         );
         return;
       }
@@ -333,9 +334,9 @@ class _WaitlistSheetState extends ConsumerState<WaitlistSheet> {
       if (stripeCustomerId == null || stripeCustomerId.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                  'No Stripe customer found. Please make a purchase first.'),
+                  L.tr('waitlist_no_stripe_customer')),
             ),
           );
         }
@@ -377,8 +378,8 @@ class _ModeSelector extends StatelessWidget {
         Expanded(
           child: _ModeOption(
             icon: Icons.notifications_outlined,
-            label: 'Notify Me',
-            description: 'Get alerted when available',
+            label: L.tr('waitlist_notify_me'),
+            description: L.tr('waitlist_notify_description'),
             isSelected: !isAutoBuy,
             onTap: () => onChanged(false),
             colorScheme: colorScheme,
@@ -389,8 +390,8 @@ class _ModeSelector extends StatelessWidget {
         Expanded(
           child: _ModeOption(
             icon: Icons.flash_on_outlined,
-            label: 'Auto-Buy',
-            description: 'Buy automatically under \$X',
+            label: L.tr('waitlist_auto_buy'),
+            description: L.tr('waitlist_auto_buy_description'),
             isSelected: isAutoBuy,
             onTap: () => onChanged(true),
             colorScheme: colorScheme,
@@ -514,7 +515,7 @@ class _ActiveWaitlistCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            "You're on the waitlist!",
+            L.tr('waitlist_on_waitlist'),
             style: theme.textTheme.titleMedium?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -556,7 +557,7 @@ class _ActiveWaitlistCard extends StatelessWidget {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Leave Waitlist'),
+                : Text(L.tr('waitlist_leave')),
           ),
         ],
       ),

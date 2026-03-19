@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/localization/localization.dart';
+
 /// Screen for vendor to broadcast ticket via NFC for customer to receive.
 ///
 /// Shows a "broadcasting" animation while waiting for customer to tap
@@ -139,7 +141,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Transfer Ticket'),
+        title: Text(L.tr('nfc_transfer_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -157,7 +159,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Ticket #',
+                            L.tr('nfc_transfer_ticket_num'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -176,7 +178,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Event',
+                            L.tr('nfc_transfer_event'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -197,7 +199,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'Price',
+                            L.tr('nfc_transfer_price'),
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -231,7 +233,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
               // Time remaining (only show when broadcasting)
               if (!_isTransferred && !_isExpired) ...[
                 Text(
-                  'Time remaining',
+                  L.tr('nfc_transfer_time_remaining'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -256,7 +258,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
                     FilledButton.icon(
                       onPressed: () => Navigator.of(context).pop(false),
                       icon: const Icon(Icons.arrow_back),
-                      label: const Text('Go Back'),
+                      label: Text(L.tr('go_back')),
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(48),
                       ),
@@ -277,7 +279,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size.fromHeight(48),
                   ),
-                  child: const Text('Cancel Transfer'),
+                  child: Text(L.tr('nfc_transfer_cancel')),
                 ),
             ],
           ),
@@ -307,14 +309,14 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Broadcasting...',
+          L.tr('nfc_transfer_broadcasting'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Ask the customer to tap their phone\nto receive the ticket',
+          L.tr('nfc_transfer_broadcasting_desc'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -326,7 +328,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         OutlinedButton.icon(
           onPressed: _onTransferred,
           icon: const Icon(Icons.check),
-          label: const Text('Simulate Transfer (Testing)'),
+          label: Text(L.tr('nfc_transfer_simulate')),
         ),
       ],
     );
@@ -350,7 +352,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Transfer Complete!',
+          L.tr('nfc_transfer_complete'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -358,7 +360,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'The ticket has been transferred\nto the customer\'s device',
+          L.tr('nfc_transfer_complete_desc'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -386,7 +388,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Transfer Expired',
+          L.tr('nfc_transfer_expired'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.orange,
@@ -394,7 +396,7 @@ class _NfcTicketTransferScreenState extends State<NfcTicketTransferScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'The transfer window has closed.\nThe ticket was created but not transferred.',
+          L.tr('nfc_transfer_expired_desc'),
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),

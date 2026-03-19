@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/venue_provider.dart';
 import '../models/venue.dart';
 import 'venue_builder_screen.dart';
@@ -17,7 +18,7 @@ class VenuesScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Venues'),
+        title: Text(L.tr('venues_title')),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _createVenue(context, ref),
@@ -31,11 +32,11 @@ class VenuesScreen extends ConsumerWidget {
             children: [
               Icon(Icons.error_outline, size: 48, color: colorScheme.error),
               const SizedBox(height: 12),
-              Text('Error loading venues', style: theme.textTheme.titleSmall),
+              Text(L.tr('venues_error_loading'), style: theme.textTheme.titleSmall),
               const SizedBox(height: 8),
               FilledButton(
                 onPressed: () => ref.read(myVenuesProvider.notifier).refresh(),
-                child: const Text('Retry'),
+                child: Text(L.tr('retry')),
               ),
             ],
           ),
@@ -53,14 +54,14 @@ class VenuesScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No venues yet',
+                    L.tr('venues_no_venues'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Create a venue layout to use\nwith your events',
+                    L.tr('venues_no_venues_desc'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
@@ -70,7 +71,7 @@ class VenuesScreen extends ConsumerWidget {
                   FilledButton.icon(
                     onPressed: () => _createVenue(context, ref),
                     icon: const Icon(Icons.add),
-                    label: const Text('Create Venue'),
+                    label: Text(L.tr('venues_create')),
                   ),
                 ],
               ),
@@ -104,24 +105,24 @@ class VenuesScreen extends ConsumerWidget {
       builder: (context) {
         final controller = TextEditingController();
         return AlertDialog(
-          title: const Text('New Venue'),
+          title: Text(L.tr('venues_new_venue')),
           content: TextField(
             controller: controller,
             autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Venue Name',
-              hintText: 'e.g., Main Arena',
+            decoration: InputDecoration(
+              labelText: L.tr('venues_venue_name'),
+              hintText: L.tr('venues_venue_name_hint'),
             ),
             textCapitalization: TextCapitalization.words,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(L.tr('cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Create'),
+              child: Text(L.tr('create')),
             ),
           ],
         );
@@ -148,17 +149,17 @@ class VenuesScreen extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Venue'),
+        title: Text(L.tr('venues_delete_title')),
         content: Text('Are you sure you want to delete "${venue.name}"?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(L.tr('delete')),
           ),
         ],
       ),
@@ -245,23 +246,23 @@ class _VenueCard extends StatelessWidget {
               // Menu
               PopupMenuButton<String>(
                 itemBuilder: (context) => [
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'duplicate',
                     child: Row(
                       children: [
-                        Icon(Icons.copy_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Duplicate'),
+                        const Icon(Icons.copy_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Text(L.tr('venues_duplicate')),
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'delete',
                     child: Row(
                       children: [
-                        Icon(Icons.delete_outline, size: 18, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Delete', style: TextStyle(color: Colors.red)),
+                        const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                        const SizedBox(width: 8),
+                        Text(L.tr('delete'), style: const TextStyle(color: Colors.red)),
                       ],
                     ),
                   ),

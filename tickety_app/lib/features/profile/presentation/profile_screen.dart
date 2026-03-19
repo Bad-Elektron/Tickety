@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../core/graphics/graphics.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 import '../../../shared/widgets/verified_badge.dart';
@@ -13,7 +14,7 @@ import '../../subscriptions/subscriptions.dart';
 import '../../analytics/analytics.dart';
 import '../../referral/referral.dart';
 import '../../merch/merch.dart';
-import '../../wallet/wallet.dart';
+import '../../wallet/presentation/transactions_screen.dart';
 import '../widgets/widgets.dart';
 import 'verification_screen.dart';
 
@@ -48,6 +49,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(localeProvider);
     // Watch auth state - auto rebuilds when auth changes
     final authState = ref.watch(authProvider);
 
@@ -55,7 +57,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: Text(L.tr('common_profile')),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -67,26 +69,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               tier: _appState.tier,
             ),
             if (isSignedIn) ...[
-              const ProfileSectionHeader(title: 'Account'),
+              ProfileSectionHeader(title: L.tr('profile_account')),
               ProfileMenuCard(
                 children: [
                   ProfileMenuItem(
-                    icon: Icons.verified_user_outlined,
-                    title: 'Identity Verification',
-                    subtitle: 'Verify to create large events',
-                    trailing: const _VerificationStatusIndicator(),
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const VerificationScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ProfileMenuItem(
                     icon: Icons.settings_outlined,
-                    title: 'Settings',
-                    subtitle: 'App preferences',
+                    title: L.tr('common_settings'),
+                    subtitle: L.tr('settings_app_preferences'),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -96,26 +85,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     },
                   ),
                   ProfileMenuItem(
-                    icon: Icons.notifications_outlined,
-                    title: 'Notifications',
-                    subtitle: 'Manage alerts',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const NotificationSettingsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  ProfileMenuItem(
-                    icon: Icons.lock_outline,
-                    title: 'Privacy',
-                    subtitle: 'Data and permissions',
-                  ),
-                  ProfileMenuItem(
                     icon: Icons.card_giftcard_outlined,
-                    title: 'Referral',
-                    subtitle: 'Share and earn',
+                    title: L.tr('profile_referral'),
+                    subtitle: L.tr('profile_referral_sub'),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -125,35 +97,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     },
                   ),
                   ProfileMenuItem(
-                    icon: Icons.analytics_outlined,
-                    title: 'Market Analytics',
-                    subtitle: _appState.tier == AccountTier.enterprise
-                        ? 'Platform trends & insights'
-                        : 'Enterprise plan required',
+                    icon: Icons.verified_user_outlined,
+                    title: L.tr('identity_verification'),
+                    subtitle: L.tr('why_verify_description'),
+                    trailing: const _VerificationStatusIndicator(),
                     onTap: () {
-                      if (_appState.tier == AccountTier.enterprise) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const AnalyticsDashboardScreen(),
-                          ),
-                        );
-                      } else {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const SubscriptionScreen(),
-                          ),
-                        );
-                      }
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const VerificationScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],
               ),
-              const ProfileSectionHeader(title: 'Payments'),
+              ProfileSectionHeader(title: L.tr('common_payments')),
               ProfileMenuCard(
                 children: [
                   ProfileMenuItem(
                     icon: _appState.tier.icon,
-                    title: 'Manage Subscription',
+                    title: L.tr('profile_subscription'),
                     subtitle: '${_appState.tier.label} Plan',
                     onTap: () {
                       Navigator.of(context).push(
@@ -165,8 +128,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   ProfileMenuItem(
                     icon: Icons.history_outlined,
-                    title: 'Transactions',
-                    subtitle: 'Purchases and receipts',
+                    title: L.tr('profile_transactions'),
+                    subtitle: L.tr('purchase_confirmations_receipts'),
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -175,34 +138,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       );
                     },
                   ),
-                  ProfileMenuItem(
-                    icon: Icons.shopping_bag_outlined,
-                    title: 'My Orders',
-                    subtitle: 'Merch and merchandise',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const MyMerchOrdersScreen(),
-                        ),
-                      );
-                    },
-                  ),
                 ],
               ),
             ],
-            const ProfileSectionHeader(title: 'Support'),
+            ProfileSectionHeader(title: L.tr('profile_support')),
             ProfileMenuCard(
               children: [
                 ProfileMenuItem(
                   icon: Icons.help_outline,
-                  title: 'Help Center',
-                  subtitle: 'FAQs and guides',
+                  title: L.tr('profile_help'),
+                  subtitle: L.tr('profile_help_subtitle'),
                 ),
                 if (isSignedIn)
                   ProfileMenuItem(
                     icon: Icons.chat_bubble_outline,
-                    title: 'Contact Us',
-                    subtitle: 'Get in touch',
+                    title: L.tr('profile_contact'),
+                    subtitle: L.tr('profile_contact_subtitle'),
                   ),
               ],
             ),
@@ -350,7 +301,7 @@ class _ProfileHeader extends StatelessWidget {
           Text(
             isAuthenticated
                 ? (authState.displayName ?? 'User')
-                : 'Guest User',
+                : L.tr('profile_guest'),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
@@ -369,33 +320,13 @@ class _ProfileHeader extends StatelessWidget {
           Text(
             isAuthenticated
                 ? (authState.email ?? '')
-                : 'Sign in to access all features',
+                : L.tr('profile_sign_in_to_access'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 16),
-          if (isAuthenticated)
-            OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Coming soon'),
-                    duration: Duration(seconds: 1),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              label: const Text('Edit Profile'),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-              ),
-            )
-          else
+          if (!isAuthenticated) ...[
+            const SizedBox(height: 16),
             FilledButton.icon(
               onPressed: () {
                 Navigator.of(context).push(
@@ -403,7 +334,7 @@ class _ProfileHeader extends StatelessWidget {
                 );
               },
               icon: const Icon(Icons.login, size: 18),
-              label: const Text('Sign In'),
+              label: Text(L.tr('common_sign_in')),
               style: FilledButton.styleFrom(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -411,6 +342,7 @@ class _ProfileHeader extends StatelessWidget {
                 ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -424,6 +356,7 @@ class _LogoutButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(localeProvider);
     // Don't show logout button if not authenticated
     if (!authState.isAuthenticated) {
       return const SizedBox.shrink();
@@ -438,8 +371,8 @@ class _LogoutButton extends ConsumerWidget {
                 await ref.read(authProvider.notifier).signOut();
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Signed out successfully'),
+                    SnackBar(
+                      content: Text(L.tr('profile_logout_success')),
                       duration: Duration(seconds: 1),
                       behavior: SnackBarBehavior.floating,
                     ),
@@ -453,7 +386,7 @@ class _LogoutButton extends ConsumerWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : const Icon(Icons.logout, size: 20),
-        label: const Text('Log Out'),
+        label: Text(L.tr('common_sign_out')),
         style: OutlinedButton.styleFrom(
           foregroundColor: Theme.of(context).colorScheme.error,
           side: BorderSide(

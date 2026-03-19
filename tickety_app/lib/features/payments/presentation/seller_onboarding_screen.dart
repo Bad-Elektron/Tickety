@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/errors/errors.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/seller_balance_provider.dart';
 import '../data/resale_repository.dart';
 
@@ -148,7 +149,7 @@ class _SellerOnboardingScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Seller Setup'),
+        title: Text(L.tr('seller_setup_title')),
       ),
       body: SafeArea(
         child: Padding(
@@ -183,7 +184,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 24),
         Text(
-          'Start Selling Tickets',
+          L.tr('seller_start_selling'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -191,8 +192,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 12),
         Text(
-          'Set up your seller account to list tickets for resale. '
-          'You can start listing immediately \u2013 add bank details later when you want to withdraw.',
+          L.tr('seller_setup_description'),
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -203,20 +203,20 @@ class _SellerOnboardingScreenState
         // Benefits list
         _BenefitItem(
           icon: Icons.flash_on,
-          title: 'List Instantly',
-          description: 'No bank details needed to start selling',
+          title: L.tr('seller_benefit_list_instantly'),
+          description: L.tr('seller_benefit_list_instantly_desc'),
         ),
         const SizedBox(height: 12),
         _BenefitItem(
           icon: Icons.account_balance_wallet,
-          title: 'Wallet Balance',
-          description: 'Funds from sales go to your wallet',
+          title: L.tr('seller_benefit_wallet_balance'),
+          description: L.tr('seller_benefit_wallet_balance_desc'),
         ),
         const SizedBox(height: 12),
         _BenefitItem(
           icon: Icons.percent,
-          title: '95% Earnings',
-          description: 'Only 5% platform fee on each sale',
+          title: L.tr('seller_benefit_earnings'),
+          description: L.tr('seller_benefit_earnings_desc'),
         ),
 
         // Error message
@@ -247,12 +247,12 @@ class _SellerOnboardingScreenState
                       color: colorScheme.onPrimary,
                     ),
                   )
-                : const Text('Create Seller Account'),
+                : Text(L.tr('seller_create_account')),
           ),
         ),
         const SizedBox(height: 12),
         Text(
-          'Takes less than a minute',
+          L.tr('seller_takes_less_than_minute'),
           style: theme.textTheme.labelSmall?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -282,7 +282,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 24),
         Text(
-          'Seller Account Ready!',
+          L.tr('seller_account_ready'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -290,8 +290,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 12),
         Text(
-          'You can now list tickets for resale. When your tickets sell, '
-          'earnings will appear in your wallet.',
+          L.tr('seller_account_ready_description'),
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -326,14 +325,14 @@ class _SellerOnboardingScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Your Wallet',
+                      L.tr('seller_your_wallet'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'View your balance and withdraw earnings from the Wallet tab.',
+                      L.tr('seller_wallet_description'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -374,14 +373,14 @@ class _SellerOnboardingScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Add Bank (Optional)',
+                      L.tr('seller_add_bank_optional'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Add bank details now, or later when you\'re ready to withdraw.',
+                      L.tr('seller_add_bank_description'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -411,7 +410,7 @@ class _SellerOnboardingScreenState
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Start Listing Tickets'),
+            child: Text(L.tr('seller_start_listing')),
           ),
         ),
 
@@ -437,7 +436,7 @@ class _SellerOnboardingScreenState
                       color: colorScheme.primary,
                     ),
                   )
-                : const Text('Add Bank Details Now'),
+                : Text(L.tr('seller_add_bank_now')),
           ),
         ),
       ],
@@ -464,7 +463,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 24),
         Text(
-          'All Set!',
+          L.tr('seller_all_set'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
@@ -472,8 +471,7 @@ class _SellerOnboardingScreenState
         ),
         const SizedBox(height: 12),
         Text(
-          'Your seller account is fully set up. You can list tickets and '
-          'withdraw earnings to your connected bank account.',
+          L.tr('seller_all_set_description'),
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
           ),
@@ -507,14 +505,14 @@ class _SellerOnboardingScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Bank Connected',
+                      L.tr('seller_bank_connected'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Withdrawals will be sent to your bank account.',
+                      L.tr('seller_bank_connected_description'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -539,7 +537,7 @@ class _SellerOnboardingScreenState
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            child: const Text('Start Listing Tickets'),
+            child: Text(L.tr('seller_start_listing')),
           ),
         ),
       ],

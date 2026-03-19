@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/localization/localization.dart';
 import '../../core/services/google_places_service.dart';
 
 /// A text field with Google Places autocomplete suggestions.
@@ -240,8 +241,8 @@ class _PlacesAutocompleteFieldState extends State<PlacesAutocompleteField> {
         focusNode: _focusNode,
         onChanged: _onChanged,
         decoration: InputDecoration(
-          labelText: 'Location',
-          hintText: 'Search for a venue or address',
+          labelText: L.tr('location'),
+          hintText: L.tr('search_venue_or_address'),
           prefixIcon: const Icon(Icons.location_on_outlined),
           suffixIcon: _isLoading
               ? const Padding(

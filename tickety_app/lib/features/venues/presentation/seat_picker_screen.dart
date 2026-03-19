@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/ticket_type.dart';
 import '../models/models.dart';
@@ -202,7 +203,7 @@ class _SeatPickerScreenState extends ConsumerState<SeatPickerScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_selectedSection == null ? 'Select Section' : _selectedSection!.name),
+        title: Text(_selectedSection == null ? L.tr('seat_picker_select_section') : _selectedSection!.name),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
@@ -231,7 +232,7 @@ class _SeatPickerScreenState extends ConsumerState<SeatPickerScreen> {
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
           child: Text(
-            'Tap a highlighted section to pick your seats',
+            L.tr('seat_picker_tap_section'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -317,11 +318,11 @@ class _SeatPickerScreenState extends ConsumerState<SeatPickerScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _legendDot(colorScheme.primary, 'Your seat'),
+              _legendDot(colorScheme.primary, L.tr('seat_picker_your_seat')),
               const SizedBox(width: 16),
-              _legendDot(_parseSectionColor(section.color), 'Available'),
+              _legendDot(_parseSectionColor(section.color), L.tr('seat_picker_available')),
               const SizedBox(width: 16),
-              _legendDot(Colors.grey.shade400, 'Taken'),
+              _legendDot(Colors.grey.shade400, L.tr('seat_picker_taken')),
             ],
           ),
         ),
@@ -338,7 +339,7 @@ class _SeatPickerScreenState extends ConsumerState<SeatPickerScreen> {
               final scaleX = gridW > 0 ? availableW / gridW : 1.0;
               final scaleY = gridH > 0 ? availableH / gridH : 1.0;
               final fitScale = math.min(scaleX, scaleY).clamp(0.3, 1.5);
-              final canvasW = _labelWidth + gridW + _gridPadding;
+              final canvasW = _labelWidth + gridW + _labelWidth; // symmetrical padding
               final canvasH = gridH + _gridPadding * 2;
 
               return InteractiveViewer(
@@ -553,8 +554,8 @@ class _SeatPickerScreenState extends ConsumerState<SeatPickerScreen> {
               ),
               child: Text(
                 _allSectionsFilled
-                    ? 'Confirm Seats ($_totalSelected)'
-                    : '$_totalSelected / $_totalNeeded seats selected',
+                    ? L.tr('seat_picker_confirm_seats', ['$_totalSelected'])
+                    : L.tr('seat_picker_seats_selected', ['$_totalSelected', '$_totalNeeded']),
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),

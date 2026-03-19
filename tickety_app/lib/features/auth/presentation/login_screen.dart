@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/utils/utils.dart';
 import '../../../shared/widgets/widgets.dart';
@@ -50,7 +51,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _handleForgotPassword() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) {
-      ErrorSnackBar.show(context, 'Please enter your email address first');
+      ErrorSnackBar.show(context, L.tr('auth_login_enter_email'));
       return;
     }
 
@@ -59,7 +60,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Password reset email sent'),
+            content: Text(L.tr('auth_login_reset_sent')),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Theme.of(context).colorScheme.primary,
           ),
@@ -82,12 +83,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    ref.watch(localeProvider);
     // Watch auth state - automatically rebuilds when loading state changes
     final authState = ref.watch(authProvider);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Log In'),
+        title: Text(L.tr('auth_login_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -107,7 +109,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Welcome back',
+                  L.tr('auth_login_welcome'),
                   style: theme.textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -115,7 +117,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Sign in to access your tickets',
+                  L.tr('auth_login_subtitle'),
                   style: theme.textTheme.bodyLarge?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -129,10 +131,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   keyboardType: TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: L.tr('auth_login_email_label'),
+                    prefixIcon: const Icon(Icons.email_outlined),
+                    border: const OutlineInputBorder(),
                   ),
                   validator: Validators.email,
                 ),
@@ -145,7 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _handleLogin(),
                   decoration: InputDecoration(
-                    labelText: 'Password',
+                    labelText: L.tr('auth_login_password_label'),
                     prefixIcon: const Icon(Icons.lock_outlined),
                     border: const OutlineInputBorder(),
                     suffixIcon: IconButton(
@@ -173,7 +175,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: _handleForgotPassword,
-                    child: const Text('Forgot password?'),
+                    child: Text(L.tr('auth_login_forgot')),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -190,7 +192,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Log In'),
+                      : Text(L.tr('auth_login_title')),
                 ),
                 const SizedBox(height: 24),
 
@@ -199,12 +201,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      "Don't have an account?",
+                      L.tr('auth_login_no_account'),
                       style: theme.textTheme.bodyMedium,
                     ),
                     TextButton(
                       onPressed: _navigateToSignup,
-                      child: const Text('Sign up'),
+                      child: Text(L.tr('auth_login_signup_link')),
                     ),
                   ],
                 ),

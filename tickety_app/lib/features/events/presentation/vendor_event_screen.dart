@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../staff/data/cash_transaction_repository.dart';
 import '../../staff/presentation/cash_sale_screen.dart';
 import '../../staff/presentation/tap_to_pay_screen.dart';
@@ -107,8 +108,8 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
     // Check if cash sales are enabled
     if (!_cashSalesEnabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cash sales are not enabled for this event. Ask the organizer to enable them.'),
+        SnackBar(
+          content: Text(L.tr('cash_sales_not_enabled')),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -119,8 +120,8 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
     // Validate ticket type selection if types exist
     if (_ticketTypes.isNotEmpty && _selectedTicketType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a ticket type'),
+        SnackBar(
+          content: Text(L.tr('please_select_ticket_type')),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -182,8 +183,8 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
   Future<void> _openTapToPay() async {
     if (_selectedTicketType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a ticket type first'),
+        SnackBar(
+          content: Text(L.tr('please_select_ticket_type')),
           backgroundColor: Colors.orange,
           behavior: SnackBarBehavior.floating,
         ),
@@ -204,12 +205,12 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
       setState(() => _ticketsSoldThisSession++);
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
-              Text('Tap-to-pay ticket sold successfully!'),
+              Text(L.tr('tap_to_pay_sold_success')),
             ],
           ),
           backgroundColor: Colors.green,
@@ -363,7 +364,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   _StatItem(
                     icon: Icons.confirmation_number,
                     value: '$_ticketsSoldThisSession',
-                    label: 'Sold Today',
+                    label: L.tr('sold_today'),
                     color: Colors.green,
                   ),
                   Container(
@@ -374,7 +375,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   _StatItem(
                     icon: Icons.attach_money,
                     value: _formattedPrice,
-                    label: _selectedTicketType?.name ?? 'Per Ticket',
+                    label: _selectedTicketType?.name ?? L.tr('per_ticket'),
                     color: colorScheme.primary,
                   ),
                   Container(
@@ -385,7 +386,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   _StatItem(
                     icon: Icons.payments,
                     value: _formatRevenue(),
-                    label: 'Revenue',
+                    label: L.tr('revenue'),
                     color: Colors.amber.shade700,
                   ),
                 ],
@@ -411,7 +412,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Select Ticket Type',
+                      L.tr('select_ticket_type'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurfaceVariant,
@@ -464,7 +465,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text(
-                            'or anonymous sale',
+                            L.tr('or_anonymous_sale'),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -505,8 +506,8 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                   const SizedBox(height: 8),
                   Text(
                     _cashSalesEnabled
-                        ? 'Cash sale - collect payment and give ticket number'
-                        : 'Cash sales not enabled - ask organizer to enable',
+                        ? L.tr('cash_sale_instructions')
+                        : L.tr('cash_sales_not_enabled_hint'),
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurfaceVariant,
@@ -528,7 +529,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                     const Divider(),
                     const SizedBox(height: 8),
                     Text(
-                      'Last Sold Ticket',
+                      L.tr('last_sold_ticket'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w600,
                         color: colorScheme.onSurfaceVariant,
@@ -544,7 +545,7 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Ticket #'),
+                                Text(L.tr('ticket_number_label')),
                                 Text(
                                   _lastSoldTicket!.ticketNumber,
                                   style: const TextStyle(fontWeight: FontWeight.bold),
@@ -555,9 +556,9 @@ class _VendorEventScreenState extends ConsumerState<VendorEventScreen> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Text('Status'),
+                                Text(L.tr('status')),
                                 Chip(
-                                  label: const Text('Valid'),
+                                  label: Text(L.tr('valid')),
                                   backgroundColor: Colors.green.withValues(alpha: 0.2),
                                   labelStyle: const TextStyle(color: Colors.green),
                                   padding: EdgeInsets.zero,
@@ -726,7 +727,7 @@ class _TicketTypeCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            'Sold Out',
+                            L.tr('sold_out'),
                             style: theme.textTheme.labelSmall?.copyWith(
                               color: Colors.red,
                               fontWeight: FontWeight.w600,

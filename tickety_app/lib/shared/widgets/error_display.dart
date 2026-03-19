@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/localization/localization.dart';
+
 /// Standard error display widget for consistent error presentation.
 ///
 /// Use this widget to display errors in a consistent manner across the app.
@@ -35,13 +37,13 @@ class ErrorDisplay extends StatelessWidget {
   /// Creates a network error display with retry action.
   factory ErrorDisplay.network({
     Key? key,
-    String message = 'Unable to connect. Please check your internet connection.',
+    String? message,
     VoidCallback? onRetry,
   }) {
     return ErrorDisplay(
       key: key,
-      message: message,
-      actionText: 'Retry',
+      message: message ?? L.tr('error_network_message'),
+      actionText: L.tr('retry'),
       onAction: onRetry,
       icon: Icons.wifi_off,
     );
@@ -50,13 +52,13 @@ class ErrorDisplay extends StatelessWidget {
   /// Creates a generic error display with retry action.
   factory ErrorDisplay.generic({
     Key? key,
-    String message = 'Something went wrong. Please try again.',
+    String? message,
     VoidCallback? onRetry,
   }) {
     return ErrorDisplay(
       key: key,
-      message: message,
-      actionText: 'Try Again',
+      message: message ?? L.tr('error_generic_message'),
+      actionText: L.tr('try_again'),
       onAction: onRetry,
     );
   }
@@ -64,12 +66,12 @@ class ErrorDisplay extends StatelessWidget {
   /// Creates a permission denied error display.
   factory ErrorDisplay.permission({
     Key? key,
-    String message = 'You do not have permission to perform this action.',
+    String? message,
     VoidCallback? onDismiss,
   }) {
     return ErrorDisplay(
       key: key,
-      message: message,
+      message: message ?? L.tr('error_permission_message'),
       icon: Icons.lock_outline,
       onDismiss: onDismiss,
     );
@@ -164,7 +166,7 @@ class ErrorDisplay extends StatelessWidget {
               const SizedBox(height: 16),
               TextButton(
                 onPressed: onDismiss,
-                child: const Text('Dismiss'),
+                child: Text(L.tr('dismiss')),
               ),
             ],
           ],
@@ -227,8 +229,8 @@ class ErrorSnackBar {
   }) {
     show(
       context,
-      'No internet connection',
-      actionLabel: onRetry != null ? 'Retry' : null,
+      L.tr('no_internet_connection'),
+      actionLabel: onRetry != null ? L.tr('retry') : null,
       onAction: onRetry,
     );
   }
@@ -241,8 +243,8 @@ class ErrorSnackBar {
   }) {
     show(
       context,
-      message ?? 'Something went wrong',
-      actionLabel: onRetry != null ? 'Retry' : null,
+      message ?? L.tr('something_went_wrong'),
+      actionLabel: onRetry != null ? L.tr('retry') : null,
       onAction: onRetry,
     );
   }
@@ -281,7 +283,7 @@ class ErrorDialog {
             ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
+            child: Text(L.tr('ok')),
           ),
         ],
       ),
@@ -295,8 +297,8 @@ class ErrorDialog {
   }) {
     return show(
       context,
-      title: 'Permission Denied',
-      message: message ?? 'You do not have permission to perform this action.',
+      title: L.tr('permission_denied'),
+      message: message ?? L.tr('error_permission_message'),
     );
   }
 
@@ -307,9 +309,9 @@ class ErrorDialog {
   }) {
     return show(
       context,
-      title: 'Session Expired',
-      message: 'Your session has expired. Please sign in again.',
-      actionLabel: 'Sign In',
+      title: L.tr('session_expired'),
+      message: L.tr('session_expired_message'),
+      actionLabel: L.tr('sign_in'),
       onAction: onSignIn,
     );
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/merch_provider.dart';
 import '../models/models.dart';
 
@@ -17,7 +18,7 @@ class OrganizerOrdersScreen extends ConsumerWidget {
     final ordersAsync = ref.watch(organizerOrdersProvider(organizerId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Merch Orders')),
+      appBar: AppBar(title: Text(L.tr('merch_orders'))),
       body: ordersAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
@@ -34,7 +35,7 @@ class OrganizerOrdersScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'No orders yet',
+                    L.tr('no_orders_yet'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -195,13 +196,13 @@ class _OrganizerOrderCardState extends ConsumerState<_OrganizerOrderCard> {
                     FilledButton.tonal(
                       onPressed:
                           _isUpdating ? null : () => _markProcessing(order),
-                      child: const Text('Mark Processing'),
+                      child: Text(L.tr('mark_processing')),
                     ),
                   if (order.status == MerchOrderStatus.processing) ...[
                     FilledButton.tonal(
                       onPressed:
                           _isUpdating ? null : () => _showShippingDialog(order),
-                      child: const Text('Mark Shipped'),
+                      child: Text(L.tr('mark_shipped')),
                     ),
                   ],
                 ],
@@ -237,7 +238,7 @@ class _OrganizerOrderCardState extends ConsumerState<_OrganizerOrderCard> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Shipping Details'),
+        title: Text(L.tr('shipping_details')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -259,11 +260,11 @@ class _OrganizerOrderCardState extends ConsumerState<_OrganizerOrderCard> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
+            child: Text(L.tr('confirm')),
           ),
         ],
       ),

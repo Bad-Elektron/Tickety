@@ -2,10 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
+import '../../../core/state/app_state.dart';
+import '../models/referral_info.dart';
 
-/// Screen displaying the user's referral code and stats.
+
+/// Screen displaying the user's referral code, channel stats, and withdrawal.
 class ReferralScreen extends ConsumerStatefulWidget {
   const ReferralScreen({super.key});
 
@@ -25,19 +30,94 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
   void _copyCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Referral code copied!'),
+      SnackBar(
+        content: Text(L.tr('referral_code_copied')),
         behavior: SnackBarBehavior.floating,
-        duration: Duration(seconds: 2),
+        duration: const Duration(seconds: 2),
       ),
     );
   }
 
   void _shareCode(String code) {
     Share.share(
-      'Join Tickety with my referral code $code '
-      'and enjoy discounted platform fees for a year!',
+      'Join Tickety with my referral code $code and get 50% off your subscription for 6 months! '
+      'https://tickety.app/r/$code',
     );
+  }
+
+  Future<void> _handleWithdraw() async {
+    final info = ref.read(referralProvider).info;
+    if (info == null || !info.canWithdraw) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final theme = Theme.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(L.tr('referral_withdraw')),
+        content: Text(
+          'Withdraw ${info.formattedWithdrawable} to your bank account?\n\n'
+          'If you haven\'t set up your payout account yet, '
+          'you\'ll be directed to complete setup first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(L.tr('common_cancel')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(L.tr('referral_withdraw')),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final result =
+        await ref.read(referralProvider.notifier).withdrawEarnings();
+
+    if (result == null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(ref.read(referralProvider).error ??
+              'Failed to withdraw. Please try again.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: theme.colorScheme.error,
+        ),
+      );
+      return;
+    }
+
+    if (result['needs_onboarding'] == true) {
+      final url = result['onboarding_url'] as String?;
+      if (url != null) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content:
+                Text('Opening Stripe to complete your payout account setup...'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      }
+    } else if (result['success'] == true) {
+      final amountCents = result['amount_cents'] as int? ?? 0;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Withdrawal of \$${(amountCents / 100).toStringAsFixed(2)} initiated!',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
   }
 
   @override
@@ -47,7 +127,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Referral'),
+        title: Text(L.tr('referral_title')),
         centerTitle: true,
         actions: [
           IconButton(
@@ -78,6 +158,12 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                   onRetry: () => ref.read(referralProvider.notifier).load(),
                 )
               else if (state.info != null) ...[
+                // Referred user benefit banner (only show on Base tier)
+                if (state.info!.wasReferred &&
+                    state.info!.hasUnusedSubscriptionBenefit &&
+                    ref.watch(subscriptionProvider).effectiveTier == AccountTier.base)
+                  _SubscriptionBenefitBanner(),
+
                 // Referral code card
                 _ReferralCodeCard(
                   code: state.info!.referralCode,
@@ -89,7 +175,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
 
                 // Stats section
                 Text(
-                  'Your Stats',
+                  L.tr('referral_stats'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -99,7 +185,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                   children: [
                     Expanded(
                       child: _StatCard(
-                        label: 'Referrals',
+                        label: L.tr('referral_referrals'),
                         value: state.info!.totalReferrals.toString(),
                         icon: Icons.people_outline,
                       ),
@@ -107,7 +193,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _StatCard(
-                        label: 'Earned',
+                        label: L.tr('referral_earned'),
                         value: state.info!.formattedTotalEarnings,
                         icon: Icons.payments_outlined,
                       ),
@@ -115,13 +201,29 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _StatCard(
-                        label: 'Pending',
+                        label: L.tr('referral_pending'),
                         value: state.info!.formattedPendingEarnings,
                         icon: Icons.schedule_outlined,
                       ),
                     ),
                   ],
                 ),
+
+                // Withdrawal section
+                if (state.info!.hasEarnings) ...[
+                  const SizedBox(height: 16),
+                  _WithdrawalCard(
+                    info: state.info!,
+                    isWithdrawing: state.isWithdrawing,
+                    onWithdraw: _handleWithdraw,
+                  ),
+                ],
+
+                // Channel breakdown
+                if (state.info!.channelStats.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  _ChannelBreakdown(stats: state.info!.channelStats),
+                ],
 
                 // Referred user discount banner
                 if (state.info!.wasReferred) ...[
@@ -133,7 +235,7 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
 
                 // How it works
                 Text(
-                  'How It Works',
+                  L.tr('referral_how_it_works'),
                   style: theme.textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -143,26 +245,76 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
                   step: '1',
                   title: 'Share Your Code',
                   description:
-                      'Send your referral code to friends via any messaging app.',
+                      'Select a channel and share your referral link on social media, email, or your website.',
                 ),
                 const SizedBox(height: 8),
                 _HowItWorksCard(
                   step: '2',
                   title: 'Friend Signs Up',
                   description:
-                      'They enter your code when creating their Tickety account.',
+                      'They get 50% off Pro or Enterprise for 6 months + discounted platform fees for a year.',
                 ),
                 const SizedBox(height: 8),
                 _HowItWorksCard(
                   step: '3',
-                  title: 'Everyone Wins',
+                  title: 'You Earn Commission',
                   description:
-                      'Your friend gets discounted fees, and you earn a share of platform revenue for 1 year.',
+                      'Earn 10% of platform fees from every purchase your referrals make. Withdraw anytime after 7 days.',
                 ),
               ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SubscriptionBenefitBanner extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.amber.withValues(alpha: 0.15),
+            Colors.orange.withValues(alpha: 0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.card_giftcard, color: Colors.amber, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '50% Off for 6 Months!',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.amber.shade800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'You were referred! Upgrade and your discount will be applied automatically.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -200,7 +352,7 @@ class _ReferralCodeCard extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Your Referral Code',
+            L.tr('referral_code_label'),
             style: theme.textTheme.titleSmall?.copyWith(
               color: colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
             ),
@@ -209,7 +361,8 @@ class _ReferralCodeCard extends StatelessWidget {
           GestureDetector(
             onTap: onCopy,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
                 color: colorScheme.surface,
                 borderRadius: BorderRadius.circular(12),
@@ -242,7 +395,7 @@ class _ReferralCodeCard extends StatelessWidget {
           FilledButton.icon(
             onPressed: onShare,
             icon: const Icon(Icons.share, size: 18),
-            label: const Text('Share Code'),
+            label: Text(L.tr('referral_share_link')),
             style: FilledButton.styleFrom(
               padding:
                   const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
@@ -250,6 +403,204 @@ class _ReferralCodeCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _WithdrawalCard extends StatelessWidget {
+  final ReferralInfo info;
+  final bool isWithdrawing;
+  final VoidCallback onWithdraw;
+
+  const _WithdrawalCard({
+    required this.info,
+    required this.isWithdrawing,
+    required this.onWithdraw,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: info.canWithdraw
+            ? Border.all(color: Colors.green.withValues(alpha: 0.3))
+            : null,
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Available to Withdraw',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      info.formattedWithdrawable,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: info.canWithdraw
+                            ? Colors.green
+                            : colorScheme.onSurface,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (info.paidEarningsCents > 0)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Total Paid',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      info.formattedPaidEarnings,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+          if (!info.canWithdraw && info.pendingEarningsCents > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Earnings are available for withdrawal after a 7-day hold period.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          if (info.canWithdraw) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: isWithdrawing ? null : onWithdraw,
+                icon: isWithdrawing
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.account_balance, size: 18),
+                label: Text(isWithdrawing
+                    ? 'Processing...'
+                    : 'Withdraw ${info.formattedWithdrawable}'),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ChannelBreakdown extends StatelessWidget {
+  final List<ChannelStat> stats;
+
+  const _ChannelBreakdown({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          L.tr('referral_channel_performance'),
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...stats.map((stat) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 80,
+                    child: Text(
+                      stat.displayName,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _MiniStat(
+                            label: L.tr('referral_clicks'), value: stat.clicks.toString()),
+                        _MiniStat(
+                            label: L.tr('referral_signups'), value: stat.signups.toString()),
+                        _MiniStat(
+                            label: L.tr('referral_sales'), value: stat.purchases.toString()),
+                        _MiniStat(
+                            label: L.tr('referral_earned'), value: stat.formattedEarnings),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )),
+      ],
+    );
+  }
+}
+
+class _MiniStat extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _MiniStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      children: [
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontSize: 10,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -300,7 +651,7 @@ class _StatCard extends StatelessWidget {
 }
 
 class _ReferredBanner extends StatelessWidget {
-  final dynamic info;
+  final ReferralInfo info;
 
   const _ReferredBanner({required this.info});
 
@@ -336,15 +687,18 @@ class _ReferredBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isActive ? 'Referral Discount Active' : 'Referral Discount Expired',
+                  isActive
+                      ? 'Referral Discount Active'
+                      : 'Referral Discount Expired',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: isActive ? Colors.green : colorScheme.onSurfaceVariant,
+                    color:
+                        isActive ? Colors.green : colorScheme.onSurfaceVariant,
                   ),
                 ),
                 Text(
                   isActive
-                      ? '${info.discountDaysRemaining} days remaining'
+                      ? '${info.discountDaysRemaining} days remaining — 5% off platform fees'
                       : 'Your referral discount period has ended',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
@@ -457,7 +811,7 @@ class _ErrorView extends StatelessWidget {
           const SizedBox(height: 16),
           FilledButton.tonal(
             onPressed: onRetry,
-            child: const Text('Retry'),
+            child: Text(L.tr('common_retry')),
           ),
         ],
       ),

@@ -301,9 +301,12 @@ class Ticket {
       !(eventData?['virtual_locked'] == true);
 
   /// Whether ticket is on an NFT-enabled event but hasn't been minted yet.
+  /// Only shows "preparing" for tickets less than 24 hours old — older unminted
+  /// tickets are from seed data or flows that predate the NFT pipeline.
   bool get isAwaitingMint =>
       (eventData?['nft_enabled'] == true || ticketMode == TicketMode.public_) &&
-      nftMinted == false;
+      nftMinted == false &&
+      DateTime.now().difference(soldAt).inHours < 24;
 
   // ─────────────────────────────────────────────────────────────────
   // Validation for check-in (computed, not stored)

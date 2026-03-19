@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/wallet_balance_provider.dart';
 import '../../payments/models/payment.dart';
 import '../models/linked_bank_account.dart';
@@ -99,7 +100,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
-        title: const Text('Top-Up Processing'),
+        title: Text(L.tr('add_funds_topup_processing')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -108,8 +109,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'ACH transfers take 4-5 business days to settle. '
-              'Your funds will be available once the transfer completes.',
+              L.tr('add_funds_ach_settlement_notice'),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -131,7 +131,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
               Navigator.of(context).pop(); // Close dialog
               Navigator.of(context).pop(true); // Return to wallet
             },
-            child: const Text('Got it'),
+            child: Text(L.tr('got_it')),
           ),
         ],
       ),
@@ -160,7 +160,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Funds'),
+        title: Text(L.tr('add_funds_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -174,7 +174,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
                   children: [
                     // Amount section
                     Text(
-                      'Amount',
+                      L.tr('add_funds_amount'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -192,7 +192,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
                               onTap: () => _selectPresetAmount(cents),
                             )),
                         _AmountChip(
-                          label: 'Custom',
+                          label: L.tr('add_funds_custom'),
                           isSelected: _isCustomAmount,
                           onTap: _selectCustomAmount,
                         ),
@@ -225,7 +225,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
 
                     // Bank account section
                     Text(
-                      'From Bank Account',
+                      L.tr('add_funds_from_bank'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -254,7 +254,7 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
                     if (fees != null && _selectedAmountCents > 0) ...[
                       const SizedBox(height: 24),
                       Text(
-                        'Fee Breakdown',
+                        L.tr('add_funds_fee_breakdown'),
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -329,8 +329,8 @@ class _AddFundsScreenState extends ConsumerState<AddFundsScreen> {
                         )
                       : Text(
                           fees != null
-                              ? 'Add Funds (\$${(fees.totalChargeCents / 100).toStringAsFixed(2)} total)'
-                              : 'Add Funds',
+                              ? L.tr('add_funds_button_with_total', ['\$${(fees.totalChargeCents / 100).toStringAsFixed(2)}'])
+                              : L.tr('add_funds_title'),
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.bold,
                             color: colorScheme.onPrimary,
@@ -417,12 +417,12 @@ class _NoBankCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'No bank account linked',
+            L.tr('add_funds_no_bank'),
             style: theme.textTheme.titleSmall,
           ),
           const SizedBox(height: 4),
           Text(
-            'Link a bank account to add funds via ACH transfer.',
+            L.tr('add_funds_no_bank_desc'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -431,7 +431,7 @@ class _NoBankCard extends StatelessWidget {
           const SizedBox(height: 16),
           FilledButton.tonal(
             onPressed: onLink,
-            child: const Text('Link Bank Account'),
+            child: Text(L.tr('link_bank_title')),
           ),
         ],
       ),
@@ -539,12 +539,12 @@ class _FeeBreakdownCard extends StatelessWidget {
       child: Column(
         children: [
           _FeeRow(
-            label: 'Wallet credit',
+            label: L.tr('add_funds_wallet_credit'),
             amount: '\$${(fees.amountCents / 100).toStringAsFixed(2)}',
           ),
           const SizedBox(height: 8),
           _FeeRow(
-            label: 'ACH fee (0.8%, max \$5)',
+            label: L.tr('add_funds_ach_fee'),
             amount: '\$${(fees.achFeeCents / 100).toStringAsFixed(2)}',
             isSubtle: true,
           ),
@@ -552,7 +552,7 @@ class _FeeBreakdownCard extends StatelessWidget {
           Divider(color: colorScheme.outline.withValues(alpha: 0.2)),
           const SizedBox(height: 12),
           _FeeRow(
-            label: 'Total bank debit',
+            label: L.tr('add_funds_total_bank_debit'),
             amount: '\$${(fees.totalChargeCents / 100).toStringAsFixed(2)}',
             isBold: true,
           ),

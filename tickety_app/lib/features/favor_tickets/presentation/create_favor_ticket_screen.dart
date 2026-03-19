@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/errors.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
 import '../models/ticket_offer.dart';
@@ -63,11 +64,11 @@ class _CreateFavorTicketScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(
+            content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Ticket offer sent!'),
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(L.tr('favor_ticket_offer_sent')),
               ],
             ),
             backgroundColor: Colors.teal,
@@ -104,7 +105,7 @@ class _CreateFavorTicketScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Send Favor Ticket'),
+        title: Text(L.tr('favor_ticket_send_title')),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -151,7 +152,7 @@ class _CreateFavorTicketScreenState
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              'Send a ticket to someone as a gift or comp',
+                              L.tr('favor_ticket_send_subtitle'),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -166,7 +167,7 @@ class _CreateFavorTicketScreenState
 
                 // Recipient email
                 Text(
-                  'Recipient Email',
+                  L.tr('favor_ticket_recipient_email'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -182,18 +183,18 @@ class _CreateFavorTicketScreenState
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return 'Please enter an email address';
+                      return L.tr('favor_ticket_enter_email');
                     }
                     final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
                     if (!emailRegex.hasMatch(value.trim())) {
-                      return 'Please enter a valid email address';
+                      return L.tr('favor_ticket_valid_email');
                     }
                     return null;
                   },
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'The recipient will be notified. If they don\'t have an account yet, they\'ll see it when they sign up.',
+                  L.tr('favor_ticket_recipient_note'),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onSurfaceVariant,
                   ),
@@ -202,7 +203,7 @@ class _CreateFavorTicketScreenState
 
                 // Price
                 Text(
-                  'Price',
+                  L.tr('common_price'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -230,10 +231,10 @@ class _CreateFavorTicketScreenState
                     if (value != null && value.isNotEmpty) {
                       final price = double.tryParse(value);
                       if (price == null || price < 0) {
-                        return 'Please enter a valid price';
+                        return L.tr('favor_ticket_valid_price');
                       }
                       if (price > 10000) {
-                        return 'Maximum price is \$10,000';
+                        return L.tr('favor_ticket_max_price');
                       }
                     }
                     return null;
@@ -243,23 +244,23 @@ class _CreateFavorTicketScreenState
 
                 // Ticket Mode
                 Text(
-                  'Ticket Mode',
+                  L.tr('favor_ticket_mode'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 8),
                 SegmentedButton<TicketMode>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: TicketMode.private_,
-                      label: Text('Private'),
-                      icon: Icon(Icons.lock_outline),
+                      label: Text(L.tr('common_private')),
+                      icon: const Icon(Icons.lock_outline),
                     ),
                     ButtonSegment(
                       value: TicketMode.public_,
-                      label: Text('Public'),
-                      icon: Icon(Icons.public_outlined),
+                      label: Text(L.tr('common_public')),
+                      icon: const Icon(Icons.public_outlined),
                     ),
                   ],
                   selected: {_ticketMode},
@@ -275,7 +276,7 @@ class _CreateFavorTicketScreenState
 
                 // Optional message
                 Text(
-                  'Personal Message (optional)',
+                  L.tr('favor_ticket_personal_message'),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -285,9 +286,9 @@ class _CreateFavorTicketScreenState
                   controller: _messageController,
                   maxLines: 3,
                   maxLength: 500,
-                  decoration: const InputDecoration(
-                    hintText: 'Add a personal message for the recipient...',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: L.tr('favor_ticket_message_hint'),
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -311,14 +312,14 @@ class _CreateFavorTicketScreenState
                             color: Colors.white,
                           ),
                         )
-                      : const Row(
+                      : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.send),
-                            SizedBox(width: 8),
+                            const Icon(Icons.send),
+                            const SizedBox(width: 8),
                             Text(
-                              'Send Ticket Offer',
-                              style: TextStyle(
+                              L.tr('favor_ticket_send_offer'),
+                              style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -349,10 +350,10 @@ class _ModeInfoCard extends StatelessWidget {
     final isPrivate = ticketMode == TicketMode.private_;
     final icon = isPrivate ? Icons.lock_outline : Icons.public_outlined;
     final color = isPrivate ? Colors.orange : Colors.blue;
-    final title = isPrivate ? 'Private Ticket' : 'Public Ticket';
+    final title = isPrivate ? L.tr('favor_ticket_private_title') : L.tr('favor_ticket_public_title');
     final description = isPrivate
-        ? 'Off-chain, database only. Cannot be resold or traded. Best for personal comps.'
-        : 'On-chain NFT (future). Tradeable and resaleable on the marketplace. If free, a ~\$1 minting fee is suggested.';
+        ? L.tr('favor_ticket_private_description')
+        : L.tr('favor_ticket_public_description');
 
     return Container(
       padding: const EdgeInsets.all(12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
 
+import '../../../core/localization/localization.dart';
 import '../data/wallet_repository.dart';
 
 /// Screen for linking a bank account via Stripe Financial Connections.
@@ -84,8 +85,8 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bank account linked successfully!'),
+          SnackBar(
+            content: Text(L.tr('link_bank_success')),
             backgroundColor: Colors.green,
             behavior: SnackBarBehavior.floating,
           ),
@@ -114,7 +115,7 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Link Bank Account'),
+        title: Text(L.tr('link_bank_title')),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -142,7 +143,7 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                     const SizedBox(height: 24),
 
                     Text(
-                      'Connect Your Bank',
+                      L.tr('link_bank_connect_heading'),
                       style: theme.textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
@@ -150,7 +151,7 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Link your bank account to pay for tickets directly via ACH. Lower fees than card payments.',
+                      L.tr('link_bank_connect_description'),
                       style: theme.textTheme.bodyMedium?.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),
@@ -161,20 +162,20 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                     // Benefits
                     _BenefitItem(
                       icon: Icons.savings_outlined,
-                      title: 'Lower Fees',
-                      description: 'ACH costs only 0.8% (max \$5) vs 2.9% + \$0.30 for cards.',
+                      title: L.tr('link_bank_lower_fees'),
+                      description: L.tr('link_bank_lower_fees_desc'),
                     ),
                     const SizedBox(height: 16),
                     _BenefitItem(
                       icon: Icons.bolt_outlined,
-                      title: 'Instant Tickets',
-                      description: 'Get your tickets immediately. Bank payment settles in 4-5 days.',
+                      title: L.tr('link_bank_instant_tickets'),
+                      description: L.tr('link_bank_instant_tickets_desc'),
                     ),
                     const SizedBox(height: 16),
                     _BenefitItem(
                       icon: Icons.security_outlined,
-                      title: 'Bank-Level Security',
-                      description: 'Powered by Stripe Financial Connections. Your credentials are never stored.',
+                      title: L.tr('link_bank_security'),
+                      description: L.tr('link_bank_security_desc'),
                     ),
 
                     // Error message
@@ -225,7 +226,7 @@ class _LinkBankScreenState extends ConsumerState<LinkBankScreen> {
                         )
                       : const Icon(Icons.account_balance),
                   label: Text(
-                    _isLinking ? 'Connecting...' : 'Connect Bank Account',
+                    _isLinking ? L.tr('link_bank_connecting') : L.tr('link_bank_connect_button'),
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: _isLinking ? null : colorScheme.onPrimary,

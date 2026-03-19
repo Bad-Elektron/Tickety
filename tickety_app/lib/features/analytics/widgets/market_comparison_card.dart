@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/market_snapshot.dart';
 
 /// Tag-detail card comparing Tickety data with external market data.
@@ -37,7 +38,7 @@ class MarketComparisonCard extends StatelessWidget {
               Icon(Icons.compare_arrows, size: 20, color: colorScheme.primary),
               const SizedBox(width: 8),
               Text(
-                'Tickety vs Market',
+                L.tr('Tickety vs Market'),
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -45,7 +46,7 @@ class MarketComparisonCard extends StatelessWidget {
               const Spacer(),
               if (comparison.hasStaleData)
                 Tooltip(
-                  message: 'Market data may be outdated',
+                  message: L.tr('Market data may be outdated'),
                   child: Icon(
                     Icons.schedule,
                     size: 16,
@@ -92,7 +93,7 @@ class MarketComparisonCard extends StatelessWidget {
           Divider(color: colorScheme.outlineVariant),
           const SizedBox(height: 8),
           Text(
-            'By source',
+            L.tr('By source'),
             style: theme.textTheme.labelSmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -156,7 +157,7 @@ class _Column extends StatelessWidget {
             ),
           ),
           Text(
-            'events',
+            L.tr('events'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -169,7 +170,7 @@ class _Column extends StatelessWidget {
             ),
           ),
           Text(
-            'avg price',
+            L.tr('avg price'),
             style: theme.textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -213,7 +214,7 @@ class _SourceRow extends StatelessWidget {
               Icon(Icons.error_outline, size: 14, color: Colors.red.shade400),
               const SizedBox(width: 4),
               Text(
-                'Error',
+                L.tr('Error'),
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.red.shade400,
                 ),

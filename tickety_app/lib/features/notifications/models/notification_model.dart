@@ -16,8 +16,9 @@ enum NotificationType {
 
   static NotificationType fromString(String? value) {
     if (value == null) return NotificationType.unknown;
+    // Match both snake_case (ticket_purchased) and camelCase (ticketPurchased)
     return NotificationType.values.firstWhere(
-      (t) => t.value == value,
+      (t) => t.value == value || t.name == value,
       orElse: () => NotificationType.unknown,
     );
   }

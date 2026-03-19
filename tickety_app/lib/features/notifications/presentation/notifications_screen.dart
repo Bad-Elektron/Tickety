@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
+import '../../../core/services/supabase_service.dart';
 import '../../events/presentation/event_details_screen.dart';
+import '../../events/presentation/my_events_screen.dart';
 import '../../favor_tickets/presentation/favor_ticket_offer_screen.dart';
+import '../../staff/models/ticket.dart';
+import '../../tickets/presentation/my_tickets_screen.dart';
+import '../../tickets/presentation/ticket_screen.dart';
 import '../models/notification_model.dart';
 
 /// Screen displaying the user's notifications.
@@ -23,11 +29,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   @override
   void initState() {
     super.initState();
-    // Refresh notifications and reset badge when screen opens
+    // Refresh notifications and mark all as read when screen opens
     Future.microtask(() {
       ref.read(notificationProvider.notifier)
         ..refresh()
-        ..resetBadgeCount();
+        ..markAllAsRead();
     });
   }
 
@@ -72,6 +78,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(localeProvider);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final state = ref.watch(notificationProvider);
@@ -94,7 +101,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   border: InputBorder.none,
                 ),
               )
-            : const Text('Notifications'),
+            : Text(L.tr('notifications_title')),
         centerTitle: !_isSearching,
         actions: [
           IconButton(
@@ -122,13 +129,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               },
               itemBuilder: (_) => [
                 if (state.unreadCount > 0)
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'mark_read',
                     child: Row(
                       children: [
-                        Icon(Icons.done_all, size: 18),
-                        SizedBox(width: 12),
-                        Text('Mark all as read'),
+                        const Icon(Icons.done_all, size: 18),
+                        const SizedBox(width: 12),
+                        Text(L.tr('notifications_mark_all')),
                       ],
                     ),
                   ),
@@ -219,13 +226,31 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     // Navigate based on notification type
     switch (notification.type) {
       case NotificationType.staffAdded:
-        _navigateToEvent(notification.eventId);
+        // Staff added → navigate to My Events (ushering/selling tab)
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const MyEventsScreen(),
+          ),
+        );
         break;
       case NotificationType.ticketPurchased:
-      case NotificationType.ticketUsed:
-        _navigateToEvent(notification.eventId);
+      case NotificationType.waitlistAutoPurchased:
+        // Ticket received → navigate directly to that ticket
+        final ticketId = notification.data['ticket_id'] as String?;
+        if (ticketId != null) {
+          _navigateToTicket(ticketId);
+        } else {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const MyTicketsScreen(),
+            ),
+          );
+        }
         break;
+      case NotificationType.ticketUsed:
       case NotificationType.eventReminder:
+      case NotificationType.waitlistAvailable:
+      case NotificationType.virtualEventRevealed:
         _navigateToEvent(notification.eventId);
         break;
       case NotificationType.favorTicketOffer:
@@ -239,15 +264,36 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           );
         }
         break;
-      case NotificationType.waitlistAvailable:
-      case NotificationType.waitlistAutoPurchased:
-        _navigateToEvent(notification.eventId);
-        break;
-      case NotificationType.virtualEventRevealed:
-        _navigateToEvent(notification.eventId);
-        break;
       case NotificationType.unknown:
         break;
+    }
+  }
+
+  Future<void> _navigateToTicket(String ticketId) async {
+    try {
+      final data = await SupabaseService.instance.client
+          .from('tickets')
+          .select('*, events(*)')
+          .eq('id', ticketId)
+          .single();
+
+      if (!mounted) return;
+
+      final ticket = Ticket.fromJson(data);
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TicketScreen(ticket: ticket),
+        ),
+      );
+    } catch (_) {
+      // Fallback to My Tickets if fetch fails
+      if (mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const MyTicketsScreen(),
+          ),
+        );
+      }
     }
   }
 
@@ -316,7 +362,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             FilledButton.icon(
               onPressed: () => ref.read(notificationProvider.notifier).refresh(),
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(L.tr('common_retry')),
             ),
           ],
         ),
@@ -350,7 +396,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ),
             const SizedBox(height: 24),
             Text(
-              'No notifications',
+              L.tr('notifications_empty'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),

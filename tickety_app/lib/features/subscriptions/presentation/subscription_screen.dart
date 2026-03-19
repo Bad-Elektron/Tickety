@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
+import '../../../core/providers/referral_provider.dart';
 import '../../../core/providers/subscription_provider.dart';
 import '../../../core/services/services.dart';
 import '../../../core/state/app_state.dart';
@@ -26,7 +28,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Subscription'),
+        title: Text(L.tr('subscription_title')),
         centerTitle: true,
       ),
       body: subscriptionState.isLoading && subscriptionState.subscription == null
@@ -39,11 +41,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                   if (subscriptionState.subscription != null)
                     _buildCurrentPlanCard(context, subscriptionState),
 
+                  // Referral benefit banner
+                  _ReferralBenefitBanner(),
+
                   // Available plans header
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
                     child: Text(
-                      'Available Plans',
+                      L.tr('subscription_available_plans'),
                       style: theme.textTheme.titleSmall?.copyWith(
                         color: colorScheme.primary,
                         fontWeight: FontWeight.w600,
@@ -159,7 +164,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(
-                              'Canceling',
+                              L.tr('subscription_canceling'),
                               style: theme.textTheme.labelSmall?.copyWith(
                                 color: Colors.red,
                                 fontWeight: FontWeight.w600,
@@ -218,7 +223,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               OutlinedButton.icon(
                 onPressed: _handleResume,
                 icon: const Icon(Icons.refresh),
-                label: const Text('Resume Subscription'),
+                label: Text(L.tr('subscription_resume')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.green,
                 ),
@@ -227,7 +232,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
               TextButton.icon(
                 onPressed: _showCancelConfirmation,
                 icon: const Icon(Icons.cancel_outlined, size: 18),
-                label: const Text('Cancel Subscription'),
+                label: Text(L.tr('subscription_cancel_subscription')),
                 style: TextButton.styleFrom(
                   foregroundColor: colorScheme.error,
                 ),
@@ -271,7 +276,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
           final error = ref.read(subscriptionProvider).error;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(error ?? 'Failed to start upgrade. Please try again.'),
+              content: Text(error ?? L.tr('subscription_upgrade_failed')),
               behavior: SnackBarBehavior.floating,
               backgroundColor: Theme.of(context).colorScheme.error,
             ),
@@ -344,11 +349,8 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Cancel Subscription?'),
-        content: const Text(
-          'Your subscription will remain active until the end of the current billing period. '
-          'After that, you\'ll be downgraded to the Base plan.',
-        ),
+        title: Text(L.tr('subscription_cancel')),
+        content: Text(L.tr('subscription_cancel_message')),
         actions: [
           TextButton(
             onPressed: () {
@@ -358,11 +360,11 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
             style: TextButton.styleFrom(
               foregroundColor: Theme.of(context).colorScheme.error,
             ),
-            child: const Text('Cancel Plan'),
+            child: Text(L.tr('subscription_cancel_plan')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Keep Plan'),
+            child: Text(L.tr('subscription_keep_plan')),
           ),
         ],
       ),
@@ -388,7 +390,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
         final error = ref.read(subscriptionProvider).error;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(error ?? 'Failed to cancel. Please try again.'),
+            content: Text(error ?? L.tr('subscription_cancel_failed')),
             behavior: SnackBarBehavior.floating,
             backgroundColor: Theme.of(context).colorScheme.error,
           ),
@@ -402,13 +404,59 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen> {
 
     if (mounted && success) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Subscription resumed'),
+        SnackBar(
+          content: Text(L.tr('subscription_resumed')),
           behavior: SnackBarBehavior.floating,
           backgroundColor: Colors.green,
         ),
       );
     }
   }
+}
 
+class _ReferralBenefitBanner extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final referralState = ref.watch(referralProvider);
+    final info = referralState.info;
+
+    final currentTier = ref.watch(subscriptionProvider).effectiveTier;
+
+    // Only show if user was referred, hasn't used the coupon, AND is on Base tier
+    // (no point showing "upgrade" benefit if already on Pro or Enterprise)
+    if (info == null || !info.hasUnusedSubscriptionBenefit || currentTier != AccountTier.base) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.amber.withValues(alpha: 0.15),
+            Colors.orange.withValues(alpha: 0.1),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.card_giftcard, color: Colors.amber, size: 24),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              L.tr('subscription_referral_reward'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/cardano_wallet_provider.dart';
 
 /// Screen displaying the wallet's receive address as a QR code.
@@ -18,11 +19,11 @@ class CardanoReceiveScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Receive ADA'),
+        title: Text(L.tr('wallet_receive_title')),
         centerTitle: true,
       ),
       body: address == null
-          ? const Center(child: Text('No wallet found'))
+          ? Center(child: Text(L.tr('wallet_receive_no_wallet')))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
@@ -30,7 +31,7 @@ class CardanoReceiveScreen extends ConsumerWidget {
                 children: [
                   const SizedBox(height: 16),
                   Text(
-                    'Scan this QR code or copy the address below to receive ADA.',
+                    L.tr('wallet_receive_instructions'),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -78,7 +79,7 @@ class CardanoReceiveScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      'Preview Testnet',
+                      L.tr('wallet_receive_preview_testnet'),
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.orange,
                         fontWeight: FontWeight.w600,
@@ -115,15 +116,15 @@ class CardanoReceiveScreen extends ConsumerWidget {
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: address));
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Address copied to clipboard'),
+                              SnackBar(
+                                content: Text(L.tr('wallet_receive_address_copied')),
                                 behavior: SnackBarBehavior.floating,
                                 duration: Duration(seconds: 2),
                               ),
                             );
                           },
                           icon: const Icon(Icons.copy, size: 18),
-                          label: const Text('Copy'),
+                          label: Text(L.tr('copy')),
                           style: FilledButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(
@@ -139,7 +140,7 @@ class CardanoReceiveScreen extends ConsumerWidget {
                             Share.share(address);
                           },
                           icon: const Icon(Icons.share, size: 18),
-                          label: const Text('Share'),
+                          label: Text(L.tr('share')),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             shape: RoundedRectangleBorder(

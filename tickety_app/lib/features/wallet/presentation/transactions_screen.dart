@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/cardano_wallet_provider.dart';
 import '../../../core/providers/payment_provider.dart';
 import '../../payments/models/payment.dart';
@@ -151,14 +152,14 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                 autofocus: true,
                 style: theme.textTheme.bodyLarge,
                 decoration: InputDecoration(
-                  hintText: 'Search transactions...',
+                  hintText: L.tr('transactions_search_hint'),
                   hintStyle: theme.textTheme.bodyLarge?.copyWith(
                     color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                   border: InputBorder.none,
                 ),
               )
-            : const Text('Transactions'),
+            : Text(L.tr('transactions_title')),
         centerTitle: !_isSearching,
         actions: [
           // Search toggle
@@ -342,25 +343,25 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   String _getTypeLabel(PaymentType type) {
     switch (type) {
       case PaymentType.primaryPurchase:
-        return 'Ticket Purchase';
+        return L.tr('tx_type_ticket_purchase');
       case PaymentType.resalePurchase:
-        return 'Resale Purchase';
+        return L.tr('tx_type_resale_purchase');
       case PaymentType.vendorPos:
-        return 'Vendor Purchase';
+        return L.tr('tx_type_vendor_purchase');
       case PaymentType.subscription:
-        return 'Subscription';
+        return L.tr('tx_type_subscription');
       case PaymentType.favorTicketPurchase:
-        return 'Favor Ticket';
+        return L.tr('tx_type_favor_ticket');
       case PaymentType.walletPurchase:
-        return 'Wallet Purchase';
+        return L.tr('tx_type_wallet_purchase');
       case PaymentType.walletTopUp:
-        return 'Wallet Top-Up';
+        return L.tr('tx_type_wallet_topup');
       case PaymentType.achPurchase:
-        return 'Bank Purchase';
+        return L.tr('tx_type_bank_purchase');
       case PaymentType.waitlistAutoPurchase:
-        return 'Waitlist Auto-Purchase';
+        return L.tr('tx_type_waitlist_auto_purchase');
       case PaymentType.merchPurchase:
-        return 'Merch Purchase';
+        return L.tr('tx_type_merch_purchase');
     }
   }
 
@@ -497,13 +498,13 @@ class _TransactionCard extends StatelessWidget {
     if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
-      return 'Today';
+      return L.tr('today');
     }
     final yesterday = now.subtract(const Duration(days: 1));
     if (date.year == yesterday.year &&
         date.month == yesterday.month &&
         date.day == yesterday.day) {
-      return 'Yesterday';
+      return L.tr('yesterday');
     }
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -547,25 +548,25 @@ class _TransactionCard extends StatelessWidget {
   String _getTypeLabel(PaymentType type) {
     switch (type) {
       case PaymentType.primaryPurchase:
-        return 'Ticket Purchase';
+        return L.tr('tx_type_ticket_purchase');
       case PaymentType.resalePurchase:
-        return 'Resale Purchase';
+        return L.tr('tx_type_resale_purchase');
       case PaymentType.vendorPos:
-        return 'Vendor Purchase';
+        return L.tr('tx_type_vendor_purchase');
       case PaymentType.subscription:
-        return 'Subscription';
+        return L.tr('tx_type_subscription');
       case PaymentType.favorTicketPurchase:
-        return 'Favor Ticket';
+        return L.tr('tx_type_favor_ticket');
       case PaymentType.walletPurchase:
-        return 'Wallet Purchase';
+        return L.tr('tx_type_wallet_purchase');
       case PaymentType.walletTopUp:
-        return 'Wallet Top-Up';
+        return L.tr('tx_type_wallet_topup');
       case PaymentType.achPurchase:
-        return 'Bank Purchase';
+        return L.tr('tx_type_bank_purchase');
       case PaymentType.waitlistAutoPurchase:
-        return 'Waitlist Auto-Purchase';
+        return L.tr('tx_type_waitlist_auto_purchase');
       case PaymentType.merchPurchase:
-        return 'Merch Purchase';
+        return L.tr('tx_type_merch_purchase');
     }
   }
 
@@ -660,7 +661,7 @@ class _CardanoTransactionCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            isReceived ? 'Received ADA' : 'Sent ADA',
+                            isReceived ? L.tr('tx_received_ada') : L.tr('tx_sent_ada'),
                             style: theme.textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
@@ -702,13 +703,13 @@ class _CardanoTransactionCard extends StatelessWidget {
   String _formatDate(DateTime date) {
     final now = DateTime.now();
     if (date.year == now.year && date.month == now.month && date.day == now.day) {
-      return 'Today';
+      return L.tr('today');
     }
     final yesterday = now.subtract(const Duration(days: 1));
     if (date.year == yesterday.year &&
         date.month == yesterday.month &&
         date.day == yesterday.day) {
-      return 'Yesterday';
+      return L.tr('yesterday');
     }
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -748,15 +749,15 @@ class _StatusChip extends StatelessWidget {
   (Color, String) _getStatusInfo(PaymentStatus status) {
     switch (status) {
       case PaymentStatus.completed:
-        return (Colors.green, 'Completed');
+        return (Colors.green, L.tr('status_completed'));
       case PaymentStatus.pending:
-        return (Colors.orange, 'Pending');
+        return (Colors.orange, L.tr('status_pending'));
       case PaymentStatus.processing:
-        return (Colors.orange, 'Processing');
+        return (Colors.orange, L.tr('status_processing'));
       case PaymentStatus.failed:
-        return (Colors.red, 'Failed');
+        return (Colors.red, L.tr('status_failed'));
       case PaymentStatus.refunded:
-        return (Colors.blue, 'Refunded');
+        return (Colors.blue, L.tr('status_refunded'));
     }
   }
 }
@@ -819,20 +820,20 @@ class _EmptyView extends StatelessWidget {
       case TransactionCurrencyFilter.crypto:
         return (
           Icons.currency_bitcoin,
-          'No Crypto Transactions',
-          'Your Cardano transactions will appear here.',
+          L.tr('transactions_no_crypto'),
+          L.tr('transactions_no_crypto_desc'),
         );
       case TransactionCurrencyFilter.fiat:
         return (
           Icons.receipt_long,
-          'No Fiat Transactions',
-          'Your card transactions will appear here.',
+          L.tr('transactions_no_fiat'),
+          L.tr('transactions_no_fiat_desc'),
         );
       case TransactionCurrencyFilter.all:
         return (
           Icons.receipt_long,
-          'No Transactions Yet',
-          'Your transaction history will appear here.',
+          L.tr('transactions_no_transactions'),
+          L.tr('transactions_no_transactions_desc'),
         );
     }
   }
@@ -866,7 +867,7 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Something went wrong',
+              L.tr('something_went_wrong'),
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
@@ -880,7 +881,7 @@ class _ErrorView extends StatelessWidget {
             const SizedBox(height: 24),
             FilledButton(
               onPressed: onRetry,
-              child: const Text('Try Again'),
+              child: Text(L.tr('try_again')),
             ),
           ],
         ),

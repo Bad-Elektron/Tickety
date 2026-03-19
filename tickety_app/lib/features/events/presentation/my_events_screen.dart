@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
 import '../../../core/state/app_state.dart';
@@ -175,15 +176,14 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              'Enterprise Feature',
+              L.tr('enterprise_feature'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'The cross-event Staff Dashboard is available on the Enterprise plan. '
-              'Get a unified view of all your staff assignments and analytics.',
+              L.tr('enterprise_staff_dashboard_message'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -200,7 +200,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
                 );
               },
               icon: Icon(AccountTier.enterprise.icon),
-              label: const Text('Upgrade'),
+              label: Text(L.tr('upgrade')),
               style: FilledButton.styleFrom(
                 backgroundColor: tierColor,
                 foregroundColor: Colors.white,
@@ -277,10 +277,10 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     final myEventsState = ref.watch(myEventsProvider);
 
     final filterLabels = {
-      MyEventsDateFilter.recent: 'Recent',
-      MyEventsDateFilter.upcoming: 'Upcoming',
-      MyEventsDateFilter.all: 'All',
-      MyEventsDateFilter.past: 'Past',
+      MyEventsDateFilter.recent: L.tr('recent'),
+      MyEventsDateFilter.upcoming: L.tr('upcoming'),
+      MyEventsDateFilter.all: L.tr('all'),
+      MyEventsDateFilter.past: L.tr('past'),
     };
 
     return Scaffold(
@@ -293,23 +293,16 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
                 autofocus: true,
                 style: theme.textTheme.bodyLarge,
                 decoration: InputDecoration(
-                  hintText: 'Search events...',
+                  hintText: L.tr('search_events'),
                   hintStyle: theme.textTheme.bodyLarge?.copyWith(
                     color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
                   border: InputBorder.none,
                 ),
               )
-            : const Text('My Events'),
+            : Text(L.tr('my_events')),
         centerTitle: !_isSearching,
         actions: [
-          // Staff Dashboard - only show when user has staff events
-          if (_usheringEvents.isNotEmpty || _sellingEvents.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.dashboard_outlined),
-              tooltip: 'Staff Dashboard',
-              onPressed: () => _onStaffDashboardTap(),
-            ),
           // Search toggle
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
@@ -353,18 +346,18 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
+          tabs: [
             Tab(
               icon: Icon(Icons.admin_panel_settings_outlined),
-              text: 'Created',
+              text: L.tr('created'),
             ),
             Tab(
               icon: Icon(Icons.badge_outlined),
-              text: 'Ushering',
+              text: L.tr('ushering'),
             ),
             Tab(
               icon: Icon(Icons.point_of_sale_outlined),
-              text: 'Selling',
+              text: L.tr('selling'),
             ),
           ],
         ),
@@ -418,7 +411,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
                       }
                     : null,
                 icon: const Icon(Icons.add),
-                label: const Text('Create Event'),
+                label: Text(L.tr('create_event')),
               ),
             ),
           );
@@ -466,7 +459,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
             const SizedBox(height: 16),
             Text(
-              'No matching events',
+              L.tr('no_matching_events'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -474,8 +467,8 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             const SizedBox(height: 8),
             Text(
               hasSearch
-                  ? 'Try a different search term or filter.'
-                  : 'No events match the selected filter.',
+                  ? L.tr('try_different_search_or_filter')
+                  : L.tr('no_events_match_filter'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -484,7 +477,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             const SizedBox(height: 16),
             TextButton(
               onPressed: _clearFilters,
-              child: const Text('Clear filters'),
+              child: Text(L.tr('clear_filters')),
             ),
           ],
         ),
@@ -514,14 +507,14 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
             const SizedBox(height: 32),
             Text(
-              'No events yet',
+              L.tr('no_events_yet'),
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'Create your first event and\nstart selling tickets.',
+              L.tr('create_first_event_message'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -616,14 +609,14 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
             const SizedBox(height: 32),
             Text(
-              'No usher assignments',
+              L.tr('no_usher_assignments'),
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'When event organizers add you as an\nusher, those events will appear here.',
+              L.tr('usher_events_empty_message'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
@@ -682,7 +675,7 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
           : OutlinedButton.icon(
               onPressed: onPressed,
               icon: const Icon(Icons.expand_more),
-              label: const Text('Load more'),
+              label: Text(L.tr('load_more')),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size(double.infinity, 48),
               ),
@@ -744,14 +737,14 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
             ),
             const SizedBox(height: 32),
             Text(
-              'No vendor assignments',
+              L.tr('no_vendor_assignments'),
               style: theme.textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              'When event organizers add you as a\nvendor, those events will appear here.',
+              L.tr('vendor_events_empty_message'),
               textAlign: TextAlign.center,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,

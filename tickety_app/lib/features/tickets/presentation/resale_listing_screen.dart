@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/errors/errors.dart';
 import '../../../core/graphics/graphics.dart';
+import '../../../core/localization/localization.dart';
 import '../../payments/presentation/seller_onboarding_screen.dart';
 import '../../staff/models/ticket.dart';
 
@@ -97,12 +98,12 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     if (!_agreedToTerms) {
-      _showError('Please agree to the terms and conditions');
+      _showError(L.tr('resale_agree_terms_error'));
       return;
     }
 
     if (!_isSellerOnboarded) {
-      _showError('Please complete payout setup first');
+      _showError(L.tr('resale_complete_payout_setup'));
       return;
     }
 
@@ -126,11 +127,11 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(
+            content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Ticket listed for sale!'),
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(L.tr('resale_ticket_listed')),
               ],
             ),
             backgroundColor: Colors.green,
@@ -157,7 +158,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manage Listing'),
+        title: Text(L.tr('resale_manage_listing')),
         centerTitle: true,
       ),
       body: Column(
@@ -187,7 +188,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Listed for Sale',
+                          L.tr('resale_listed_for_sale'),
                           style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -202,7 +203,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Your ticket is visible on the marketplace',
+                          L.tr('resale_ticket_visible'),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
                           ),
@@ -224,7 +225,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'When sold, you\'ll receive 95% of the sale price',
+                            L.tr('resale_fee_reminder'),
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
@@ -255,7 +256,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                             )
                           : const Icon(Icons.cancel_outlined),
                       label: Text(
-                        _isCancelling ? 'Cancelling...' : 'Cancel Listing',
+                        _isCancelling ? L.tr('resale_cancelling') : L.tr('resale_cancel_listing'),
                         style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w600,
                         ),
@@ -274,7 +275,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text('Go Back'),
+                      child: Text(L.tr('common_go_back')),
                     ),
                   ),
                 ],
@@ -290,21 +291,21 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Cancel Listing'),
-        content: const Text(
-          'Are you sure you want to remove this ticket from the marketplace?',
+        title: Text(L.tr('resale_cancel_listing')),
+        content: Text(
+          L.tr('resale_cancel_confirm'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep Listed'),
+            child: Text(L.tr('resale_keep_listed')),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: const Text('Cancel Listing'),
+            child: Text(L.tr('resale_cancel_listing')),
           ),
         ],
       ),
@@ -334,11 +335,11 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(
+            content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Listing cancelled'),
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(L.tr('resale_listing_cancelled')),
               ],
             ),
             backgroundColor: Colors.orange,
@@ -381,7 +382,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sell Ticket'),
+        title: Text(L.tr('resale_sell_ticket')),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -428,7 +429,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
 
                     // Sale price input
                     Text(
-                      'Set Your Price',
+                      L.tr('resale_set_price'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -454,14 +455,14 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                       ],
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return 'Please enter a price';
+                          return L.tr('resale_enter_price');
                         }
                         final price = double.tryParse(value);
                         if (price == null || price <= 0) {
-                          return 'Please enter a valid price';
+                          return L.tr('resale_valid_price');
                         }
                         if (price > 10000) {
-                          return 'Maximum price is \$10,000';
+                          return L.tr('resale_max_price');
                         }
                         return null;
                       },
@@ -470,7 +471,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
 
                     // Payout method section
                     Text(
-                      'Payout Method',
+                      L.tr('resale_payout_method'),
                       style: theme.textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -483,16 +484,16 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                           color: colorScheme.surfaceContainerLow,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            SizedBox(
+                            const SizedBox(
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            SizedBox(width: 12),
-                            Text('Checking payout status...'),
+                            const SizedBox(width: 12),
+                            Text(L.tr('resale_checking_payout')),
                           ],
                         ),
                       )
@@ -526,13 +527,13 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Payouts enabled',
+                                    L.tr('resale_payouts_enabled'),
                                     style: theme.textTheme.titleSmall?.copyWith(
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                   Text(
-                                    'You\'ll receive 95% of the sale via Stripe',
+                                    L.tr('resale_payout_stripe_info'),
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: colorScheme.onSurfaceVariant,
                                     ),
@@ -576,13 +577,13 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'Payout setup required',
+                                      L.tr('resale_payout_setup_required'),
                                       style: theme.textTheme.titleSmall?.copyWith(
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     Text(
-                                      'Tap to set up your bank account for payouts',
+                                      L.tr('resale_tap_setup_bank'),
                                       style: theme.textTheme.bodySmall?.copyWith(
                                         color: colorScheme.onSurfaceVariant,
                                       ),
@@ -608,11 +609,11 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                         setState(() => _agreedToTerms = value ?? false);
                       },
                       title: Text(
-                        'I agree to the resale terms and conditions',
+                        L.tr('resale_agree_terms'),
                         style: theme.textTheme.bodyMedium,
                       ),
                       subtitle: Text(
-                        'The ticket will be transferred to the buyer upon payment',
+                        L.tr('resale_transfer_note'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -650,7 +651,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                               ),
                             )
                           : Text(
-                              _isSellerOnboarded ? 'List for Sale' : 'Set Up Payouts First',
+                              _isSellerOnboarded ? L.tr('resale_list_for_sale') : L.tr('resale_setup_payouts_first'),
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -669,7 +670,7 @@ class _ResaleListingScreenState extends ConsumerState<ResaleListingScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text('Cancel'),
+                      child: Text(L.tr('common_cancel')),
                     ),
                   ],
                 ),
@@ -851,7 +852,7 @@ class _FeeBreakdownState extends State<_FeeBreakdown> {
       child: Column(
         children: [
           _FeeRow(
-            label: 'Sale Price',
+            label: L.tr('resale_sale_price'),
             value: '\$${_salePrice.toStringAsFixed(2)}',
           ),
           const SizedBox(height: 8),
@@ -865,7 +866,7 @@ class _FeeBreakdownState extends State<_FeeBreakdown> {
             child: Divider(height: 1),
           ),
           _FeeRow(
-            label: 'You Receive',
+            label: L.tr('resale_you_receive'),
             value: '\$${youReceive.toStringAsFixed(2)}',
             isBold: true,
             valueColor: Colors.green,

@@ -123,6 +123,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String password,
     String? displayName,
     String? referralCode,
+    String? referralChannel,
   }) async {
     // Check rate limit before attempting
     if (!_rateLimiter.canAttempt()) {
@@ -145,6 +146,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final metadata = <String, dynamic>{
         if (displayName != null) 'display_name': displayName,
         if (referralCode != null) 'referral_code': referralCode.toUpperCase(),
+        if (referralChannel != null) 'referral_channel': referralChannel,
       };
 
       await SupabaseService.instance.client.auth.signUp(

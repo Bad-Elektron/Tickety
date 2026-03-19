@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
 import '../models/promo_code.dart';
@@ -35,11 +36,11 @@ class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
     final state = ref.watch(promoCodeManagementProvider(widget.event.id));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Promo Codes')),
+      appBar: AppBar(title: Text(L.tr('promo_codes_title'))),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreateSheet(context),
         icon: const Icon(Icons.add),
-        label: const Text('Create Code'),
+        label: Text(L.tr('promo_create_code')),
       ),
       body: state.isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -58,14 +59,14 @@ class _PromoCodesScreenState extends ConsumerState<PromoCodesScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'No Promo Codes',
+                          L.tr('promo_no_codes'),
                           style: theme.textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Create a promo code to offer discounts to your attendees.',
+                          L.tr('promo_create_description'),
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: colorScheme.onSurfaceVariant,
@@ -181,7 +182,7 @@ class _PromoCodeCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    code.isActive ? 'Active' : 'Inactive',
+                    code.isActive ? L.tr('common_active') : L.tr('common_inactive'),
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: code.isActive ? Colors.green : Colors.grey,
                       fontWeight: FontWeight.w600,
@@ -235,7 +236,7 @@ class _PromoCodeCard extends StatelessWidget {
                 code.isActive ? Icons.pause : Icons.play_arrow,
                 size: 18,
               ),
-              label: Text(code.isActive ? 'Deactivate' : 'Activate'),
+              label: Text(code.isActive ? L.tr('common_deactivate') : L.tr('common_activate')),
               style: TextButton.styleFrom(
                 foregroundColor: code.isActive
                     ? colorScheme.error
@@ -350,7 +351,7 @@ class _CreatePromoCodeSheetState
   Future<void> _create() async {
     final code = _codeController.text.trim().toUpperCase();
     if (code.isEmpty) {
-      setState(() => _error = 'Enter a code');
+      setState(() => _error = L.tr('promo_enter_code'));
       return;
     }
 
@@ -387,7 +388,7 @@ class _CreatePromoCodeSheetState
           _error = ref
                   .read(promoCodeManagementProvider(widget.eventId))
                   .error ??
-              'Failed to create code';
+              L.tr('promo_create_failed');
         });
       }
     }
@@ -431,7 +432,7 @@ class _CreatePromoCodeSheetState
             ),
             const SizedBox(height: 16),
             Text(
-              'Create Promo Code',
+              L.tr('promo_create_title'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -442,7 +443,7 @@ class _CreatePromoCodeSheetState
               controller: _codeController,
               textCapitalization: TextCapitalization.characters,
               decoration: InputDecoration(
-                labelText: 'Code',
+                labelText: L.tr('promo_code_label'),
                 hintText: 'e.g. EARLY20',
                 prefixIcon: const Icon(Icons.code, size: 20),
                 suffixIcon: IconButton(
@@ -450,7 +451,7 @@ class _CreatePromoCodeSheetState
                   onPressed: () {
                     _codeController.text = _generateRandomCode();
                   },
-                  tooltip: 'Generate random code',
+                  tooltip: L.tr('promo_generate_random'),
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -471,14 +472,14 @@ class _CreatePromoCodeSheetState
                 children: [
                   Expanded(
                     child: _ToggleButton(
-                      label: 'Percentage',
+                      label: L.tr('promo_percentage'),
                       isSelected: _isPercentage,
                       onTap: () => setState(() => _isPercentage = true),
                     ),
                   ),
                   Expanded(
                     child: _ToggleButton(
-                      label: 'Fixed Amount',
+                      label: L.tr('promo_fixed_amount'),
                       isSelected: !_isPercentage,
                       onTap: () => setState(() => _isPercentage = false),
                     ),
@@ -549,7 +550,7 @@ class _CreatePromoCodeSheetState
               child: Column(
                 children: [
                   Text(
-                    'Price Preview',
+                    L.tr('promo_price_preview'),
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -569,8 +570,8 @@ class _CreatePromoCodeSheetState
             TextField(
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: 'Max Uses (optional)',
-                hintText: 'Leave empty for unlimited',
+                labelText: L.tr('promo_max_uses'),
+                hintText: L.tr('promo_max_uses_hint'),
                 prefixIcon: const Icon(Icons.people_outline, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -630,8 +631,8 @@ class _CreatePromoCodeSheetState
                         color: Colors.white,
                       ),
                     )
-                  : const Text(
-                      'Create Code',
+                  : Text(
+                      L.tr('promo_create_code'),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -641,7 +642,7 @@ class _CreatePromoCodeSheetState
             const SizedBox(height: 12),
             TextButton(
               onPressed: _isCreating ? null : () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: Text(L.tr('common_cancel')),
             ),
           ],
         ),

@@ -49,7 +49,7 @@ class OfflineCheckInService {
 
     _db = await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createTables,
       onUpgrade: _upgradeTables,
     );
@@ -109,6 +109,20 @@ class OfflineCheckInService {
         error_message TEXT
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS verification_flags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticket_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        flag_type TEXT NOT NULL,
+        tier TEXT NOT NULL,
+        message TEXT,
+        usher_id TEXT NOT NULL,
+        timestamp TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
   }
 
   Future<void> _upgradeTables(Database db, int oldVersion, int newVersion) async {
@@ -127,6 +141,21 @@ class OfflineCheckInService {
     if (oldVersion < 4) {
       await db.execute("ALTER TABLE door_list ADD COLUMN category TEXT DEFAULT 'entry'");
       await db.execute('ALTER TABLE door_list ADD COLUMN item_icon TEXT');
+    }
+    if (oldVersion < 5) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS verification_flags (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ticket_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          flag_type TEXT NOT NULL,
+          tier TEXT NOT NULL,
+          message TEXT,
+          usher_id TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          synced INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
     }
   }
 
@@ -413,11 +442,100 @@ class OfflineCheckInService {
     return (totalTickets: total, checkedIn: checkedIn, pendingSync: 0);
   }
 
+  /// Get stats broken down by category (entry vs redeemable).
+  ({
+    int totalEntry,
+    int checkedInEntry,
+    int totalRedeemable,
+    int redeemedRedeemable,
+  }) getStatsByCategory() {
+    final seen = <String>{};
+    int totalEntry = 0;
+    int checkedInEntry = 0;
+    int totalRedeemable = 0;
+    int redeemedRedeemable = 0;
+
+    for (final entry in _index.entries) {
+      if (seen.add(entry.value.ticketId)) {
+        if (entry.value.isRedeemable) {
+          totalRedeemable++;
+          if (entry.value.isUsed) redeemedRedeemable++;
+        } else {
+          totalEntry++;
+          if (entry.value.isUsed) checkedInEntry++;
+        }
+      }
+    }
+
+    return (
+      totalEntry: totalEntry,
+      checkedInEntry: checkedInEntry,
+      totalRedeemable: totalRedeemable,
+      redeemedRedeemable: redeemedRedeemable,
+    );
+  }
+
   /// Get pending sync count from database.
   Future<int> getPendingSyncCount() async {
     final db = await _getDb();
     final result = await db.rawQuery(
       'SELECT COUNT(*) as count FROM sync_queue WHERE synced = 0 AND retry_count < 5',
+    );
+    return result.first['count'] as int? ?? 0;
+  }
+
+  /// Record a verification discrepancy for later sync and admin review.
+  ///
+  /// Called when a ticket passes offline check but fails blockchain or
+  /// database verification. The flag is stored locally and synced to the
+  /// server on the next sync cycle.
+  Future<void> recordVerificationFlag({
+    required String ticketId,
+    required String eventId,
+    required String flagType, // 'blockchain_failed', 'database_mismatch'
+    required String tier, // 'blockchain', 'database'
+    required String message,
+    required String usherId,
+  }) async {
+    final db = await _getDb();
+    await db.insert('verification_flags', {
+      'ticket_id': ticketId,
+      'event_id': eventId,
+      'flag_type': flagType,
+      'tier': tier,
+      'message': message,
+      'usher_id': usherId,
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+      'synced': 0,
+    });
+  }
+
+  /// Get unsynced verification flags for background sync.
+  Future<List<Map<String, dynamic>>> getUnsyncedFlags() async {
+    final db = await _getDb();
+    return db.query(
+      'verification_flags',
+      where: 'synced = 0',
+      orderBy: 'timestamp ASC',
+    );
+  }
+
+  /// Mark a verification flag as synced.
+  Future<void> markFlagSynced(int flagId) async {
+    final db = await _getDb();
+    await db.update(
+      'verification_flags',
+      {'synced': 1},
+      where: 'id = ?',
+      whereArgs: [flagId],
+    );
+  }
+
+  /// Get count of unsynced flags (for UI badge).
+  Future<int> getUnsyncedFlagCount() async {
+    final db = await _getDb();
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM verification_flags WHERE synced = 0',
     );
     return result.first['count'] as int? ?? 0;
   }

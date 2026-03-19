@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/services/services.dart';
 import '../data/widget_repository.dart';
 import '../models/widget_api_key.dart';
@@ -40,7 +41,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Embed Widget'),
+        title: Text(L.tr('embed_widget')),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -58,7 +59,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Add a checkout widget to your website so fans can buy tickets without leaving your site.',
+                    L.tr('widget_checkout_description'),
                     style: theme.textTheme.bodyMedium,
                   ),
                 ),
@@ -68,10 +69,10 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
           const SizedBox(height: 24),
 
           // API Keys section
-          Text('API Keys', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text(L.tr('api_keys'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(
-            'Generate a key to authenticate your widget. Keep it secret — it controls access to your events.',
+            L.tr('api_key_description'),
             style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
@@ -90,7 +91,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     child: Text(
-                      'No API keys yet. Create one to get started.',
+                      L.tr('no_api_keys_yet'),
                       style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
@@ -117,7 +118,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                       Icon(Icons.key, color: Colors.green.shade700, size: 18),
                       const SizedBox(width: 8),
                       Text(
-                        'New Key Created',
+                        L.tr('new_key_created'),
                         style: theme.textTheme.titleSmall?.copyWith(
                           color: Colors.green.shade700,
                           fontWeight: FontWeight.bold,
@@ -127,7 +128,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Copy this key now — it won\'t be shown again.',
+                    L.tr('copy_key_warning'),
                     style: theme.textTheme.bodySmall?.copyWith(color: Colors.green.shade700),
                   ),
                   const SizedBox(height: 8),
@@ -151,7 +152,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                           onPressed: () {
                             Clipboard.setData(ClipboardData(text: _newKeyRaw!));
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Key copied to clipboard')),
+                              SnackBar(content: Text(L.tr('key_copied'))),
                             );
                           },
                         ),
@@ -169,16 +170,16 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
             icon: _creatingKey
                 ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.add),
-            label: Text(_creatingKey ? 'Creating...' : 'Create API Key'),
+            label: Text(_creatingKey ? L.tr('creating') : L.tr('create_api_key')),
           ),
 
           const SizedBox(height: 32),
 
           // Embed Code section
-          Text('Embed Code', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text(L.tr('embed_code'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(
-            'Copy this snippet and paste it into your website HTML.',
+            L.tr('copy_snippet_instruction'),
             style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
@@ -196,7 +197,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    'Create an API key first to see the embed code.',
+                    L.tr('create_api_key_first'),
                     style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
@@ -239,11 +240,11 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                         onPressed: () {
                           Clipboard.setData(ClipboardData(text: snippet));
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Embed code copied!')),
+                            SnackBar(content: Text(L.tr('embed_code_copied'))),
                           );
                         },
                         icon: const Icon(Icons.copy, size: 16),
-                        label: const Text('Copy'),
+                        label: Text(L.tr('copy')),
                       ),
                     ),
                   ],
@@ -255,7 +256,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
           const SizedBox(height: 32),
 
           // Widget Appearance section
-          Text('Appearance', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+          Text(L.tr('appearance'), style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
 
           configAsync.when(
@@ -269,7 +270,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
                 ref.invalidate(_widgetConfigProvider);
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Widget appearance saved')),
+                    SnackBar(content: Text(L.tr('widget_appearance_saved'))),
                   );
                 }
               },
@@ -297,7 +298,7 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
       setState(() => _creatingKey = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to create key: $e')),
+          SnackBar(content: Text(L.tr('failed_to_create_key'))),
         );
       }
     }
@@ -313,14 +314,14 @@ class _WidgetSettingsScreenState extends ConsumerState<WidgetSettingsScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete API Key'),
-        content: const Text('This will immediately revoke access for any widget using this key.'),
+        title: Text(L.tr('delete_api_key')),
+        content: Text(L.tr('delete_api_key_warning')),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(L.tr('cancel'))),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
+            child: Text(L.tr('delete')),
           ),
         ],
       ),
@@ -444,7 +445,7 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
       children: [
         // Primary color
         _buildField(
-          label: 'Primary Color',
+          label: L.tr('primary_color'),
           child: Row(
             children: [
               Container(
@@ -475,7 +476,7 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
 
         // Button style
         _buildField(
-          label: 'Button Style',
+          label: L.tr('button_style'),
           child: SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'rounded', label: Text('Rounded')),
@@ -490,8 +491,8 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
 
         // Powered by toggle
         SwitchListTile(
-          title: const Text('Show "Powered by Tickety"'),
-          subtitle: const Text('Required on Base tier'),
+          title: Text(L.tr('show_powered_by_tickety')),
+          subtitle: Text(L.tr('required_on_base_tier')),
           value: _showPoweredBy,
           onChanged: (val) => setState(() => _showPoweredBy = val),
           contentPadding: EdgeInsets.zero,
@@ -500,7 +501,7 @@ class _AppearanceSectionState extends State<_AppearanceSection> {
 
         FilledButton(
           onPressed: _saving ? null : _save,
-          child: Text(_saving ? 'Saving...' : 'Save Appearance'),
+          child: Text(_saving ? L.tr('saving') : L.tr('save_appearance')),
         ),
       ],
     );

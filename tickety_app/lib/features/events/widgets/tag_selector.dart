@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/event_tag.dart';
 
 /// Widget for selecting event tags with predefined options and custom input.
@@ -87,7 +88,7 @@ class _TagSelectorState extends State<TagSelector> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Tags',
+              L.tr('Tags'),
               style: theme.textTheme.titleMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -340,7 +341,7 @@ class _AddCustomTagButton extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              'Add custom tag',
+              L.tr('Add custom tag'),
               style: theme.textTheme.labelMedium?.copyWith(
                 color: colorScheme.primary,
                 fontWeight: FontWeight.w500,
@@ -390,7 +391,7 @@ class _CustomTagInput extends StatelessWidget {
               focusNode: focusNode,
               style: theme.textTheme.bodyMedium,
               decoration: InputDecoration(
-                hintText: 'Enter tag name...',
+                hintText: L.tr('Enter tag name...'),
                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurface.withValues(alpha: 0.4),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/localization/localization.dart';
 import '../models/nft_ticket.dart';
 
 /// Detail screen for a CIP-68 NFT ticket.
@@ -17,7 +18,7 @@ class NftTicketDetailScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('NFT Ticket'),
+        title: Text(L.tr('nft_ticket_title')),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -107,14 +108,14 @@ class NftTicketDetailScreen extends StatelessWidget {
                 nft.eventDate != null ||
                 nft.venue != null)
               _Section(
-                title: 'Event Details',
+                title: L.tr('nft_ticket_event_details'),
                 children: [
                   if (nft.ticketNumber != null)
-                    _DetailRow(label: 'Ticket', value: nft.ticketNumber!),
+                    _DetailRow(label: L.tr('nft_ticket_ticket'), value: nft.ticketNumber!),
                   if (nft.eventDate != null)
-                    _DetailRow(label: 'Date', value: nft.eventDate!),
+                    _DetailRow(label: L.tr('nft_ticket_date'), value: nft.eventDate!),
                   if (nft.venue != null)
-                    _DetailRow(label: 'Venue', value: nft.venue!),
+                    _DetailRow(label: L.tr('nft_ticket_venue'), value: nft.venue!),
                 ],
               ),
 
@@ -122,19 +123,19 @@ class NftTicketDetailScreen extends StatelessWidget {
 
             // On-chain details
             _Section(
-              title: 'On-Chain Details',
+              title: L.tr('nft_ticket_onchain_details'),
               children: [
                 _CopyableRow(
-                  label: 'Policy ID',
+                  label: L.tr('nft_ticket_policy_id'),
                   value: nft.policyId,
                 ),
                 _CopyableRow(
-                  label: 'Asset Name',
+                  label: L.tr('nft_ticket_asset_name'),
                   value: nft.assetName,
                 ),
                 if (nft.initialMintTxHash != null)
                   _CopyableRow(
-                    label: 'Mint Tx',
+                    label: L.tr('nft_ticket_mint_tx'),
                     value: nft.initialMintTxHash!,
                   ),
               ],
@@ -146,14 +147,14 @@ class NftTicketDetailScreen extends StatelessWidget {
             FilledButton.icon(
               onPressed: () => _openUrl(nft.cardanoScanUrl),
               icon: const Icon(Icons.open_in_new),
-              label: const Text('View on CardanoScan'),
+              label: Text(L.tr('wallet_view_on_cardanoscan')),
             ),
             if (nft.mintTxUrl != null) ...[
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () => _openUrl(nft.mintTxUrl!),
                 icon: const Icon(Icons.receipt_long),
-                label: const Text('View Mint Transaction'),
+                label: Text(L.tr('nft_ticket_view_mint_tx')),
               ),
             ],
           ],

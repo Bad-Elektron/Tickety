@@ -142,6 +142,15 @@ class EventModel {
   /// Whether this virtual/hybrid event has been locked down (resale blocked, link revealed).
   final bool virtualLocked;
 
+  /// When this event was hand-featured by an admin. NULL = not featured.
+  final DateTime? featuredAt;
+
+  /// The organizer's user ID (for fetching branding, etc.).
+  final String? organizerId;
+
+  /// External website URL for the event (Pro+ feature).
+  final String? websiteUrl;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -184,6 +193,9 @@ class EventModel {
     this.virtualEventUrl,
     this.virtualEventPassword,
     this.virtualLocked = false,
+    this.featuredAt,
+    this.organizerId,
+    this.websiteUrl,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -335,6 +347,9 @@ class EventModel {
     String? virtualEventUrl,
     String? virtualEventPassword,
     bool? virtualLocked,
+    DateTime? featuredAt,
+    String? organizerId,
+    String? websiteUrl,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -378,6 +393,9 @@ class EventModel {
       virtualEventUrl: virtualEventUrl ?? this.virtualEventUrl,
       virtualEventPassword: virtualEventPassword ?? this.virtualEventPassword,
       virtualLocked: virtualLocked ?? this.virtualLocked,
+      featuredAt: featuredAt ?? this.featuredAt,
+      organizerId: organizerId ?? this.organizerId,
+      websiteUrl: websiteUrl ?? this.websiteUrl,
     );
   }
 

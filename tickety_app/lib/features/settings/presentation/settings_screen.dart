@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
+import '../../../core/providers/locale_provider.dart';
 import '../../../core/providers/theme_provider.dart';
 import '../../notifications/notifications.dart';
 import '../widgets/theme_toggle.dart';
@@ -14,16 +16,18 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final themeNotifier = ref.read(themeModeProvider.notifier);
     final isDark = themeNotifier.isDarkMode(context);
+    final currentLocale = ref.watch(localeProvider);
+    final localeName = L.localeNames[currentLocale]?.nativeName ?? currentLocale;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: Text(L.tr('settings_title')),
         centerTitle: true,
       ),
       body: ListView(
         children: [
           // Theme Section
-          _SectionHeader(title: 'Appearance'),
+          _SectionHeader(title: L.tr('settings_appearance')),
           _ThemeCard(
             isDarkMode: isDark,
             themeMode: themeMode,
@@ -32,13 +36,13 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           // Notifications Section
-          _SectionHeader(title: 'Notifications'),
+          _SectionHeader(title: L.tr('settings_notifications')),
           _SettingsCard(
             children: [
               _SettingsTile(
                 icon: Icons.notifications_outlined,
-                title: 'Notification Preferences',
-                subtitle: 'Manage push, email, and alert settings',
+                title: L.tr('settings_notification_prefs'),
+                subtitle: L.tr('settings_notification_prefs_sub'),
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
@@ -51,27 +55,19 @@ class SettingsScreen extends ConsumerWidget {
           ),
 
           // General Section
-          _SectionHeader(title: 'General'),
+          _SectionHeader(title: L.tr('settings_general')),
           _SettingsCard(
             children: [
               _SettingsTile(
                 icon: Icons.language_outlined,
-                title: 'Language',
-                subtitle: 'English',
-                onTap: () {
-                  // TODO: Implement language selection
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Coming soon'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
+                title: L.tr('settings_language'),
+                subtitle: localeName,
+                onTap: () => _showLanguagePicker(context, ref),
               ),
               _SettingsTile(
                 icon: Icons.location_on_outlined,
-                title: 'Location',
-                subtitle: 'Allow location access for nearby events',
+                title: L.tr('settings_location'),
+                subtitle: L.tr('settings_location_subtitle'),
                 trailing: Switch.adaptive(
                   value: true,
                   onChanged: (value) {
@@ -79,54 +75,30 @@ class SettingsScreen extends ConsumerWidget {
                   },
                 ),
               ),
-              _SettingsTile(
-                icon: Icons.currency_exchange_outlined,
-                title: 'Currency',
-                subtitle: 'Change in Wallet',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Currency can be changed from the Wallet screen'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-              ),
             ],
           ),
 
           // About Section
-          _SectionHeader(title: 'About'),
+          _SectionHeader(title: L.tr('settings_about')),
           _SettingsCard(
             children: [
               _SettingsTile(
                 icon: Icons.info_outline,
-                title: 'Version',
+                title: L.tr('settings_version'),
                 subtitle: '1.0.0',
               ),
               _SettingsTile(
                 icon: Icons.description_outlined,
-                title: 'Terms of Service',
+                title: L.tr('settings_terms'),
                 onTap: () {
                   // TODO: Open terms
                 },
               ),
               _SettingsTile(
                 icon: Icons.privacy_tip_outlined,
-                title: 'Privacy Policy',
+                title: L.tr('settings_privacy'),
                 onTap: () {
                   // TODO: Open privacy policy
-                },
-              ),
-              _SettingsTile(
-                icon: Icons.open_in_new_outlined,
-                title: 'Licenses',
-                onTap: () {
-                  showLicensePage(
-                    context: context,
-                    applicationName: 'Tickety',
-                    applicationVersion: '1.0.0',
-                  );
                 },
               ),
             ],
@@ -134,6 +106,54 @@ class SettingsScreen extends ConsumerWidget {
           const SizedBox(height: 40),
         ],
       ),
+    );
+  }
+
+  void _showLanguagePicker(BuildContext context, WidgetRef ref) {
+    final currentLocale = ref.read(localeProvider);
+
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  L.tr('settings_select_language'),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: L.supportedLocales.map((locale) {
+                    final info = L.localeNames[locale];
+                    final isSelected = locale == currentLocale;
+                    return ListTile(
+                      title: Text(info?.nativeName ?? locale),
+                      subtitle: Text(info?.name ?? ''),
+                      trailing: isSelected
+                          ? Icon(Icons.check,
+                              color: Theme.of(context).colorScheme.primary)
+                          : null,
+                      selected: isSelected,
+                      onTap: () {
+                        ref.read(localeProvider.notifier).setLocale(locale);
+                        Navigator.pop(context);
+                      },
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -196,14 +216,14 @@ class _ThemeCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        isDarkMode ? 'Dark Mode' : 'Light Mode',
+                        isDarkMode ? L.tr('settings_dark_mode') : L.tr('settings_light_mode'),
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Tap the icon to toggle',
+                        L.tr('settings_toggle_hint'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -228,21 +248,21 @@ class _ThemeCard extends StatelessWidget {
             child: Row(
               children: [
                 _ThemeModeChip(
-                  label: 'System',
+                  label: L.tr('settings_system'),
                   icon: Icons.settings_brightness_outlined,
                   isSelected: themeMode == ThemeMode.system,
                   onTap: () => onModeSelected(ThemeMode.system),
                 ),
                 const SizedBox(width: 8),
                 _ThemeModeChip(
-                  label: 'Light',
+                  label: L.tr('settings_light'),
                   icon: Icons.light_mode_outlined,
                   isSelected: themeMode == ThemeMode.light,
                   onTap: () => onModeSelected(ThemeMode.light),
                 ),
                 const SizedBox(width: 8),
                 _ThemeModeChip(
-                  label: 'Dark',
+                  label: L.tr('settings_dark'),
                   icon: Icons.dark_mode_outlined,
                   isSelected: themeMode == ThemeMode.dark,
                   onTap: () => onModeSelected(ThemeMode.dark),

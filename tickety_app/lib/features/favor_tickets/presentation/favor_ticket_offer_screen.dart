@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/errors.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
 import '../../payments/models/payment.dart';
@@ -47,7 +48,7 @@ class _FavorTicketOfferScreenState
         setState(() {
           _offer = offer;
           _isLoading = false;
-          if (offer == null) _error = 'Offer not found';
+          if (offer == null) _error = L.tr('favor_ticket_offer_not_found');
         });
       }
     } catch (e, s) {
@@ -79,11 +80,11 @@ class _FavorTicketOfferScreenState
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(
+            content: Row(
               children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text('Ticket claimed!'),
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(L.tr('favor_ticket_claimed')),
               ],
             ),
             backgroundColor: Colors.teal,
@@ -131,8 +132,8 @@ class _FavorTicketOfferScreenState
       if (refreshedEvent == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Could not load event details'),
+            SnackBar(
+              content: Text(L.tr('favor_ticket_could_not_load_event')),
               backgroundColor: Colors.red,
               behavior: SnackBarBehavior.floating,
             ),
@@ -168,18 +169,18 @@ class _FavorTicketOfferScreenState
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Decline offer?'),
-        content: const Text(
-          'Are you sure you want to decline this ticket offer? This cannot be undone.',
+        title: Text(L.tr('favor_ticket_decline_title')),
+        content: Text(
+          L.tr('favor_ticket_decline_confirm'),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(L.tr('common_cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Decline'),
+            child: Text(L.tr('favor_ticket_decline')),
           ),
         ],
       ),
@@ -197,8 +198,8 @@ class _FavorTicketOfferScreenState
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Offer declined'),
+          SnackBar(
+            content: Text(L.tr('favor_ticket_offer_declined')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -227,7 +228,7 @@ class _FavorTicketOfferScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ticket Offer'),
+        title: Text(L.tr('favor_ticket_offer_title')),
         centerTitle: true,
       ),
       body: _isLoading
@@ -235,7 +236,7 @@ class _FavorTicketOfferScreenState
           : _error != null
               ? _buildErrorState(theme, colorScheme)
               : _offer == null
-                  ? const Center(child: Text('Offer not found'))
+                  ? Center(child: Text(L.tr('favor_ticket_offer_not_found')))
                   : _buildOfferContent(theme, colorScheme),
     );
   }
@@ -251,7 +252,7 @@ class _FavorTicketOfferScreenState
                 color: colorScheme.error.withValues(alpha: 0.7)),
             const SizedBox(height: 16),
             Text(
-              'Failed to load offer',
+              L.tr('favor_ticket_load_failed'),
               style: theme.textTheme.titleMedium
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
@@ -266,7 +267,7 @@ class _FavorTicketOfferScreenState
             FilledButton.icon(
               onPressed: _loadOffer,
               icon: const Icon(Icons.refresh),
-              label: const Text('Retry'),
+              label: Text(L.tr('common_retry')),
             ),
           ],
         ),
@@ -355,22 +356,22 @@ class _FavorTicketOfferScreenState
               children: [
                 _DetailRow(
                   icon: Icons.confirmation_number_outlined,
-                  label: 'Ticket',
+                  label: L.tr('favor_ticket_label'),
                   value: offer.ticketMode == TicketMode.private_
-                      ? 'Private (non-tradeable)'
-                      : 'Public (tradeable)',
+                      ? L.tr('favor_ticket_private')
+                      : L.tr('favor_ticket_public'),
                 ),
                 const SizedBox(height: 12),
                 _DetailRow(
                   icon: Icons.attach_money,
-                  label: 'Price',
+                  label: L.tr('common_price'),
                   value: offer.formattedPrice,
                 ),
                 if (offer.message != null) ...[
                   const SizedBox(height: 12),
                   _DetailRow(
                     icon: Icons.message_outlined,
-                    label: 'Message',
+                    label: L.tr('common_message'),
                     value: offer.message!,
                   ),
                 ],
@@ -395,9 +396,9 @@ class _FavorTicketOfferScreenState
                 ),
                 child: _isActioning
                     ? const _LoadingIndicator()
-                    : const Text(
-                        'Accept',
-                        style: TextStyle(
+                    : Text(
+                        L.tr('common_accept'),
+                        style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
               ),
@@ -424,7 +425,7 @@ class _FavorTicketOfferScreenState
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'A small minting fee makes your ticket tradeable on the marketplace. Skip it to keep the ticket private.',
+                        L.tr('favor_ticket_minting_fee_info'),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurfaceVariant,
                         ),
@@ -444,8 +445,8 @@ class _FavorTicketOfferScreenState
                 ),
                 child: _isActioning
                     ? const _LoadingIndicator()
-                    : const Text(
-                        'Pay \$1 & Accept (Tradeable)',
+                    : Text(
+                        L.tr('favor_ticket_pay_accept_tradeable'),
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
@@ -461,8 +462,8 @@ class _FavorTicketOfferScreenState
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: const Text(
-                  'Accept without fee (Non-tradeable)',
+                child: Text(
+                  L.tr('favor_ticket_accept_without_fee'),
                   style:
                       TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
@@ -524,11 +525,11 @@ class _FavorTicketOfferScreenState
 
   String _statusLabel(TicketOfferStatus status) {
     return switch (status) {
-      TicketOfferStatus.accepted => 'Accepted',
-      TicketOfferStatus.declined => 'Declined',
-      TicketOfferStatus.cancelled => 'Cancelled by organizer',
-      TicketOfferStatus.expired => 'Expired',
-      TicketOfferStatus.pending => 'Pending',
+      TicketOfferStatus.accepted => L.tr('common_accepted'),
+      TicketOfferStatus.declined => L.tr('common_declined'),
+      TicketOfferStatus.cancelled => L.tr('favor_ticket_cancelled_by_organizer'),
+      TicketOfferStatus.expired => L.tr('common_expired'),
+      TicketOfferStatus.pending => L.tr('common_pending'),
     };
   }
 }

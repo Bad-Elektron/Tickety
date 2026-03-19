@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 
 /// Reasons a user can report an event.
@@ -51,8 +52,8 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Report submitted. Thank you for helping keep Tickety safe.'),
+          SnackBar(
+            content: Text(L.tr('report_submitted_message')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -64,8 +65,8 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
           SnackBar(
             content: Text(
               e.toString().contains('duplicate key')
-                  ? 'You have already reported this event'
-                  : 'Failed to submit report',
+                  ? L.tr('already_reported_event')
+                  : L.tr('failed_to_submit_report'),
             ),
             behavior: SnackBarBehavior.floating,
           ),
@@ -108,7 +109,7 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
           const SizedBox(height: 20),
           Center(
             child: Text(
-              'Report Event',
+              L.tr('report_event'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
@@ -117,7 +118,7 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
           const SizedBox(height: 4),
           Center(
             child: Text(
-              'Help us keep Tickety safe',
+              L.tr('help_keep_tickety_safe'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -126,7 +127,7 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
           const SizedBox(height: 24),
           // Reason selector
           Text(
-            'Reason',
+            L.tr('reason'),
             style: theme.textTheme.titleSmall?.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -191,7 +192,7 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
             controller: _descriptionController,
             maxLines: 3,
             decoration: InputDecoration(
-              hintText: 'Additional details (optional)',
+              hintText: L.tr('additional_details_optional'),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -220,8 +221,8 @@ class _ReportEventSheetState extends ConsumerState<ReportEventSheet> {
                       color: Colors.white,
                     ),
                   )
-                : const Text(
-                    'Submit Report',
+                : Text(
+                    L.tr('submit_report'),
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,

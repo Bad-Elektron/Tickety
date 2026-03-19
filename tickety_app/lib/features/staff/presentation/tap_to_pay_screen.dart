@@ -9,6 +9,7 @@ import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/services/services.dart';
 import '../../events/models/event_model.dart';
 import '../../events/models/ticket_type.dart';
@@ -328,7 +329,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tap to Pay'),
+        title: Text(L.tr('staff_tap_to_pay_title')),
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.close),
@@ -409,7 +410,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
                 FilledButton.icon(
                   onPressed: _retry,
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Try Again'),
+                  label: Text(L.tr('try_again')),
                   style: FilledButton.styleFrom(
                     minimumSize: const Size(double.infinity, 56),
                   ),
@@ -440,14 +441,14 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          'NFC Not Available',
+          L.tr('staff_nfc_not_available'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Your device doesn\'t support NFC.\nUse manual entry instead.',
+          L.tr('staff_nfc_not_available_desc'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyMedium?.copyWith(
             color: colorScheme.onSurfaceVariant,
@@ -508,14 +509,14 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 32),
         Text(
-          'Waiting for Customer',
+          L.tr('staff_waiting_for_customer'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Ask customer to open Tickety app\nand tap "Ready to Pay"',
+          L.tr('staff_waiting_for_customer_desc'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
@@ -535,7 +536,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
             ),
             const SizedBox(width: 8),
             Text(
-              _isListening ? 'NFC Active' : 'Initializing...',
+              _isListening ? L.tr('staff_nfc_active') : L.tr('staff_initializing'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: _isListening ? Colors.green : Colors.orange,
                 fontWeight: FontWeight.w500,
@@ -568,14 +569,14 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          'Waiting for Payment',
+          L.tr('staff_waiting_for_payment'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Customer is confirming payment\non their device...',
+          L.tr('staff_waiting_for_payment_desc'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
@@ -604,7 +605,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          'Payment Complete!',
+          L.tr('staff_payment_complete'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.green,
@@ -612,7 +613,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 8),
         Text(
-          'Ticket has been sent to customer',
+          L.tr('staff_ticket_sent_to_customer'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,
@@ -641,7 +642,7 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         ),
         const SizedBox(height: 24),
         Text(
-          _paymentStatus == 'cancelled' ? 'Payment Cancelled' : 'Payment Failed',
+          _paymentStatus == 'cancelled' ? L.tr('staff_payment_cancelled') : L.tr('staff_payment_failed'),
           style: theme.textTheme.headlineSmall?.copyWith(
             fontWeight: FontWeight.bold,
             color: Colors.red,
@@ -650,8 +651,8 @@ class _TapToPayScreenState extends ConsumerState<TapToPayScreen>
         const SizedBox(height: 8),
         Text(
           _paymentStatus == 'cancelled'
-              ? 'The customer declined the payment'
-              : 'Something went wrong. Please try again.',
+              ? L.tr('staff_customer_declined')
+              : L.tr('staff_payment_failed_desc'),
           textAlign: TextAlign.center,
           style: theme.textTheme.bodyLarge?.copyWith(
             color: colorScheme.onSurfaceVariant,

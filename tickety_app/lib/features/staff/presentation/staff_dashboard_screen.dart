@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/state/app_state.dart';
 import '../../../core/utils/feature_gate.dart';
@@ -66,7 +67,7 @@ class _StaffDashboardScreenState extends ConsumerState<StaffDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Staff Dashboard'),
+        title: Text(L.tr('staff_dashboard_title')),
         centerTitle: true,
       ),
       body: FeatureGate.gated(
@@ -131,14 +132,14 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No staff assignments',
+              L.tr('staff_no_assignments'),
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'You are not assigned as staff to any events yet.',
+              L.tr('staff_no_assignments_desc'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -263,7 +264,7 @@ class _EventCard extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: onSellTickets,
                       icon: const Icon(Icons.point_of_sale),
-                      label: const Text('Sell Tickets'),
+                      label: Text(L.tr('staff_sell_tickets')),
                     ),
                   ),
                 if (data.staff.canSellTickets) const SizedBox(width: 12),
@@ -271,7 +272,7 @@ class _EventCard extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: onCheckTickets,
                     icon: const Icon(Icons.qr_code_scanner),
-                    label: const Text('Check Tickets'),
+                    label: Text(L.tr('staff_check_tickets')),
                   ),
                 ),
               ],

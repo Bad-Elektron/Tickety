@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/errors/errors.dart';
+import '../../../core/localization/localization.dart';
 import '../../../core/services/services.dart';
 import '../../events/models/event_model.dart';
 import '../data/resale_repository.dart';
@@ -194,7 +195,7 @@ class ResaleBrowseScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Resale Tickets'),
+        title: Text(L.tr('resale_browse_title')),
       ),
       body: _buildBody(context, ref, state, notifier, theme, colorScheme),
     );
@@ -377,7 +378,7 @@ class _ResaleListingCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                'Your Listing',
+                L.tr('resale_your_listing'),
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.w600,
@@ -404,7 +405,7 @@ class _ResaleListingCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          'General Admission',
+                          L.tr('resale_general_admission'),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                           ),
@@ -514,7 +515,7 @@ class _ResaleListingCard extends StatelessWidget {
               child: OutlinedButton.icon(
                 onPressed: () => _handleOwnListing(context),
                 icon: const Icon(Icons.sell_outlined, size: 18),
-                label: const Text('Your Listing'),
+                label: Text(L.tr('resale_your_listing')),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
@@ -561,12 +562,12 @@ class _ResaleListingCard extends StatelessWidget {
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Row(
+        content: Row(
           children: [
-            Icon(Icons.info_outline, color: Colors.white, size: 20),
-            SizedBox(width: 12),
+            const Icon(Icons.info_outline, color: Colors.white, size: 20),
+            const SizedBox(width: 12),
             Expanded(
-              child: Text('You can\'t buy your own listing'),
+              child: Text(L.tr('resale_cannot_buy_own')),
             ),
           ],
         ),
@@ -610,14 +611,14 @@ class _EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             Text(
-              'No Resale Tickets',
+              L.tr('resale_no_tickets'),
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'There are no tickets available for resale for this event right now.',
+              L.tr('resale_no_tickets_description'),
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurfaceVariant,
               ),
@@ -626,7 +627,7 @@ class _EmptyView extends StatelessWidget {
             const SizedBox(height: 24),
             OutlinedButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Go Back'),
+              child: Text(L.tr('common_go_back')),
             ),
           ],
         ),
@@ -662,7 +663,7 @@ class _ErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'Something went wrong',
+              L.tr('common_something_went_wrong'),
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
@@ -676,7 +677,7 @@ class _ErrorView extends StatelessWidget {
             const SizedBox(height: 24),
             FilledButton(
               onPressed: onRetry,
-              child: const Text('Try Again'),
+              child: Text(L.tr('common_try_again')),
             ),
           ],
         ),

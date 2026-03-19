@@ -202,9 +202,27 @@ JavaScript widget organizers embed on their own website. iframe-based checkout m
 <script>Tickety.init({ key: 'twk_live_xxx', eventId: 'uuid', container: '#btn' });</script>
 ```
 
+### Organizer Branding (Priority 11 Phase 1)
+Pro/Enterprise organizers set custom primary + accent colors and upload a logo. Colors override event detail page theme (buttons, chips, links). Logo appears on My Tickets card headers. Inline color wheel pickers on create event screen with live preview. Server-side event search added (title `ilike`). Tables: `organizer_branding`. Storage: `organizer-logos` bucket. Flutter: `features/branding/` module, `branding_provider.dart`. Gated by `TierLimits.canCustomizeBranding()`.
+
+### Enhanced Referral & Affiliate System (Priority 13)
+Turns the basic referral system into a full affiliate program. Four enhancements:
+
+**Earnings Payout:** Referrers can withdraw earnings to their bank account via Stripe Express (reuses seller payout pattern). 7-day hold period for refund window. FIFO payout marking. Edge function: `withdraw-referral-earnings`. `get_referral_balance()` and `mark_referral_earnings_paid()` SQL functions.
+
+**Channel-Tracked Links:** Referral links tagged with channel (Instagram, YouTube, TikTok, Twitter/X, Email, Website). Click tracking via public `track-referral-click` edge function (IP rate-limited). Channel stored on `profiles.referral_channel` via signup metadata. Earnings attributed to channels. `referral_channels` table with click/signup counts. `increment_referral_click()` SQL function. Channel selector chips on ReferralScreen.
+
+**Referred User Benefits:** Referred users get 50% off Pro subscription for 6 months (Stripe coupon applied in `create-subscription-checkout`). Platform fee discount set to 5% (was 0%). Coupon tracked on `profiles.referral_coupon_id`. Benefit banner on ReferralScreen and SubscriptionScreen.
+
+**Performance Dashboard:** `ReferralDashboardScreen` with Top Referrers leaderboard and Channel Performance tabs. Bar chart (fl_chart) showing signups by channel. Funnel breakdown (clicks → signups → sales → earnings). `get_referral_leaderboard()`, `get_referral_funnel_stats()`, `get_platform_referral_stats()` SQL functions. Accessible from AdminEventScreen.
+
+**Tables/columns added:** `referral_channels`, `profiles.referral_channel`, `profiles.referral_coupon_id`, `referral_earnings.paid_at`, `referral_earnings.channel`, `referral_config.referee_sub_discount_percent`, `referral_config.referee_sub_benefit_months`. Migration: `20260318200001_referral_enhancements.sql`.
+
 ## Dev Seed Data
 
 Engagement seed data for dashboard development in `supabase/seeds/`. Marker: `analytics_cache_meta` where `key = 'dev_seed_marker'`. Idempotent insert, cleanup script included.
+
+Discovery algorithm seed data: `dev_discovery_seed.sql` (views, tickets, payments, tag affinity). Marker: `discovery_seed_marker`. Cleanup: `cleanup_discovery_seed.sql`.
 
 ## Roadmap
 
@@ -226,84 +244,100 @@ Populate the discovery feed with events from external sources to solve the cold-
 
 **Code ready:** `external_events` table, `sync-ticketmaster-events`, `sync-seatgeek-events`, `cleanup-external-events` edge functions, `ExternalEvent` model, `ExternalEventRepository`, mixed feed in `EventsHomeScreen` with source badges and deep links.
 
-### Priority 10 — Event Discovery Algorithm
+### Event Discovery Algorithm (Priority 10)
+Two-layer weighted scoring system inspired by Steam's Discovery Queue. Replaces chronological feed with relevance-ranked results. Admin tuning dashboard for weight adjustment.
 
-The home feed currently shows events in basic chronological order. We need a smart recommendation/ranking algorithm that surfaces events users are actually interested in, similar to how Steam handles discovery across many genres and niches.
+**Layer 1 — Pre-Computed Scores** (`event_scores` table, `refresh_event_scores()` via pg_cron every 15 min):
+Six sub-scores (0.0–1.0): popularity (Bayesian-smoothed 7d views), velocity (48h ticket sales), engagement (view→purchase conversion), recency (creation date decay), urgency (sell-through %), organizer quality (verification status). Composite = weighted sum using `discovery_weights` config table.
 
-**Problem:** Most discovery algorithms are proprietary (Spotify Discover, TikTok For You, Steam Discovery Queue). We need to build something that works well at small scale (hundreds of events) and scales to large (millions). Cold-start problem is real — new users have no history.
+**Layer 2 — Per-Request Personalization** (`get_personalized_feed()` RPC):
+Proximity (Haversine distance boost), tag affinity (`user_tag_affinity` table, built from view/purchase/share interactions), price match (user avg vs event price). Time decay (`e^(-0.03 * days_until_event)`). Cold-start fallback: composite score only.
 
-**Key Signals to Rank On:**
-- **Popularity:** Ticket sales velocity (sales/hour), total sales, sell-through rate (% of capacity sold)
-- **Engagement:** View count, view-to-purchase conversion rate, save/favorite count, share count
-- **Recency:** Time decay — newer events ranked higher, stale events demoted
-- **Proximity:** Distance from user's location (lat/lng from device or profile)
-- **Social proof:** Friends attending (requires social graph, later phase), organizer follower count
-- **User affinity:** Tags/categories the user has purchased or viewed before (collaborative filtering lite)
-- **Organizer quality:** Verification status, average event rating, refund rate, report count
-- **Price sensitivity:** Match user's historical price range
+**Admin Tuning Dashboard** (`AlgorithmTuningScreen`):
+Weight sliders (0.0–1.0) for all 9 signals. Preview button → `preview_feed_with_weights()` shows ranked list with rank change indicators. Apply persists weights + logs to `discovery_weight_history`. Platform-wide tag affinity bar chart (fl_chart). Accessible from AdminEventScreen.
 
-**Approach — Hybrid Scoring (inspired by Steam):**
+**Featured Events:** Score-powered carousel with admin hand-pinning. `get_featured_events()` returns pinned events first, then top-scored. `toggle_featured_event()` for admin pin/unpin. `featured_at` column on events table. "Feature Event" toggle in AdminEventScreen.
 
-Steam's approach works because it combines multiple independent signals with tunable weights, doesn't require deep ML, and handles the cold-start problem via popularity fallback. Their discovery queue uses a weighted scoring model, not pure collaborative filtering.
+**Tables:** `discovery_weights`, `discovery_weight_history`, `user_tag_affinity`, `event_scores`. **SQL functions:** `refresh_event_scores()`, `get_personalized_feed()`, `preview_feed_with_weights()`, `update_user_tag_affinity()`, `update_discovery_weight()`, `get_featured_events()`, `toggle_featured_event()`, `get_platform_tag_affinity()`.
 
-1. **Base Score** = `popularity_score * recency_decay * organizer_quality`
-   - `popularity_score`: normalized 0-1 from sales velocity + engagement metrics
-   - `recency_decay`: exponential decay, e.g., `e^(-0.05 * days_until_event)` (sweet spot ~2-4 weeks out)
-   - `organizer_quality`: verified=1.2x, high-rating=1.1x, reported=0.5x
+**Flutter:** `features/discovery/` with models (`DiscoveryWeight`, `EventScore`, `FeedPreviewItem`, `WeightHistoryEntry`, `TagAffinityStat`, `FeaturedEventEntry`), repository (`DiscoveryRepository`), presentation (`AlgorithmTuningScreen` with tag affinity chart). Providers: `discoveryFeedProvider` replaces chronological feed, `discoveryFeaturedProvider` replaces chronological featured, `platformTagAffinityProvider` for admin chart, `toggleFeaturedProvider` for pin/unpin. Tag affinity tracked on event detail views.
 
-2. **Personalization Layer** (when user has history):
-   - Tag affinity vector: track which tags/categories user interacts with, weight events matching those tags
-   - Price band matching: if user typically buys $20-50 tickets, boost events in that range
-   - Location preference: boost events near user's past attendance locations
-   - "More like this": Jaccard similarity on tags between events user attended and available events
+**Seed data:** `supabase/seeds/dev_discovery_seed.sql` (views, tickets, payments, tag affinity across 3 taste clusters). Cleanup: `cleanup_discovery_seed.sql`. Marker: `discovery_seed_marker`.
 
-3. **Cold-Start Fallback** (new users):
-   - Pure popularity + proximity ranking
-   - Trending: highest sales velocity in last 48h
-   - "Popular near you" if location available
-   - Diverse category sampling (don't show all music events — mix genres)
+**Optional future enhancement (Phase D):** Feed sections (Trending Now, Near You, Almost Sold Out, New This Week) — horizontal carousels on home screen. Diversity injection (max 3 consecutive same-category). Section toggles in admin. Not required for core functionality.
 
-4. **Feed Sections:**
-   - "Trending Now" — highest velocity events (real-time-ish, refreshed hourly)
-   - "Popular Near You" — proximity + popularity
-   - "Because You Attended [X]" — tag-based similarity to past purchases
-   - "New This Week" — recently created, boosted for discovery
-   - "Almost Sold Out" — urgency signal, >80% capacity sold
-   - "Free Events" — separate section, lower barrier to entry
+### Organizer Branding (Priority 11 — Phase 1 DONE)
+Pro/Enterprise organizers customize event page colors and upload a logo. Simplified first step toward full white-labeling.
 
-**Database:**
-- `user_event_interactions` — user_id, event_id, interaction_type (view/save/share/purchase), created_at
-- `event_scores` — Materialized scoring table, refreshed by cron. Columns: event_id, popularity_score, velocity_score, engagement_score, composite_score, trending_rank
-- `user_tag_affinity` — user_id, tag, affinity_score (incremented on view/purchase, decayed over time)
-- SQL function: `get_personalized_feed(user_id, lat, lng, page, page_size)` — combines composite score with user affinity
+**What's built:**
+- `organizer_branding` table (primary_color, accent_color, logo_url) with RLS + `organizer-logos` storage bucket
+- `features/branding/` module: `OrganizerBranding` model, `BrandingRepository` (CRUD + logo upload), `BrandingSettingsScreen` (standalone settings)
+- Inline branding on create event screen: color wheel pickers (`flutter_colorpicker`), logo upload, live preview showing branded chips/icons/buttons
+- Event detail screen: wraps `Scaffold` in `Theme()` overriding `colorScheme.primary` and `colorScheme.secondary` with organizer colors — buttons, links, accents all pick up branding
+- My Tickets screen: organizer logo displayed as 40px circle in ticket card gradient header
+- Admin event screen: "Event Branding" card (Pro-gated, navigates to settings or upgrade)
+- `TierLimits.canCustomizeBranding()` — Pro + Enterprise only
+- `organizerId` field added to `EventModel` + `EventMapper`
+- Server-side event search (`searchEvents` with `ilike` on title) — events appear in search even before discovery scoring
+- Branding auto-saves when creating/editing events
 
-**Implementation Phases:**
-- Phase A: Popularity ranking (velocity + engagement + recency decay). No personalization. Just show better events first.
-- Phase B: Location-aware ranking. Proximity boost when user location available.
-- Phase C: Tag affinity personalization. Track user interactions, build affinity vectors, personalize feed.
-- Phase D: Feed sections (trending, near you, similar, etc.). Multiple ranked lists on home screen.
-
-### Priority 11 — White-Labeling & Custom Domains
-
-Organizers hide Tickety branding, use their own logo/colors. Custom domain for ticket pages (tickets.yourbrand.com). Branded email notifications.
+**Phase 2 (future):** Custom domains (tickets.yourbrand.com), branded email notifications, branded wallet passes, full Tickety branding removal for Enterprise.
 
 ### Priority 12 — Public API
 
 REST API for organizers to integrate with their own systems. Endpoints: events, tickets, orders, check-ins, discount codes. API key auth, rate limiting, webhook subscriptions. Developer documentation site.
 
-### Priority 13 — Affiliate & Referral Tracking
+### Localization / i18n (Priority 14)
+CSV-based localization system modeled on the GDF Localization architecture. 77 files localized with 1,361 `L.tr()` calls across 1,173 unique string keys. 18 languages supported. Language picker in Settings.
 
-Unique referral links per sales channel. Performance dashboard showing which channels drive sales. Commission tracking for affiliates.
+**Architecture:**
+- `core/localization/localization_service.dart`: CSV parser (quote-aware, GDF-style), lookup engine with `{0}` `{1}` variable injection, English fallback for missing translations
+- Static API: `L.tr('key')` or `L.tr('key', [arg1, arg2])` — call anywhere, falls back to key itself if not in CSV
+- `core/providers/locale_provider.dart`: Riverpod `localeProvider` — widgets `ref.watch(localeProvider)` to rebuild on language change
+- `assets/localization.csv`: Master CSV (1,173 rows x 19 columns). Generated by `assets/gen_full_csv.py`
+- `L.init()` called in `main.dart` before `runApp()`
+- Language picker in Settings screen (bottom sheet with native language names)
+- Preference saved to SharedPreferences (`preferred_locale`)
 
-### Priority 14 — Localization (i18n)
+**18 Languages:** en, es, fr, de, pt, it, nl, ru, ja, ko, zh (Simplified), zh_TW (Traditional), ar, hi, tr, pl, th, id
 
-Multi-language checkout and app UI. Start with Spanish, French, German, Portuguese. Currency formatting per locale. RTL support for Arabic/Hebrew (later phase). Best done last when all user-facing text is finalized.
+**How to add a new string:**
+1. Use `L.tr('your_key')` in Dart code — English text as key works as instant fallback
+2. Add translations to `COMMON_TRANSLATIONS` in `assets/gen_full_csv.py`
+3. Run `python3 gen_full_csv.py` in `assets/` to regenerate CSV
+4. For parameterized: CSV value `"Hello {0}, you have {1} tickets"`, code `L.tr('key', [name, count])`
 
-## Future: Cardano Phase 3
+**How to add a new language:**
+1. Add column code to LANGS array in `gen_full_csv.py`
+2. Add translation for every string
+3. Add entry to `L.localeNames` map in `localization_service.dart`
+4. Run `python3 gen_full_csv.py`
 
-- Multi-address derivation for privacy
-- Mainnet deployment (switch Blockfrost base URL + project ID)
-- Organizer NFT customization (custom metadata fields, artwork)
+**Translation status:** 120 keys have full 18-language translations (common UI words, auth, settings, profile, referral, events, tickets, payments, wallet, subscription, notifications, errors). Remaining keys fall back to English — add translations to `gen_full_csv.py` and regenerate.
+
+### Priority 13 — Affiliate & Referral Tracking (DONE)
+
+Channel-tracked referral links, earnings payout via Stripe Express, referred-user Pro subscription discount (50% off 6 months), performance dashboard with leaderboard and channel funnel charts. See "Enhanced Referral & Affiliate System" in Completed Features.
+
+### Priority 14 — Localization / i18n (DONE)
+
+CSV-based localization with 18 languages, 77 files, 1,361 `L.tr()` calls, 1,173 unique keys. Language picker in Settings. See "Localization / i18n" in Completed Features.
+
+### Priority 15 — Public API
+
+REST API for organizers to integrate with their own systems. Endpoints: events, tickets, orders, check-ins, discount codes. API key auth, rate limiting, webhook subscriptions. Developer documentation site.
+
+## Cardano Phase 3 (Active)
+
+**Philosophy:** Blockchain is invisible infrastructure, not a user-facing feature. Users never see "Cardano," "ADA," or "wallet." They buy tickets with card/bank, get NFT tickets automatically, and the blockchain serves as disaster recovery and trust verification.
+
+- **Wallet UI hidden** — Crypto wallet screen removed from navigation. No send/receive ADA, no wallet balance, no mnemonic access. Fiat transaction history (purchases, receipts) remains in profile.
+- **Fiat-to-ADA on-ramp** — Dropped. Users pay with card/bank via Stripe. Platform wallet covers all ADA costs.
+- **External wallet connection** — Deferred. May revisit via CIP-30 (web) / CIP-45 (mobile QR) if user demand warrants it.
+- **What still works silently:** NFT minting on purchase, 3-tier check-in verification (offline → blockchain → database), NFT transfer on resale, auto-burn 60 days post-event, verification discrepancy flagging (`checkin_flags` table).
+- Multi-address derivation for privacy (future)
+- Mainnet deployment — switch Blockfrost base URL + project ID (future)
+- Organizer NFT customization — custom artwork/metadata on ticket NFTs (future)
 
 ## Competitive Landscape
 
@@ -317,8 +351,11 @@ Multi-language checkout and app UI. Start with Spanish, French, German, Portugue
 
 **Tickety advantages:**
 - NFT tickets (CIP-68 on Cardano), crypto wallet (ADA), built-in resale marketplace
-- ACH bank payments, native buyer app, event discovery algorithm
+- ACH bank payments, native buyer app, tunable event discovery algorithm with admin dashboard
 - Tap-to-pay NFC, comp/favor tickets, organizer verification
 - Redeemable ticket add-ons, physical merch store (Shopify/Stripe), seating charts
 - Embeddable checkout widget (iframe, guest checkout, Stripe Elements)
+- Organizer branding (custom colors + logo on event pages)
+- Affiliate referral program with channel tracking, payouts, and referred-user benefits
+- 18-language localization with runtime language switching
 - External event aggregation via affiliate programs (Ticketmaster/SeatGeek) for cold-start bootstrap + commission revenue
