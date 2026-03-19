@@ -64,6 +64,20 @@ abstract class EnvConfig {
     return key;
   }
 
+  /// The shared secret for verifying NFC ticket signatures (Layer 0).
+  ///
+  /// Must match `TICKET_SIGNING_SECRET` set in Supabase edge function secrets.
+  static String get ticketSigningSecret {
+    final key = dotenv.env['TICKET_SIGNING_SECRET'];
+    if (key == null || key.isEmpty) {
+      throw StateError(
+        'TICKET_SIGNING_SECRET is not configured. '
+        'Please update your .env file with the ticket signing secret.',
+      );
+    }
+    return key;
+  }
+
   /// Loads environment variables from the .env file.
   ///
   /// Call this once at app startup before accessing any env values.

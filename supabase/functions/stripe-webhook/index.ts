@@ -1,6 +1,8 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 import Stripe from 'https://esm.sh/stripe@14.21.0'
+import { crypto } from 'https://deno.land/std@0.177.0/crypto/mod.ts'
+import { encode as hexEncode } from 'https://deno.land/std@0.177.0/encoding/hex.ts'
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
   apiVersion: '2023-10-16',
@@ -9,9 +11,26 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, {
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!
+const ticketSigningSecret = Deno.env.get('TICKET_SIGNING_SECRET') || ''
 
 // Use service role for webhook operations
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+/// Generate HMAC-SHA256 signature for NFC Layer 0 verification.
+async function generateNfcSignature(ticketId: string, eventId: string, category: string): Promise<string | null> {
+  if (!ticketSigningSecret) return null
+  const encoder = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(ticketSigningSecret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  )
+  const message = encoder.encode(ticketId + eventId + category)
+  const signature = await crypto.subtle.sign('HMAC', key, message)
+  return new TextDecoder().decode(hexEncode(new Uint8Array(signature)))
+}
 
 serve(async (req) => {
   const signature = req.headers.get('stripe-signature')
@@ -289,6 +308,8 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       const category = ticketCategories[i] || 'entry'
       const itemIcon = ticketIcons[i] || null
       const typeName = ticketTypeNames[i] || null
+
+      // Pre-insert to get the ticket ID for signature generation
       const { data: ticket, error: ticketError } = await supabase
         .from('tickets')
         .insert({
@@ -315,6 +336,15 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
       if (ticketError) {
         console.error(`Failed to create ticket ${i + 1}/${quantity}:`, ticketError)
         continue
+      }
+
+      // Generate and store NFC Layer 0 signature
+      const nfcSig = await generateNfcSignature(ticket.id, event_id, category)
+      if (nfcSig) {
+        await supabase
+          .from('tickets')
+          .update({ nfc_signature: nfcSig })
+          .eq('id', ticket.id)
       }
 
       ticketIds.push(ticket.id)
@@ -585,6 +615,16 @@ async function handlePaymentSucceeded(paymentIntent: Stripe.PaymentIntent) {
     if (ticketError) {
       console.error('Failed to create favor ticket:', ticketError)
       return
+    }
+
+    // Generate and store NFC Layer 0 signature for favor ticket
+    const favorCategory = ticket.category || 'entry'
+    const favorNfcSig = await generateNfcSignature(ticket.id, offer.event_id, favorCategory)
+    if (favorNfcSig) {
+      await supabase
+        .from('tickets')
+        .update({ nfc_signature: favorNfcSig })
+        .eq('id', ticket.id)
     }
 
     // Update offer status

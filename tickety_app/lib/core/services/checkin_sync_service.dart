@@ -66,10 +66,10 @@ class CheckInSyncService {
       (_) => _onSyncTick(),
     );
 
-    // Start periodic door list refresh (every 60 seconds)
+    // Start periodic door list refresh (every 30 seconds)
     _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(
-      const Duration(seconds: 60),
+      const Duration(seconds: 30),
       (_) => _onRefreshTick(),
     );
   }
@@ -140,10 +140,15 @@ class CheckInSyncService {
       for (final entry in queue) {
         try {
           if (entry.action == 'check_in') {
+            // Look up the local entry to determine category
+            final localEntry = _offlineService.lookupTicket(entry.ticketId);
+            final isRedeemable = localEntry?.isRedeemable ?? false;
             await client.from('tickets').update({
               'checked_in_at': entry.timestamp,
               'checked_in_by': entry.usherId,
-              'status': 'used',
+              // Entry tickets stay 'valid' (re-entry allowed, resale blocked
+              // by checked_in_at). Redeemable items are consumed → 'used'.
+              if (isRedeemable) 'status': 'used',
             }).eq('id', entry.ticketId);
           } else if (entry.action == 'undo_check_in') {
             await client.from('tickets').update({

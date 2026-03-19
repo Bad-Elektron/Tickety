@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/env_config.dart';
 import '../errors/errors.dart';
 import '../models/verification_result.dart';
 import '../services/blockchain_verify_service.dart';
 import '../services/checkin_sync_service.dart';
+import '../services/nfc_service.dart';
 import '../services/offline_checkin_service.dart';
 import '../services/supabase_service.dart';
 
@@ -159,11 +161,16 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
     }
   }
 
-  /// Run the 3-tier verification pipeline for a scanned ticket.
+  /// Run the 4-layer verification pipeline for a scanned ticket.
+  ///
+  /// [nfcPayload] is optional — when provided (from NFC scan), Layer 0
+  /// verifies the HMAC signature embedded in the payload. This enables
+  /// admission with zero network and zero SQLite cache.
   Future<VerificationResult> verifyTicket(
     String ticketIdOrNumber,
-    String eventId,
-  ) async {
+    String eventId, {
+    TicketNfcPayload? nfcPayload,
+  }) async {
     state = state.copyWith(
       isVerifying: true,
       clearVerification: true,
@@ -173,7 +180,73 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
     var result = VerificationResult.initial();
     state = state.copyWith(currentVerification: result);
 
-    // ── Tier 1: Offline Cache (instant) ──
+    bool admittable = false;
+
+    // ── Layer 0: NFC Payload Verification (instant, no lookup needed) ──
+    if (nfcPayload != null && nfcPayload.signature != null) {
+      result = result.updateTier(
+        VerificationTier.nfcPayload,
+        const TierResult(
+          status: TierStatus.verifying,
+          message: 'Verifying NFC signature...',
+        ),
+      );
+      state = state.copyWith(currentVerification: result);
+
+      try {
+        final secret = EnvConfig.ticketSigningSecret;
+        final signatureValid = nfcPayload.verifySignature(secret);
+
+        if (signatureValid && nfcPayload.eventId == eventId) {
+          result = result.updateTier(
+            VerificationTier.nfcPayload,
+            TierResult(
+              status: TierStatus.verified,
+              message: 'Signature valid (${nfcPayload.category})',
+            ),
+          );
+          admittable = true;
+        } else if (!signatureValid) {
+          result = result.updateTier(
+            VerificationTier.nfcPayload,
+            const TierResult(
+              status: TierStatus.failed,
+              message: 'Invalid signature — possible forgery',
+            ),
+          );
+        } else {
+          result = result.updateTier(
+            VerificationTier.nfcPayload,
+            const TierResult(
+              status: TierStatus.failed,
+              message: 'Event ID mismatch',
+            ),
+          );
+        }
+      } catch (_) {
+        // Signing secret not configured — skip Layer 0
+        result = result.updateTier(
+          VerificationTier.nfcPayload,
+          const TierResult(
+            status: TierStatus.skipped,
+            message: 'Signing key not configured',
+          ),
+        );
+      }
+    } else {
+      // No NFC payload or no signature — skip Layer 0
+      result = result.updateTier(
+        VerificationTier.nfcPayload,
+        TierResult(
+          status: TierStatus.skipped,
+          message: nfcPayload == null ? 'QR scan — no NFC data' : 'No signature on ticket',
+        ),
+      );
+    }
+
+    state = state.copyWith(currentVerification: result);
+
+    // ── Layer 1: Offline Cache (instant) ──
     result = result.updateTier(
       VerificationTier.offline,
       const TierResult(status: TierStatus.verifying, message: 'Checking local cache...'),
@@ -181,16 +254,20 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
     state = state.copyWith(currentVerification: result);
 
     var entry = _offlineService.lookupTicket(ticketIdOrNumber);
-    bool admittable = false;
 
     if (entry != null) {
       if (entry.isValid) {
+        // Entry ticket that was already checked in — still admittable (re-entry)
+        final alreadyCheckedIn = entry.checkedInAt != null;
+        final message = alreadyCheckedIn
+            ? 'Re-entry — checked in at ${_formatTime(entry.checkedInAt!)}'
+            : 'Found in door list';
         result = VerificationResult(
           tiers: {
             ...result.tiers,
-            VerificationTier.offline: const TierResult(
+            VerificationTier.offline: TierResult(
               status: TierStatus.verified,
-              message: 'Found in door list',
+              message: message,
             ),
           },
           ticket: entry,
@@ -198,17 +275,21 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
         );
         admittable = true;
       } else if (entry.isUsed) {
+        // 'used' status only applies to redeemable items (consumed)
+        // Entry tickets stay 'valid' after check-in, so hitting 'used'
+        // here means it's a redeemable that was already redeemed.
         result = VerificationResult(
           tiers: {
             ...result.tiers,
             VerificationTier.offline: const TierResult(
               status: TierStatus.failed,
-              message: 'Already checked in',
+              message: 'Already redeemed',
             ),
           },
           ticket: entry,
           isAdmittable: false,
         );
+        admittable = false;
       } else {
         result = VerificationResult(
           tiers: {
@@ -221,10 +302,12 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
           ticket: entry,
           isAdmittable: false,
         );
+        admittable = false;
       }
     } else {
       // Not found in local cache
-      if (!_syncService.isOnline) {
+      if (!_syncService.isOnline && !admittable) {
+        // No cache, no network, and Layer 0 didn't verify — deny
         result = VerificationResult(
           tiers: {
             ...result.tiers,
@@ -234,6 +317,22 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
             ),
           },
           isAdmittable: false,
+        );
+        state = state.copyWith(
+          currentVerification: _skipRemainingTiers(result),
+          isVerifying: false,
+        );
+        return result;
+      }
+
+      if (!_syncService.isOnline && admittable) {
+        // No cache, no network, but Layer 0 verified — admit on NFC signature alone
+        result = result.updateTier(
+          VerificationTier.offline,
+          const TierResult(
+            status: TierStatus.skipped,
+            message: 'No door list (admitted via NFC signature)',
+          ),
         );
         state = state.copyWith(
           currentVerification: _skipRemainingTiers(result),
@@ -323,6 +422,19 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
     );
 
     return result;
+  }
+
+  /// Format an ISO 8601 timestamp to a short time string like "7:32 PM".
+  String _formatTime(String isoTimestamp) {
+    try {
+      final dt = DateTime.parse(isoTimestamp).toLocal();
+      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
+      final minute = dt.minute.toString().padLeft(2, '0');
+      final period = dt.hour >= 12 ? 'PM' : 'AM';
+      return '$hour:$minute $period';
+    } catch (_) {
+      return isoTimestamp;
+    }
   }
 
   Future<TierResult> _runBlockchainTier(DoorListEntry? entry) async {
@@ -488,14 +600,17 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
     return VerificationResult(
       tiers: {
         ...result.tiers,
-        if (!result.tiers.containsKey(VerificationTier.blockchain) ||
-            result.getTier(VerificationTier.blockchain).status == TierStatus.pending)
+        if (result.getTier(VerificationTier.nfcPayload).status == TierStatus.pending)
+          VerificationTier.nfcPayload: const TierResult(
+            status: TierStatus.skipped,
+            message: 'N/A',
+          ),
+        if (result.getTier(VerificationTier.blockchain).status == TierStatus.pending)
           VerificationTier.blockchain: const TierResult(
             status: TierStatus.skipped,
             message: 'Offline',
           ),
-        if (!result.tiers.containsKey(VerificationTier.database) ||
-            result.getTier(VerificationTier.database).status == TierStatus.pending)
+        if (result.getTier(VerificationTier.database).status == TierStatus.pending)
           VerificationTier.database: const TierResult(
             status: TierStatus.skipped,
             message: 'Offline',
@@ -555,6 +670,7 @@ class OfflineCheckInNotifier extends StateNotifier<OfflineCheckInState> {
       pendingSyncCount: pendingSync,
       totalRedeemable: catStats.totalRedeemable,
       redeemedCount: catStats.redeemedRedeemable,
+      doorListDownloadedAt: _offlineService.doorListDownloadedAt,
     );
   }
 

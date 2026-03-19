@@ -211,6 +211,9 @@ class _TicketScreenState extends State<TicketScreen> {
         ticketId: _ticket.id,
         ticketNumber: _ticket.ticketNumber,
         eventId: _ticket.eventId,
+        category: _ticket.category,
+        status: _ticket.status.value,
+        signature: _ticket.nfcSignature,
       );
 
       final success = await _nfcService.startBroadcasting(payload);
@@ -248,6 +251,9 @@ class _TicketScreenState extends State<TicketScreen> {
         ticketId: _ticket.id,
         ticketNumber: _ticket.ticketNumber,
         eventId: _ticket.eventId,
+        category: _ticket.category,
+        status: _ticket.status.value,
+        signature: _ticket.nfcSignature,
       );
       final success = await _nfcService.startBroadcasting(payload);
       if (mounted && success) {

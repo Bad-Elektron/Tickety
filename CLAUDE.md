@@ -156,7 +156,9 @@ Auto-created HD wallet on Preview testnet. Mnemonic synced to `user_wallets` tab
 - **2D Burn:** Auto-burn 60 days after event. Reclaims ~1.5 ADA per NFT to platform. Dual-witness (platform + buyer keys). `burn-expired-nfts` edge function.
 
 ### Offline Check-in (Priority 1)
-SQLite door list with O(1) HashMap index. 3-tier verification: Offline → Blockchain → Database. Background sync every 7s. Conflict resolution. 34-test suite. `OfflineCheckInService`, `CheckInSyncService`, `BlockchainVerifyService`.
+SQLite door list with O(1) HashMap index. **4-layer verification:** NFC Signature → Offline Cache → Blockchain → Database. Background sync every 7s. Conflict resolution. 34-test suite. `OfflineCheckInService`, `CheckInSyncService`, `BlockchainVerifyService`.
+
+**Layer 0 — NFC Payload Verification (instant, zero dependencies):** The NFC payload carries an HMAC-SHA256 signature (`nfc_signature` column on tickets) generated at ticket creation in the stripe-webhook. The usher app verifies the signature against `TICKET_SIGNING_SECRET` (in `.env` + Supabase secrets). Works with zero network, zero SQLite cache, zero blockchain. If signature valid + event matches → admit. Layer 1 cache-hit upgrades confidence; cache showing "used" overrides Layer 0. QR scans skip Layer 0 (no signature in QR payload). Payload format: `{t, n, e, c, s, sig}` where `sig = HMAC-SHA256(ticketId + eventId + category, secret)`.
 
 ### Promo Codes (Priority 2)
 Percentage or fixed discount codes per event. Server-side re-validation. One use per user per code. `validate_promo_code()` / `redeem_promo_code()` SQL functions. Works with both card and ACH checkout.
@@ -334,7 +336,7 @@ REST API for organizers to integrate with their own systems. Endpoints: events, 
 - **Wallet UI hidden** — Crypto wallet screen removed from navigation. No send/receive ADA, no wallet balance, no mnemonic access. Fiat transaction history (purchases, receipts) remains in profile.
 - **Fiat-to-ADA on-ramp** — Dropped. Users pay with card/bank via Stripe. Platform wallet covers all ADA costs.
 - **External wallet connection** — Deferred. May revisit via CIP-30 (web) / CIP-45 (mobile QR) if user demand warrants it.
-- **What still works silently:** NFT minting on purchase, 3-tier check-in verification (offline → blockchain → database), NFT transfer on resale, auto-burn 60 days post-event, verification discrepancy flagging (`checkin_flags` table).
+- **What still works silently:** NFT minting on purchase, 4-layer check-in verification (NFC signature → offline cache → blockchain → database), NFT transfer on resale, auto-burn 60 days post-event, verification discrepancy flagging (`checkin_flags` table).
 - Multi-address derivation for privacy (future)
 - Mainnet deployment — switch Blockfrost base URL + project ID (future)
 - Organizer NFT customization — custom artwork/metadata on ticket NFTs (future)

@@ -153,6 +153,11 @@ class Ticket {
   final String? ticketTypeName;
 
   // ─────────────────────────────────────────────────────────────────
+  // NFC Layer 0 signature
+  // ─────────────────────────────────────────────────────────────────
+  final String? nfcSignature;
+
+  // ─────────────────────────────────────────────────────────────────
   // Resale listing (enum-based)
   // ─────────────────────────────────────────────────────────────────
   final ListingStatus listingStatus;
@@ -194,6 +199,7 @@ class Ticket {
     this.category = 'entry',
     this.itemIcon,
     this.ticketTypeName,
+    this.nfcSignature,
     this.ticketMode = TicketMode.standard,
     this.listingStatus = ListingStatus.none,
     this.listingPriceCents,
@@ -242,6 +248,7 @@ class Ticket {
       category: json['category'] as String? ?? 'entry',
       itemIcon: json['item_icon'] as String?,
       ticketTypeName: json['ticket_type_name'] as String?,
+      nfcSignature: json['nfc_signature'] as String?,
       ticketMode: TicketMode.fromString(json['ticket_mode'] as String?),
       listingStatus: ListingStatus.fromString(json['listing_status'] as String?),
       listingPriceCents: json['listing_price_cents'] as int?,
@@ -296,8 +303,12 @@ class Ticket {
   bool get isListedForSale => listingStatus == ListingStatus.listed;
 
   /// Whether ticket can be listed for resale.
+  ///
+  /// Checked-in entry tickets stay 'valid' (re-entry allowed) but cannot be
+  /// resold — the ticket is locked to the account once used for entry.
   bool get canBeResold =>
       ticketMode.canResale && isValid && !isListedForSale && !isAwaitingMint && !nftBurned &&
+      checkedInAt == null &&
       !(eventData?['virtual_locked'] == true);
 
   /// Whether ticket is on an NFT-enabled event but hasn't been minted yet.
@@ -434,6 +445,7 @@ class Ticket {
     String? category,
     String? itemIcon,
     String? ticketTypeName,
+    String? nfcSignature,
     TicketMode? ticketMode,
     ListingStatus? listingStatus,
     int? listingPriceCents,
@@ -469,6 +481,7 @@ class Ticket {
       category: category ?? this.category,
       itemIcon: itemIcon ?? this.itemIcon,
       ticketTypeName: ticketTypeName ?? this.ticketTypeName,
+      nfcSignature: nfcSignature ?? this.nfcSignature,
       ticketMode: ticketMode ?? this.ticketMode,
       listingStatus: listingStatus ?? this.listingStatus,
       listingPriceCents: listingPriceCents ?? this.listingPriceCents,

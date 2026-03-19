@@ -71,6 +71,11 @@ class VerificationCard extends StatelessWidget {
             child: Column(
               children: [
                 _TierRow(
+                  label: L.tr('NFC Signature'),
+                  tier: result.getTier(VerificationTier.nfcPayload),
+                ),
+                const SizedBox(height: 12),
+                _TierRow(
                   label: L.tr('Offline Cache'),
                   tier: result.getTier(VerificationTier.offline),
                 ),

@@ -305,14 +305,23 @@ class OfflineCheckInService {
   }
 
   /// Mark a ticket as checked in locally and enqueue for sync.
+  ///
+  /// For entry tickets: status stays 'valid', only checked_in_at/by are set.
+  /// The ticket remains admittable on re-scan (re-entry allowed) but resale
+  /// is blocked by the checked_in_at timestamp.
+  ///
+  /// For redeemable tickets: status changes to 'used' (consumed, deny re-scan).
   Future<void> markCheckedIn(String ticketId, String usherId) async {
     final entry = _index[ticketId];
     if (entry == null) return;
 
     final now = DateTime.now().toUtc().toIso8601String();
 
+    // Redeemable items are consumed — mark 'used'. Entry tickets stay 'valid'.
+    final newStatus = entry.isRedeemable ? 'used' : entry.status;
+
     // Update in-memory
-    entry.status = 'used';
+    entry.status = newStatus;
     entry.checkedInAt = now;
     entry.checkedInBy = usherId;
 
@@ -321,7 +330,7 @@ class OfflineCheckInService {
     await db.update(
       'door_list',
       {
-        'status': 'used',
+        'status': newStatus,
         'checked_in_at': now,
         'checked_in_by': usherId,
         'updated_at': now,
@@ -426,6 +435,9 @@ class OfflineCheckInService {
   }
 
   /// Get local stats from the HashMap (instant).
+  ///
+  /// Counts checked-in by `checkedInAt != null` (not by status == 'used')
+  /// because entry tickets stay 'valid' after check-in.
   ({int totalTickets, int checkedIn, int pendingSync}) getLocalStats() {
     // Count unique tickets (entries are doubled: by id and by number)
     final seen = <String>{};
@@ -435,7 +447,7 @@ class OfflineCheckInService {
     for (final entry in _index.entries) {
       if (seen.add(entry.value.ticketId)) {
         total++;
-        if (entry.value.isUsed) checkedIn++;
+        if (entry.value.checkedInAt != null) checkedIn++;
       }
     }
 
@@ -443,6 +455,9 @@ class OfflineCheckInService {
   }
 
   /// Get stats broken down by category (entry vs redeemable).
+  ///
+  /// Entry tickets: counted as checked-in by `checkedInAt != null`.
+  /// Redeemable tickets: counted as redeemed by `isUsed` (status == 'used').
   ({
     int totalEntry,
     int checkedInEntry,
@@ -462,7 +477,7 @@ class OfflineCheckInService {
           if (entry.value.isUsed) redeemedRedeemable++;
         } else {
           totalEntry++;
-          if (entry.value.isUsed) checkedInEntry++;
+          if (entry.value.checkedInAt != null) checkedInEntry++;
         }
       }
     }

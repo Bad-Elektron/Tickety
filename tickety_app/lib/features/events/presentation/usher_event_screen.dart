@@ -108,7 +108,7 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     await _nfcService.startReading(
       onTagRead: (payload) {
         if (payload.eventId == widget.event.id) {
-          _verifyTicket(payload.ticketId);
+          _verifyTicket(payload.ticketId, nfcPayload: payload);
         } else {
           _showError(L.tr('ticket_wrong_event'));
           HapticFeedback.heavyImpact();
@@ -162,8 +162,11 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
     setState(() => _showCamera = false);
   }
 
-  /// Run 3-tier verification pipeline for a scanned ticket.
-  Future<void> _verifyTicket(String ticketIdOrNumber) async {
+  /// Run 4-layer verification pipeline for a scanned ticket.
+  Future<void> _verifyTicket(
+    String ticketIdOrNumber, {
+    TicketNfcPayload? nfcPayload,
+  }) async {
     if (ticketIdOrNumber.trim().isEmpty) {
       _showError(L.tr('enter_ticket_number'));
       return;
@@ -176,7 +179,11 @@ class _UsherEventScreenState extends ConsumerState<UsherEventScreen>
 
     final result = await ref
         .read(offlineCheckInProvider.notifier)
-        .verifyTicket(ticketIdOrNumber.trim(), widget.event.id);
+        .verifyTicket(
+          ticketIdOrNumber.trim(),
+          widget.event.id,
+          nfcPayload: nfcPayload,
+        );
 
     if (!mounted) return;
 

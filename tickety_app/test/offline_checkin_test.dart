@@ -59,10 +59,11 @@ void main() {
 
   setUp(() async {
     // Create in-memory database for each test
+    // Schema matches OfflineCheckInService version 5
     db = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 5,
         onCreate: (db, version) async {
           await db.execute('''
             CREATE TABLE IF NOT EXISTS door_list (
@@ -75,6 +76,9 @@ void main() {
               nft_asset_id TEXT,
               nft_policy_id TEXT,
               nft_tx_hash TEXT,
+              seat_label TEXT,
+              category TEXT DEFAULT 'entry',
+              item_icon TEXT,
               checked_in_at TEXT,
               checked_in_by TEXT,
               updated_at TEXT NOT NULL
@@ -89,6 +93,13 @@ void main() {
             ON door_list(event_id)
           ''');
           await db.execute('''
+            CREATE TABLE IF NOT EXISTS door_list_meta (
+              event_id TEXT PRIMARY KEY,
+              downloaded_at TEXT NOT NULL,
+              ticket_count INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
+          await db.execute('''
             CREATE TABLE IF NOT EXISTS sync_queue (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               ticket_id TEXT NOT NULL,
@@ -99,6 +110,19 @@ void main() {
               synced INTEGER NOT NULL DEFAULT 0,
               retry_count INTEGER NOT NULL DEFAULT 0,
               error_message TEXT
+            )
+          ''');
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS verification_flags (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ticket_id TEXT NOT NULL,
+              event_id TEXT NOT NULL,
+              flag_type TEXT NOT NULL,
+              tier TEXT NOT NULL,
+              message TEXT,
+              usher_id TEXT,
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              synced INTEGER NOT NULL DEFAULT 0
             )
           ''');
         },
@@ -226,13 +250,13 @@ void main() {
       // Mark checked in
       await service.markCheckedIn(entry.ticketId, 'usher-001');
 
-      // Verify SQLite updated
+      // Verify SQLite updated — entry tickets stay 'valid' (not 'used')
       final row = await db.query(
         'door_list',
         where: 'ticket_id = ?',
         whereArgs: [entry.ticketId],
       );
-      expect(row.first['status'], 'used');
+      expect(row.first['status'], 'valid');
       expect(row.first['checked_in_by'], 'usher-001');
       expect(row.first['checked_in_at'], isNotNull);
 
@@ -244,7 +268,7 @@ void main() {
       expect(queue.first.usherId, 'usher-001');
     });
 
-    test('already-used ticket detected in HashMap', () async {
+    test('checked-in entry ticket stays valid in HashMap', () async {
       final entry = generateTestDoorList(1).first;
       await insertTestEntries(db, [entry]);
       await service.addToCache(entry);
@@ -252,12 +276,13 @@ void main() {
       // Check in
       await service.markCheckedIn(entry.ticketId, 'usher-001');
 
-      // Lookup should show used
+      // Entry tickets stay valid after check-in (re-entry allowed)
       final looked = service.lookupTicket(entry.ticketId);
-      expect(looked?.isUsed, true);
+      expect(looked?.isValid, true);
+      expect(looked?.checkedInAt, isNotNull);
 
       // Second check-in should still work at service level
-      // (business logic validation happens at provider level)
+      // (re-entry is allowed for entry tickets)
       await service.markCheckedIn(entry.ticketId, 'usher-001');
 
       // Queue should have 2 entries
@@ -267,17 +292,18 @@ void main() {
   });
 
   group('Undo Check-In', () {
-    test('undo reverts status to valid', () async {
+    test('undo reverts checked-in state', () async {
       final entry = generateTestDoorList(1).first;
       await insertTestEntries(db, [entry]);
       await service.addToCache(entry);
 
       // Check in then undo
       await service.markCheckedIn(entry.ticketId, 'usher-001');
-      expect(service.lookupTicket(entry.ticketId)?.isUsed, true);
+      expect(service.lookupTicket(entry.ticketId)?.checkedInAt, isNotNull);
 
       await service.markUndoCheckIn(entry.ticketId, 'usher-001');
       expect(service.lookupTicket(entry.ticketId)?.isValid, true);
+      expect(service.lookupTicket(entry.ticketId)?.checkedInAt, isNull);
 
       // Verify sync queue has both entries
       final queue = await service.getSyncQueue();
@@ -646,9 +672,9 @@ void main() {
         await service.markCheckedIn(entries[i].ticketId, 'usher-001');
       }
 
-      // All should be marked used
+      // All should be checked in (entry tickets stay valid, checked_in_at set)
       for (int i = 0; i < 100; i++) {
-        expect(service.lookupTicket(entries[i].ticketId)?.isUsed, true);
+        expect(service.lookupTicket(entries[i].ticketId)?.checkedInAt, isNotNull);
       }
 
       // Stats should be accurate
@@ -691,10 +717,13 @@ void main() {
       expect(queue[3].action, 'check_in');
       expect(queue[3].ticketId, entries[2].ticketId);
 
-      // After processing: A=valid (undone), B=used, C=used
+      // After processing: A=valid+no check-in (undone), B=valid+checked-in, C=valid+checked-in
       expect(service.lookupTicket(entries[0].ticketId)?.isValid, true);
-      expect(service.lookupTicket(entries[1].ticketId)?.isUsed, true);
-      expect(service.lookupTicket(entries[2].ticketId)?.isUsed, true);
+      expect(service.lookupTicket(entries[0].ticketId)?.checkedInAt, isNull);
+      expect(service.lookupTicket(entries[1].ticketId)?.isValid, true);
+      expect(service.lookupTicket(entries[1].ticketId)?.checkedInAt, isNotNull);
+      expect(service.lookupTicket(entries[2].ticketId)?.isValid, true);
+      expect(service.lookupTicket(entries[2].ticketId)?.checkedInAt, isNotNull);
     });
   });
 

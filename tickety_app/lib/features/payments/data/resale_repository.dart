@@ -150,12 +150,19 @@ class ResaleRepository implements IResaleRepository {
       tag: _tag,
     );
 
-    // Check if the ticket is private (cannot be resold), awaiting mint, burned, or virtual-locked
+    // Check if the ticket is private (cannot be resold), checked in, awaiting mint, burned, or virtual-locked
     final ticketData = await _client
         .from('tickets')
-        .select('ticket_mode, nft_minted, nft_burned, events!inner(nft_enabled, virtual_locked)')
+        .select('ticket_mode, nft_minted, nft_burned, checked_in_at, events!inner(nft_enabled, virtual_locked)')
         .eq('id', ticketId)
         .single();
+
+    if (ticketData['checked_in_at'] != null) {
+      throw const PaymentException(
+        'This ticket has already been used for entry and cannot be resold.',
+        technicalDetails: 'Ticket has been checked in',
+      );
+    }
 
     if (ticketData['ticket_mode'] == 'private') {
       throw PaymentException(

@@ -1,6 +1,6 @@
 // 3-tier verification model for offline check-in.
 
-enum VerificationTier { offline, blockchain, database }
+enum VerificationTier { nfcPayload, offline, blockchain, database }
 
 enum TierStatus { pending, verifying, verified, failed, skipped }
 
@@ -193,6 +193,7 @@ class VerificationResult {
   factory VerificationResult.initial() {
     return const VerificationResult(
       tiers: {
+        VerificationTier.nfcPayload: TierResult(status: TierStatus.pending),
         VerificationTier.offline: TierResult(status: TierStatus.pending),
         VerificationTier.blockchain: TierResult(status: TierStatus.pending),
         VerificationTier.database: TierResult(status: TierStatus.pending),

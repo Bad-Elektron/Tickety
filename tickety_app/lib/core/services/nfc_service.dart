@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_nfc_hce/flutter_nfc_hce.dart';
 import 'package:ndef_record/ndef_record.dart';
@@ -9,17 +10,28 @@ import 'package:nfc_manager/nfc_manager.dart';
 import 'package:nfc_manager_ndef/nfc_manager_ndef.dart';
 
 /// NDEF data format for ticket information.
-/// Encodes as URI: `https://tickety.app/scan#{"t":"ticketId","n":"ticketNumber","e":"eventId"}`
+///
+/// Encodes as URI: `https://tickety.app/scan#{"t":"ticketId","n":"ticketNumber","e":"eventId","c":"entry","s":"valid","sig":"hmac-hex"}`
+///
+/// The `sig` field is an HMAC-SHA256 over `ticketId + eventId + category` using
+/// the app's ticket signing key. This enables Layer 0 (NFC Payload) verification:
+/// ushers can verify ticket authenticity with zero network and zero SQLite cache.
 class TicketNfcPayload {
   const TicketNfcPayload({
     required this.ticketId,
     required this.ticketNumber,
     required this.eventId,
+    this.category = 'entry',
+    this.status = 'valid',
+    this.signature,
   });
 
   final String ticketId;
   final String ticketNumber;
   final String eventId;
+  final String category; // 'entry' or 'redeemable'
+  final String status; // status snapshot at broadcast time
+  final String? signature; // HMAC-SHA256 hex string
 
   /// Parse from NDEF URI record fragment.
   static TicketNfcPayload? fromUri(String uri) {
@@ -34,6 +46,9 @@ class TicketNfcPayload {
         ticketId: json['t'] as String,
         ticketNumber: json['n'] as String,
         eventId: json['e'] as String,
+        category: json['c'] as String? ?? 'entry',
+        status: json['s'] as String? ?? 'valid',
+        signature: json['sig'] as String?,
       );
     } catch (_) {
       return null;
@@ -42,8 +57,46 @@ class TicketNfcPayload {
 
   /// Encode to NDEF URI format.
   String toUri() {
-    final json = jsonEncode({'t': ticketId, 'n': ticketNumber, 'e': eventId});
+    final data = <String, dynamic>{
+      't': ticketId,
+      'n': ticketNumber,
+      'e': eventId,
+      'c': category,
+      's': status,
+    };
+    if (signature != null) {
+      data['sig'] = signature;
+    }
+    final json = jsonEncode(data);
     return 'https://tickety.app/scan#$json';
+  }
+
+  /// Verify the HMAC-SHA256 signature against a shared secret.
+  ///
+  /// Returns true if the signature matches `HMAC-SHA256(ticketId + eventId + category, secret)`.
+  /// Returns false if no signature is present or it doesn't match.
+  bool verifySignature(String secret) {
+    if (signature == null || signature!.isEmpty) return false;
+
+    final key = utf8.encode(secret);
+    final message = utf8.encode('$ticketId$eventId$category');
+    final hmacSha256 = Hmac(sha256, key);
+    final digest = hmacSha256.convert(message);
+
+    return digest.toString() == signature;
+  }
+
+  /// Generate an HMAC-SHA256 signature for this payload.
+  static String generateSignature({
+    required String ticketId,
+    required String eventId,
+    required String category,
+    required String secret,
+  }) {
+    final key = utf8.encode(secret);
+    final message = utf8.encode('$ticketId$eventId$category');
+    final hmacSha256 = Hmac(sha256, key);
+    return hmacSha256.convert(message).toString();
   }
 }
 
