@@ -13,20 +13,30 @@ import '../../subscriptions/models/tier_limits.dart';
 import '../../venues/presentation/venues_screen.dart';
 import '../../wallet/wallet.dart';
 import '../data/supabase_event_repository.dart';
-import '../models/event_category.dart';
 import '../models/event_model.dart';
 import '../widgets/widgets.dart';
 import 'event_details_screen.dart';
 import 'my_events_screen.dart';
 
-// Local UI state for filters (doesn't need to be global)
-final _selectedCategoriesProvider = StateProvider<Set<EventCategory>>((ref) => {});
-final _selectedCityProvider = StateProvider<String?>((ref) => null);
-final _selectedTagsProvider = StateProvider<Set<String>>((ref) => {});
+/// Section definition for Netflix-style rows.
+class _FeedSection {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<EventModel> events;
 
-/// The main home screen displaying featured events.
+  const _FeedSection({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.events,
+  });
+}
+
+/// The main home screen with Netflix-style discovery rows.
 ///
-/// Now uses Riverpod - no more manual listeners or setState for data loading!
+/// Default view: Featured carousel + horizontal rows grouped by tag/vibe.
+/// Search view: Flat filtered list with filter chips.
 class EventsHomeScreen extends ConsumerStatefulWidget {
   const EventsHomeScreen({super.key});
 
@@ -103,24 +113,122 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     });
   }
 
+  /// Build Netflix-style sections from the event feed, grouped by tags.
+  List<_FeedSection> _buildSections(List<EventModel> events) {
+    if (events.isEmpty) return [];
+
+    final sections = <_FeedSection>[];
+
+    // ── Computed sections ──
+
+    // "New This Week" — events created within 7 days
+    final newEvents = events.where((e) {
+      if (e.createdAt == null) return false;
+      return DateTime.now().difference(e.createdAt!).inDays <= 7;
+    }).toList();
+    if (newEvents.length >= 2) {
+      sections.add(_FeedSection(
+        title: L.tr('New This Week'),
+        icon: Icons.new_releases,
+        color: const Color(0xFF3B82F6),
+        events: newEvents,
+      ));
+    }
+
+    // "Free Events"
+    final freeEvents = events.where((e) => e.isFree).toList();
+    if (freeEvents.length >= 2) {
+      sections.add(_FeedSection(
+        title: L.tr('Free Events'),
+        icon: Icons.money_off,
+        color: const Color(0xFF14B8A6),
+        events: freeEvents,
+      ));
+    }
+
+    // ── Tag-based sections ──
+    // Define which tags get their own rows, with display config
+    const tagSections = <(List<String>, String, IconData, Color)>[
+      (['live_music'], 'Live Music', Icons.music_note, Color(0xFFEC4899)),
+      (['dj', 'nightlife'], 'Nightlife & DJs', Icons.nightlife, Color(0xFF7C3AED)),
+      (['outdoor'], 'Outdoor', Icons.park, Color(0xFF22C55E)),
+      (['food', 'drinks'], 'Food & Drinks', Icons.restaurant, Color(0xFFF97316)),
+      (['art', 'theater'], 'Arts & Culture', Icons.palette, Color(0xFFE11D48)),
+      (['sports'], 'Sports', Icons.sports, Color(0xFF16A34A)),
+      (['comedy'], 'Comedy', Icons.sentiment_very_satisfied, Color(0xFFFBBF24)),
+      (['networking'], 'Networking', Icons.people, Color(0xFF0EA5E9)),
+      (['workshop'], 'Workshops', Icons.construction, Color(0xFF84CC16)),
+      (['family_friendly'], 'Family Friendly', Icons.family_restroom, Color(0xFF06B6D4)),
+      (['tech'], 'Tech', Icons.computer, Color(0xFF3B82F6)),
+      (['wellness'], 'Wellness', Icons.spa, Color(0xFF2DD4BF)),
+      // Vibe tags
+      (['exclusive'], 'Exclusive', Icons.diamond, Color(0xFF8B5CF6)),
+      (['high_energy'], 'High Energy', Icons.bolt, Color(0xFFEF4444)),
+      (['chill'], 'Chill Vibes', Icons.waves, Color(0xFF06B6D4)),
+      (['immersive'], 'Immersive', Icons.vrpano, Color(0xFF7C3AED)),
+      (['underground'], 'Underground', Icons.subway, Color(0xFF6B7280)),
+    ];
+
+    for (final (tagIds, title, icon, color) in tagSections) {
+      final matching = events.where((e) =>
+        tagIds.any((tagId) => e.tags.contains(tagId)),
+      ).toList();
+
+      if (matching.length >= 2) {
+        sections.add(_FeedSection(
+          title: L.tr(title),
+          icon: icon,
+          color: color,
+          events: matching,
+        ));
+      }
+    }
+
+    // ── Category-based fallback sections ──
+    // For events that may not have tags but have a category set
+    const categorySections = <(String, String, IconData, Color)>[
+      ('Music', 'Music', Icons.music_note, Color(0xFFEC4899)),
+      ('Entertainment', 'Entertainment', Icons.celebration, Color(0xFFF59E0B)),
+      ('Business', 'Business', Icons.business_center, Color(0xFF64748B)),
+    ];
+
+    final tagCoveredIds = sections.expand((s) => s.events.map((e) => e.id)).toSet();
+
+    for (final (category, title, icon, color) in categorySections) {
+      final matching = events.where((e) {
+        if (tagCoveredIds.contains(e.id)) return false;
+        return e.category?.toLowerCase() == category.toLowerCase();
+      }).toList();
+
+      if (matching.length >= 2) {
+        sections.add(_FeedSection(
+          title: L.tr(title),
+          icon: icon,
+          color: color,
+          events: matching,
+        ));
+      }
+    }
+
+    return sections;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Watch discovery feed (scored) + external events
     final discoveryState = ref.watch(discoveryFeedProvider);
     final eventsState = ref.watch(eventsProvider);
     final externalState = ref.watch(externalEventsProvider);
-    final selectedCategories = ref.watch(_selectedCategoriesProvider);
-    final selectedCity = ref.watch(_selectedCityProvider);
-    final selectedTags = ref.watch(_selectedTagsProvider);
+    final isLoading = discoveryState.isLoading;
 
-    // Build mixed feed: scored native events + external events
-    // Native events come from discovery feed (already scored/ranked)
-    final nativeItems = discoveryState.events.map(NativeEventFeedItem.new).toList();
+    // All native events for section building
+    final nativeEvents = discoveryState.events;
+
+    // Build mixed feed for search mode
+    final nativeItems = nativeEvents.map(NativeEventFeedItem.new).toList();
     final externalItems = externalState.events.map(ExternalEventFeedItem.new).toList();
-    // Keep native items in score order (don't re-sort by date)
     final allItems = [...nativeItems, ...externalItems];
 
-    // When searching, merge server search results (deduped) into feed items
+    // Merge server search results when searching
     if (_searchQuery.isNotEmpty && _serverSearchResults.isNotEmpty) {
       final existingIds = allItems
           .whereType<NativeEventFeedItem>()
@@ -134,24 +242,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
       }
     }
 
-    // Compute filtered events (works on FeedItem)
-    final filteredFeed = _filterFeed(
-      allItems,
-      selectedCategories,
-      selectedCity,
-      selectedTags,
-      _searchQuery,
-    );
-
-    // Use discovery state for loading flags; fall back to eventsState for cities
-    final isLoading = discoveryState.isLoading;
-
-    // Compute available cities from both sources
-    final availableCities = [
-      ...discoveryState.events.map((e) => e.city),
-      ...eventsState.events.map((e) => e.city),
-    ].whereType<String>().toSet().toList()
-      ..sort();
+    final isSearchActive = _isSearching || _searchQuery.isNotEmpty;
 
     return Scaffold(
       body: SafeArea(
@@ -164,7 +255,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
           },
           child: CustomScrollView(
             slivers: [
-              _Header(),
+              const _Header(),
               if (isLoading)
                 const SliverFillRemaining(
                   child: Center(child: CircularProgressIndicator()),
@@ -199,58 +290,40 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
                       ),
                     ),
                   ),
+
+                // Featured carousel — always visible
                 SliverToBoxAdapter(
                   child: _ScoredCarouselSection(),
                 ),
-                _SectionHeader(title: L.tr('events_home_upcoming')),
-                SliverToBoxAdapter(
-                  child: EventFilterChips(
-                    selectedCategories: selectedCategories,
-                    selectedCity: selectedCity,
-                    selectedTags: selectedTags,
-                    availableCities: availableCities,
-                    isSearching: _isSearching,
-                    searchController: _searchController,
-                    searchFocusNode: _searchFocusNode,
-                    onSearchChanged: _onSearchChanged,
-                    onSearchToggled: _toggleSearch,
-                    onCategoriesChanged: (categories) {
-                      ref.read(_selectedCategoriesProvider.notifier).state = categories;
-                    },
-                    onCityChanged: (city) {
-                      ref.read(_selectedCityProvider.notifier).state = city;
-                    },
-                    onTagsChanged: (tags) {
-                      ref.read(_selectedTagsProvider.notifier).state = tags;
-                    },
-                  ),
-                ),
-                // Invite code result card
-                if (_inviteCodeResult != null)
-                  SliverToBoxAdapter(
-                    child: _InviteCodeResultCard(
-                      event: _inviteCodeResult!,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => EventDetailsScreen(event: _inviteCodeResult!),
-                          ),
-                        );
-                      },
+
+                // ── Search mode or discovery mode ──
+                ..._buildDiscoverySections(nativeEvents),
+
+                if (isSearchActive) ...[
+                  if (_inviteCodeResult != null)
+                    SliverToBoxAdapter(
+                      child: _InviteCodeResultCard(
+                        event: _inviteCodeResult!,
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => EventDetailsScreen(event: _inviteCodeResult!),
+                            ),
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                if (filteredFeed.isEmpty && _inviteCodeResult == null)
-                  _EmptyFilterState(
-                    searchQuery: _searchQuery,
-                    onClearFilters: () {
-                      ref.read(_selectedCategoriesProvider.notifier).state = {};
-                      ref.read(_selectedCityProvider.notifier).state = null;
-                      ref.read(_selectedTagsProvider.notifier).state = {};
-                      if (_isSearching) _toggleSearch();
-                    },
-                  )
-                else if (filteredFeed.isNotEmpty)
-                  _MixedFeedList(items: filteredFeed),
+                  if (_isServerSearching)
+                    const SliverToBoxAdapter(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                    )
+                  else ...[
+                    ..._buildSearchResults(allItems),
+                  ],
+                ],
               ],
             ],
           ),
@@ -259,61 +332,89 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
     );
   }
 
-  /// Filter mixed feed items by category, city, tags, and search query.
-  List<FeedItem> _filterFeed(
-    List<FeedItem> items,
-    Set<EventCategory> categories,
-    String? city,
-    Set<String> tags,
-    String searchQuery,
-  ) {
+  /// Build the Netflix-style discovery sections as slivers.
+  List<Widget> _buildDiscoverySections(List<EventModel> events) {
+    final sections = _buildSections(events);
+    final slivers = <Widget>[];
+
+    // Tag/vibe rows
+    for (final section in sections) {
+      slivers.add(SliverToBoxAdapter(
+        child: _HorizontalEventRow(
+          title: section.title,
+          icon: section.icon,
+          color: section.color,
+          events: section.events,
+        ),
+      ));
+    }
+
+    // "Upcoming Events" + search bar — after tag rows
+    slivers.add(SliverToBoxAdapter(
+      child: _SearchBar(
+        isSearching: _isSearching,
+        searchController: _searchController,
+        searchFocusNode: _searchFocusNode,
+        onSearchChanged: _onSearchChanged,
+        onSearchToggled: _toggleSearch,
+      ),
+    ));
+
+    // All events list (only in discovery mode, not search mode)
+    if (!_isSearching && !_searchQuery.isNotEmpty) {
+      slivers.add(_MixedFeedList(
+        items: events.map(NativeEventFeedItem.new).toList(),
+      ));
+    }
+
+    return slivers;
+  }
+
+  /// Build search results as slivers.
+  List<Widget> _buildSearchResults(List<FeedItem> allItems) {
+    final filtered = _filterFeedBySearch(allItems, _searchQuery);
+
+    if (filtered.isEmpty && _inviteCodeResult == null) {
+      return [
+        _EmptyFilterState(
+          searchQuery: _searchQuery,
+          onClearFilters: () {
+            if (_isSearching) _toggleSearch();
+          },
+        ),
+      ];
+    }
+
+    if (filtered.isNotEmpty) {
+      return [_MixedFeedList(items: filtered)];
+    }
+
+    return [];
+  }
+
+  /// Simple search-only filter (no category/city/tag chips in search mode).
+  List<FeedItem> _filterFeedBySearch(List<FeedItem> items, String query) {
+    if (query.isEmpty) return items;
     return items.where((item) {
       switch (item) {
         case NativeEventFeedItem(:final event):
-          // Category filter
-          if (categories.isNotEmpty) {
-            final eventCategory = event.eventCategory;
-            if (eventCategory == null || !categories.contains(eventCategory)) return false;
-          }
-          if (city != null && event.city != city) return false;
-          if (tags.isNotEmpty && !tags.every((t) => event.tags.contains(t))) return false;
-          if (searchQuery.isNotEmpty) {
-            final match = event.title.toLowerCase().contains(searchQuery) ||
-                event.subtitle.toLowerCase().contains(searchQuery) ||
-                (event.venue?.toLowerCase().contains(searchQuery) ?? false) ||
-                (event.city?.toLowerCase().contains(searchQuery) ?? false);
-            if (!match) return false;
-          }
-          return true;
-
+          return event.title.toLowerCase().contains(query) ||
+              event.subtitle.toLowerCase().contains(query) ||
+              (event.venue?.toLowerCase().contains(query) ?? false) ||
+              (event.city?.toLowerCase().contains(query) ?? false);
         case ExternalEventFeedItem(:final event):
-          // Category filter (map EventCategory name to external category string)
-          if (categories.isNotEmpty) {
-            final cat = event.category?.toLowerCase();
-            final match = categories.any((c) => c.label.toLowerCase() == cat);
-            if (!match) return false;
-          }
-          // City filter — external events use venueAddress
-          if (city != null) {
-            final addr = event.venueAddress?.toLowerCase() ?? '';
-            if (!addr.contains(city.toLowerCase())) return false;
-          }
-          // Tags don't apply to external events — skip
-          if (tags.isNotEmpty) return false;
-          // Search filter
-          if (searchQuery.isNotEmpty) {
-            final match = event.title.toLowerCase().contains(searchQuery) ||
-                (event.venueName?.toLowerCase().contains(searchQuery) ?? false) ||
-                (event.venueAddress?.toLowerCase().contains(searchQuery) ?? false);
-            if (!match) return false;
-          }
-          return true;
+          return event.title.toLowerCase().contains(query) ||
+              (event.venueName?.toLowerCase().contains(query) ?? false) ||
+              (event.venueAddress?.toLowerCase().contains(query) ?? false);
       }
     }).toList();
   }
 }
 
+/// Header with profile buttons.
 class _Header extends ConsumerWidget {
+  const _Header();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final canUseVenues = TierLimits.canUseVenueBuilder(
@@ -375,6 +476,273 @@ class _Header extends ConsumerWidget {
   }
 }
 
+/// Search bar with "Upcoming Events" label and search icon toggle.
+class _SearchBar extends StatelessWidget {
+  final bool isSearching;
+  final TextEditingController searchController;
+  final FocusNode searchFocusNode;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onSearchToggled;
+
+  const _SearchBar({
+    required this.isSearching,
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.onSearchChanged,
+    required this.onSearchToggled,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      child: Row(
+        children: [
+          // Title — always visible
+          Text(
+            L.tr('events_home_upcoming'),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Search field — expands to the right of the title
+          if (isSearching)
+            Expanded(
+              child: TextField(
+                controller: searchController,
+                focusNode: searchFocusNode,
+                autofocus: true,
+                onChanged: onSearchChanged,
+                style: theme.textTheme.bodySmall,
+                decoration: InputDecoration(
+                  hintText: L.tr('Search...'),
+                  hintStyle: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                  isDense: true,
+                ),
+              ),
+            )
+          else
+            const Spacer(),
+          const SizedBox(width: 8),
+          // Search / close icon
+          GestureDetector(
+            onTap: onSearchToggled,
+            child: Icon(
+              isSearching ? Icons.close : Icons.search,
+              size: 20,
+              color: isSearching
+                  ? colorScheme.primary
+                  : colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A horizontal scrollable row of event cards, Netflix-style.
+class _HorizontalEventRow extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<EventModel> events;
+
+  const _HorizontalEventRow({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.events,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Horizontal scrollable cards
+        SizedBox(
+          height: 190,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            itemCount: events.length.clamp(0, 10),
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) {
+              return _EventCard(event: events[index]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact event card for horizontal rows.
+class _EventCard extends StatelessWidget {
+  final EventModel event;
+
+  const _EventCard({required this.event});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final config = event.getNoiseConfig();
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EventDetailsScreen(event: event),
+          ),
+        );
+      },
+      child: SizedBox(
+        width: 150,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Event thumbnail
+            Container(
+              height: 110,
+              width: 150,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: config.colors,
+                ),
+              ),
+              child: Stack(
+                children: [
+                  // Price badge
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        event.formattedPrice,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Auto badge
+                  if (event.autoBadges.isNotEmpty)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: event.autoBadges.first.color,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(event.autoBadges.first.icon, size: 10, color: Colors.white),
+                            const SizedBox(width: 2),
+                            Text(
+                              event.autoBadges.first.label,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Title
+            Text(
+              event.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 2),
+            // Date & location
+            Text(
+              _formatDate(event.date),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: colorScheme.primary,
+                fontSize: 11,
+              ),
+            ),
+            if (event.getDisplayLocation(hasTicket: false) != null)
+              Text(
+                event.getDisplayLocation(hasTicket: false)!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 10,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final now = DateTime.now();
+    final difference = date.difference(now).inDays;
+    if (difference == 0) return 'Today';
+    if (difference == 1) return 'Tomorrow';
+    return '${months[date.month - 1]} ${date.day}';
+  }
+}
+
 class _CarouselSection extends StatelessWidget {
   final List<EventModel> events;
 
@@ -385,7 +753,6 @@ class _CarouselSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Featured section
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Text(
@@ -416,8 +783,6 @@ class _CarouselSection extends StatelessWidget {
 }
 
 /// Featured carousel powered by discovery scores.
-/// Shows hand-pinned events first, then top-scored events.
-/// Falls back to chronological if the RPC is unavailable.
 class _ScoredCarouselSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -455,58 +820,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _EventList extends ConsumerStatefulWidget {
-  final List<EventModel> events;
-
-  const _EventList({required this.events});
-
-  @override
-  ConsumerState<_EventList> createState() => _EventListState();
-}
-
-class _EventListState extends ConsumerState<_EventList> {
-  @override
-  Widget build(BuildContext context) {
-    final isLoadingMore = ref.watch(eventsLoadingMoreProvider);
-    final canLoadMore = ref.watch(eventsCanLoadMoreProvider);
-
-    // Total items: events + optional loading indicator
-    final itemCount = widget.events.length + (isLoadingMore || canLoadMore ? 1 : 0);
-
-    return SliverList(
-      delegate: SliverChildBuilderDelegate(
-        (context, index) {
-          // If this is the last item and we can load more, trigger load
-          if (index == widget.events.length) {
-            // Show loading indicator or trigger load more
-            if (isLoadingMore) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            // Trigger load more when this item becomes visible
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              ref.read(eventsProvider.notifier).loadMore();
-            });
-            return const SizedBox(height: 16);
-          }
-
-          // Check if we're near the end and should preload
-          if (index >= widget.events.length - 3 && canLoadMore && !isLoadingMore) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              ref.read(eventsProvider.notifier).loadMore();
-            });
-          }
-
-          return _EventListTile(event: widget.events[index]);
-        },
-        childCount: itemCount,
-      ),
-    );
-  }
-}
-
 class _EmptyFilterState extends StatelessWidget {
   final String searchQuery;
   final VoidCallback onClearFilters;
@@ -520,8 +833,6 @@ class _EmptyFilterState extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-
-    final hasSearch = searchQuery.isNotEmpty;
 
     return SliverFillRemaining(
       hasScrollBody: false,
@@ -545,9 +856,7 @@ class _EmptyFilterState extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                hasSearch
-                    ? L.tr('no_events_match_filter')
-                    : L.tr('try_different_search_or_filter'),
+                L.tr('no_events_match_filter'),
                 style: theme.textTheme.bodyMedium?.copyWith(
                   color: colorScheme.onSurfaceVariant,
                 ),
@@ -557,7 +866,7 @@ class _EmptyFilterState extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onClearFilters,
                 icon: const Icon(Icons.filter_alt_off, size: 18),
-                label: Text(hasSearch ? 'Clear Search & Filters' : L.tr('events_home_clear_filters')),
+                label: Text(L.tr('events_home_clear_filters')),
               ),
             ],
           ),
