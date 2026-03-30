@@ -66,6 +66,7 @@ class _TicketType {
   String category; // 'entry' or 'redeemable'
   String? itemIcon;
   String? itemDescription;
+  String? accessPassword;
   final TextEditingController nameController;
   final TextEditingController descriptionController;
   final TextEditingController priceController;
@@ -81,6 +82,7 @@ class _TicketType {
     this.category = 'entry',
     this.itemIcon,
     this.itemDescription,
+    this.accessPassword,
   })  : nameController = TextEditingController(text: name),
         descriptionController = TextEditingController(text: description),
         priceController = TextEditingController(text: price > 0 ? price.toString() : '0'),
@@ -115,6 +117,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
   bool _isPublic = true;
   bool _isLoading = false;
   bool _hideLocation = false;
+
+  // Access password
+  bool _hasAccessPassword = false;
+  final _accessPasswordController = TextEditingController();
+  bool _useCustomPassword = false;
 
   // Virtual event fields
   String _eventFormat = 'in_person';
@@ -213,6 +220,13 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
         );
       }
 
+      // Access password
+      if (event.accessPassword != null && event.accessPassword!.isNotEmpty) {
+        _hasAccessPassword = true;
+        _accessPasswordController.text = event.accessPassword!;
+        _useCustomPassword = true;
+      }
+
       // Virtual event fields
       _eventFormat = event.eventFormat;
       if (event.virtualEventUrl != null) {
@@ -248,6 +262,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             category: t.category,
             itemIcon: t.itemIcon,
             itemDescription: t.itemDescription,
+            accessPassword: t.accessPassword,
           )).toList();
           if (_ticketTypes.isEmpty) {
             _ticketTypes = [_TicketType(name: _predefinedTicketNames[0])];
@@ -273,10 +288,20 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     _websiteUrlController.dispose();
     _virtualUrlController.dispose();
     _virtualPasswordController.dispose();
+    _accessPasswordController.dispose();
     for (final ticketType in _ticketTypes) {
       ticketType.dispose();
     }
     super.dispose();
+  }
+
+  /// Generate a random 5-char uppercase alphanumeric password.
+  String _generatePassword() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final rng = Random();
+    return String.fromCharCodes(
+      Iterable.generate(5, (_) => chars.codeUnitAt(rng.nextInt(chars.length))),
+    );
   }
 
   // Interpolate between two color lists
@@ -473,6 +498,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                   ? Validators.sanitize(tt.itemDescriptionController.text)
                   : null)
               : null,
+          accessPassword: tt.accessPassword?.isNotEmpty == true
+              ? tt.accessPassword
+              : null,
         );
       }).toList();
       debugPrint('Created ${ticketTypeInputs.length} TicketTypeInput objects');
@@ -538,6 +566,9 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           websiteUrl: _websiteUrlController.text.trim().isNotEmpty
               ? Validators.sanitize(_websiteUrlController.text.trim())
               : null,
+          accessPassword: _hasAccessPassword
+              ? _accessPasswordController.text.trim()
+              : null,
         );
 
         await _repository.updateEvent(updatedEvent);
@@ -577,6 +608,8 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
             'virtual_event_url': Validators.sanitize(_virtualUrlController.text.trim()),
           if (_virtualPasswordController.text.trim().isNotEmpty)
             'virtual_event_password': _virtualPasswordController.text.trim(),
+          if (_hasAccessPassword && _accessPasswordController.text.trim().isNotEmpty)
+            'access_password': _accessPasswordController.text.trim(),
         };
 
         final ticketTypesSnapshot = ticketTypeInputs.asMap().entries.map((e) => {
@@ -585,6 +618,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           'price_cents': e.value.priceCents,
           'max_quantity': e.value.maxQuantity,
           'sort_order': e.key,
+          if (e.value.accessPassword != null) 'access_password': e.value.accessPassword,
         }).toList();
 
         // Compute recurrence_day
@@ -641,6 +675,11 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               : null,
           websiteUrl: _websiteUrlController.text.trim().isNotEmpty
               ? Validators.sanitize(_websiteUrlController.text.trim())
+              : null,
+          accessPassword: _hasAccessPassword
+              ? (_accessPasswordController.text.trim().isNotEmpty
+                  ? _accessPasswordController.text.trim()
+                  : '')  // empty string triggers auto-generation in DB trigger
               : null,
         );
       }
@@ -797,11 +836,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 icon: const Icon(Icons.close),
                 onPressed: () => Navigator.of(context).pop(),
               ),
-        actions: [
-          _VisibilityToggle(
-            isPublic: _isPublic,
-            onChanged: (value) => setState(() => _isPublic = value),
-          ),
+        actions: const [
           const SizedBox(width: 8),
         ],
       ),
@@ -898,39 +933,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
     return Column(
       key: const ValueKey('design'),
       children: [
-        // Private event info banner
-        if (!_isPublic) ...[
-          const SizedBox(height: 8),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.lock_outline,
-                  size: 20,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    L.tr('create_private_event_info'),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
         const SizedBox(height: 8),
         // Event name input at the top
         TextField(
@@ -1299,6 +1301,86 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
       key: const ValueKey('details'),
       children: [
         const SizedBox(height: 8),
+        // ── Public / Private toggle ──
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _isPublic = !_isPublic),
+                child: Row(
+                  children: [
+                    Icon(
+                      _isPublic ? Icons.public : Icons.lock_outline,
+                      size: 20,
+                      color: colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isPublic ? L.tr('create_public') : L.tr('create_private'),
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _isPublic
+                                ? 'Anyone can discover this event'
+                                : 'Only people with the invite code can find it',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: 28,
+                      child: FittedBox(
+                        child: Switch(
+                          value: !_isPublic,
+                          onChanged: (val) => setState(() => _isPublic = !val),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // ── Access Password ──
+              const Divider(height: 24),
+              _AccessPasswordSection(
+                hasPassword: _hasAccessPassword,
+                useCustomPassword: _useCustomPassword,
+                passwordController: _accessPasswordController,
+                onToggle: (enabled) {
+                  setState(() {
+                    _hasAccessPassword = enabled;
+                    if (enabled && _accessPasswordController.text.isEmpty) {
+                      _accessPasswordController.text = _generatePassword();
+                    }
+                  });
+                },
+                onCustomToggle: (custom) {
+                  setState(() {
+                    _useCustomPassword = custom;
+                    if (!custom) {
+                      _accessPasswordController.text = _generatePassword();
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
         // Event format selector
         Container(
           padding: const EdgeInsets.all(16),
@@ -1469,112 +1551,6 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           ),
           const SizedBox(height: 16),
         ],
-        // Description card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.notes_outlined, size: 20, color: colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    L.tr('create_description'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: InputDecoration(
-                  hintText: L.tr('create_description_hint'),
-                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.3),
-                  ),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                textCapitalization: TextCapitalization.sentences,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Website URL (Pro+ gated)
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.language, size: 20, color: colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    L.tr('Website'),
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  if (!TierLimits.canCustomizeBranding(AppState().tier)) ...[
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Pro',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _websiteUrlController,
-                enabled: TierLimits.canCustomizeBranding(AppState().tier),
-                decoration: InputDecoration(
-                  hintText: 'https://your-event-website.com',
-                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.3),
-                  ),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  disabledBorder: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-                keyboardType: TextInputType.url,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
         // Date & Time card
         Container(
           padding: const EdgeInsets.all(16),
@@ -1757,19 +1733,23 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           if (_isRecurring) ...[
             const SizedBox(height: 12),
             // Frequency selector
-            SegmentedButton<RecurrenceType>(
-              segments: [
-                ButtonSegment(value: RecurrenceType.daily, label: Text(L.tr('create_daily'))),
-                ButtonSegment(value: RecurrenceType.weekly, label: Text(L.tr('create_weekly'))),
-                ButtonSegment(value: RecurrenceType.biweekly, label: Text(L.tr('create_biweekly'))),
-                ButtonSegment(value: RecurrenceType.monthly, label: Text(L.tr('create_monthly'))),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final type in RecurrenceType.values)
+                  ChoiceChip(
+                    label: Text(switch (type) {
+                      RecurrenceType.daily => L.tr('create_daily'),
+                      RecurrenceType.weekly => L.tr('create_weekly'),
+                      RecurrenceType.biweekly => L.tr('create_biweekly'),
+                      RecurrenceType.monthly => L.tr('create_monthly'),
+                    }),
+                    selected: _recurrenceType == type,
+                    onSelected: (_) => setState(() => _recurrenceType = type),
+                    visualDensity: VisualDensity.compact,
+                  ),
               ],
-              selected: {_recurrenceType},
-              onSelectionChanged: (set) =>
-                  setState(() => _recurrenceType = set.first),
-              style: SegmentedButton.styleFrom(
-                textStyle: theme.textTheme.bodySmall,
-              ),
             ),
             const SizedBox(height: 12),
 
@@ -1925,6 +1905,113 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
           onTagsChanged: (tags) => setState(() => _selectedTags = tags),
           userTier: tier,
         ),
+        const SizedBox(height: 16),
+        // ── Description ──
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.notes_outlined, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    L.tr('create_description'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _descriptionController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: L.tr('create_description_hint'),
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                textCapitalization: TextCapitalization.sentences,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // ── Website URL (Pro+ gated) ──
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.language, size: 20, color: colorScheme.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    L.tr('Website'),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (!TierLimits.canCustomizeBranding(AppState().tier)) ...[
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Pro',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _websiteUrlController,
+                enabled: TierLimits.canCustomizeBranding(AppState().tier),
+                decoration: InputDecoration(
+                  hintText: 'https://your-event-website.com',
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+                keyboardType: TextInputType.url,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
       ],
     );
   }
@@ -2020,6 +2107,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
               onSectionChanged: (sectionId) => setState(() => ticketType.venueSectionId = sectionId),
               onCategoryChanged: (cat) => setState(() => ticketType.category = cat),
               onItemIconChanged: (icon) => setState(() => ticketType.itemIcon = icon),
+              onHiddenCodeChanged: (code) => setState(() => ticketType.accessPassword = code),
             ),
           );
         }),
@@ -2059,6 +2147,7 @@ class _CreateEventScreenState extends ConsumerState<CreateEventScreen> {
                 onSectionChanged: (_) {},
                 onCategoryChanged: (cat) => setState(() => ticketType.category = cat),
                 onItemIconChanged: (icon) => setState(() => ticketType.itemIcon = icon),
+                onHiddenCodeChanged: (code) => setState(() => ticketType.accessPassword = code),
               ),
             );
           }),
@@ -2132,6 +2221,7 @@ class _TicketTypeRow extends StatelessWidget {
   final ValueChanged<String?> onSectionChanged;
   final ValueChanged<String>? onCategoryChanged;
   final ValueChanged<String?>? onItemIconChanged;
+  final ValueChanged<String?>? onHiddenCodeChanged;
 
   const _TicketTypeRow({
     required this.ticketType,
@@ -2145,6 +2235,7 @@ class _TicketTypeRow extends StatelessWidget {
     required this.onSectionChanged,
     this.onCategoryChanged,
     this.onItemIconChanged,
+    this.onHiddenCodeChanged,
   });
 
   @override
@@ -2416,6 +2507,96 @@ class _TicketTypeRow extends StatelessWidget {
                 ),
               ],
             ),
+          ],
+          // ── Hidden ticket toggle ──
+          if (onHiddenCodeChanged != null) ...[
+            Divider(
+              height: 20,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+            ),
+            Row(
+              children: [
+                Icon(
+                  ticketType.accessPassword != null
+                      ? Icons.visibility_off
+                      : Icons.visibility,
+                  size: 16,
+                  color: ticketType.accessPassword != null
+                      ? Colors.amber.shade700
+                      : colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ticketType.accessPassword != null
+                            ? 'Hidden \u2022 Code: ${ticketType.accessPassword}'
+                            : 'Public ticket',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: ticketType.accessPassword != null
+                              ? Colors.amber.shade700
+                              : colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: ticketType.accessPassword != null
+                              ? 'monospace'
+                              : null,
+                        ),
+                      ),
+                      if (ticketType.accessPassword != null)
+                        Text(
+                          'Buyers need this code to see this ticket',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 10,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  height: 24,
+                  child: FittedBox(
+                    child: Switch(
+                      value: ticketType.accessPassword != null,
+                      onChanged: (hidden) {
+                        if (hidden) {
+                          const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+                          final rng = Random();
+                          final code = String.fromCharCodes(
+                            Iterable.generate(5, (_) => chars.codeUnitAt(rng.nextInt(chars.length))),
+                          );
+                          onHiddenCodeChanged!(code);
+                        } else {
+                          onHiddenCodeChanged!(null);
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Editable code field when hidden
+            if (ticketType.accessPassword != null) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: TextEditingController(text: ticketType.accessPassword),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontFamily: 'monospace',
+                  letterSpacing: 2,
+                ),
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  labelText: 'Custom code',
+                  labelStyle: theme.textTheme.labelSmall,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                onChanged: (v) => onHiddenCodeChanged!(v.isNotEmpty ? v : null),
+              ),
+            ],
           ],
         ],
       ),
@@ -3610,6 +3791,152 @@ class _TagChip extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Section for toggling and configuring event access password.
+/// Designed to sit inside a parent container (no outer margin/border).
+class _AccessPasswordSection extends StatelessWidget {
+  final bool hasPassword;
+  final bool useCustomPassword;
+  final TextEditingController passwordController;
+  final ValueChanged<bool> onToggle;
+  final ValueChanged<bool> onCustomToggle;
+
+  const _AccessPasswordSection({
+    required this.hasPassword,
+    required this.useCustomPassword,
+    required this.passwordController,
+    required this.onToggle,
+    required this.onCustomToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final passwordText = passwordController.text;
+    final labelText = hasPassword && passwordText.isNotEmpty
+        ? 'Password: $passwordText'
+        : 'Password Protected';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Toggle row
+        GestureDetector(
+          onTap: () => onToggle(!hasPassword),
+          child: Row(
+            children: [
+              Icon(
+                hasPassword ? Icons.lock : Icons.lock_open,
+                size: 20,
+                color: hasPassword
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      labelText,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: hasPassword
+                            ? colorScheme.primary
+                            : colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: hasPassword && passwordText.isNotEmpty
+                            ? 'monospace'
+                            : null,
+                      ),
+                    ),
+                    if (hasPassword)
+                      Text(
+                        'Buyers must enter this to purchase',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: 24,
+                child: FittedBox(
+                  child: Switch(
+                    value: hasPassword,
+                    onChanged: onToggle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Custom password toggle + field
+        if (hasPassword) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onCustomToggle(!useCustomPassword),
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit, size: 16, color: colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Set custom password',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 20,
+                child: FittedBox(
+                  child: Switch(
+                    value: useCustomPassword,
+                    onChanged: onCustomToggle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (useCustomPassword) ...[
+            const SizedBox(height: 8),
+            TextField(
+              controller: passwordController,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontFamily: 'monospace',
+                letterSpacing: 2,
+              ),
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(
+                hintText: 'Enter password...',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  fontFamily: 'monospace',
+                ),
+              ),
+              onChanged: (_) {
+                // Force rebuild to update the label text
+                (context as Element).markNeedsBuild();
+              },
+            ),
+          ],
+        ],
+      ],
     );
   }
 }

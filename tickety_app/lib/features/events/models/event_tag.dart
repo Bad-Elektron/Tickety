@@ -276,6 +276,11 @@ enum AutoBadge {
     label: 'Sold Out',
     icon: Icons.block,
     color: Color(0xFF6B7280),
+  ),
+  recurring(
+    label: 'Recurring',
+    icon: Icons.repeat,
+    color: Color(0xFF8B5CF6),
   );
 
   const AutoBadge({
@@ -289,8 +294,14 @@ enum AutoBadge {
   final Color color;
 
   /// Compute badges from EventModel fields alone (only "New" is reliable).
-  static List<AutoBadge> forEvent({required DateTime? createdAt}) {
+  static List<AutoBadge> forEvent({
+    required DateTime? createdAt,
+    bool isPartOfSeries = false,
+  }) {
     final badges = <AutoBadge>[];
+    if (isPartOfSeries) {
+      badges.add(AutoBadge.recurring);
+    }
     if (createdAt != null) {
       final daysSinceCreation = DateTime.now().difference(createdAt).inDays;
       if (daysSinceCreation <= 7) {

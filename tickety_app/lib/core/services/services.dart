@@ -7,6 +7,7 @@ export 'checkin_sync_service.dart';
 export 'exchange_rate_service.dart';
 export 'cardano_wallet_service.dart';
 export 'offline_checkin_service.dart';
+export 'password_cache_service.dart';
 export 'google_places_service.dart';
 export 'nfc_service.dart';
 export 'notification_service.dart';

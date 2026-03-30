@@ -1,6 +1,7 @@
 /// Core utility functions.
 library;
 
+export 'auth_gate.dart';
 export 'currency_formatter.dart';
 export 'feature_gate.dart';
 export 'rate_limiter.dart';

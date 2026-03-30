@@ -251,6 +251,7 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       state = state.copyWith(
         notifications: updatedNotifications,
         unreadCount: 0,
+        badgeCount: 0,
       );
     } catch (e, s) {
       AppLogger.error('Failed to mark all notifications as read', error: e, stackTrace: s, tag: _tag);

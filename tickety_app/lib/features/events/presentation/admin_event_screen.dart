@@ -287,6 +287,14 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                     ),
                     const SizedBox(height: 16),
                   ],
+                  // Access password card
+                  if (event.isPasswordProtected) ...[
+                    _AccessPasswordCard(
+                      password: event.accessPassword!,
+                      eventTitle: event.title,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   // Recurring series banner
                   if (event.isPartOfSeries) ...[
                     Container(
@@ -559,6 +567,14 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
                         : L.tr('admin_cash_sales_enable'),
                     color: Colors.green,
                     onTap: () => _showCashSalesSheet(context),
+                  ),
+                  const SizedBox(height: 24),
+                  // ── Cancel Event ──
+                  _CancelEventButton(
+                    event: event,
+                    onCancelled: () {
+                      Navigator.of(context).pop(); // Return to My Events
+                    },
                   ),
                   const SizedBox(height: 32),
                 ],
@@ -1592,6 +1608,243 @@ class _InviteCodeCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AccessPasswordCard extends StatelessWidget {
+  final String password;
+  final String eventTitle;
+
+  const _AccessPasswordCard({
+    required this.password,
+    required this.eventTitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.amber.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.lock,
+                color: Colors.amber.shade700,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Event Password',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.amber.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            password,
+            style: theme.textTheme.headlineMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+              fontFamily: 'monospace',
+              letterSpacing: 4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Share this with buyers so they can purchase tickets',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: password));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Password copied'),
+                        behavior: SnackBarBehavior.floating,
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: Text(L.tr('copy')),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Share.share(
+                      'The password for "$eventTitle" on Tickety is: $password',
+                    );
+                  },
+                  icon: const Icon(Icons.share, size: 18),
+                  label: Text(L.tr('share')),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CancelEventButton extends StatefulWidget {
+  final EventModel event;
+  final VoidCallback onCancelled;
+
+  const _CancelEventButton({
+    required this.event,
+    required this.onCancelled,
+  });
+
+  @override
+  State<_CancelEventButton> createState() => _CancelEventButtonState();
+}
+
+class _CancelEventButtonState extends State<_CancelEventButton> {
+  bool _isCancelling = false;
+
+  Future<void> _confirmCancel() async {
+    final theme = Theme.of(context);
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: Icon(Icons.warning_amber_rounded, size: 40, color: Colors.red.shade400),
+        title: const Text('Cancel Event?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This will permanently cancel "${widget.event.title}" and:',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 12),
+            _bulletPoint('Automatically refund all ticket purchases'),
+            _bulletPoint('Cancel all valid tickets'),
+            _bulletPoint('Remove all resale listings'),
+            _bulletPoint('Cancel all waitlist entries'),
+            const SizedBox(height: 12),
+            Text(
+              'This action cannot be undone.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.red,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep Event'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel Event'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isCancelling = true);
+
+    try {
+      final repo = SupabaseEventRepository();
+      final result = await repo.cancelEvent(
+        widget.event.id,
+        reason: 'Cancelled by organizer',
+      );
+
+      final refunded = result['refunded'] ?? 0;
+      final failed = result['failed'] ?? 0;
+      final skipped = result['skipped'] ?? 0;
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Event cancelled. $refunded refunded'
+            '${skipped > 0 ? ', $skipped free tickets cancelled' : ''}'
+            '${failed > 0 ? ', $failed refunds failed' : ''}',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+
+      widget.onCancelled();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isCancelling = false);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to cancel: $e'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Widget _bulletPoint(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('\u2022 ', style: TextStyle(fontWeight: FontWeight.bold)),
+          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      onPressed: _isCancelling ? null : _confirmCancel,
+      icon: _isCancelling
+          ? const SizedBox(
+              width: 18, height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.cancel_outlined, size: 20),
+      label: Text(_isCancelling ? 'Cancelling...' : 'Cancel Event'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.red,
+        side: const BorderSide(color: Colors.red),
+        minimumSize: const Size.fromHeight(48),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
       ),
     );
   }

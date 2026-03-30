@@ -97,8 +97,8 @@ class EventsNotifier extends StateNotifier<EventsState> {
       );
 
       state = state.copyWith(
-        events: result.items,
-        featuredEvents: featured,
+        events: _deduplicateSeries(result.items),
+        featuredEvents: _deduplicateSeries(featured),
         isLoading: false,
         isUsingPlaceholders: false,
         currentPage: 0,
@@ -147,7 +147,7 @@ class EventsNotifier extends StateNotifier<EventsState> {
       );
 
       state = state.copyWith(
-        events: [...state.events, ...result.items],
+        events: _deduplicateSeries([...state.events, ...result.items]),
         isLoadingMore: false,
         currentPage: nextPage,
         hasMore: result.hasMore,
@@ -166,6 +166,23 @@ class EventsNotifier extends StateNotifier<EventsState> {
         error: appError.userMessage,
       );
     }
+  }
+
+  /// Deduplicate recurring series: keep only the nearest upcoming occurrence per series_id.
+  List<EventModel> _deduplicateSeries(List<EventModel> events) {
+    final result = <EventModel>[];
+    final seenSeries = <String>{};
+
+    for (final event in events) {
+      if (!event.isPartOfSeries) {
+        result.add(event);
+      } else if (!seenSeries.contains(event.seriesId)) {
+        seenSeries.add(event.seriesId!);
+        result.add(event);
+      }
+      // Skip subsequent occurrences of the same series
+    }
+    return result;
   }
 
   /// Refresh events (pull-to-refresh).

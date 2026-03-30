@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/graphics/graphics.dart';
+import '../../../core/providers/providers.dart';
 import '../../../core/state/state.dart';
 
 /// A circular avatar widget with a gradient background.
 ///
 /// Used in the app header for profile navigation. Features
 /// circular ink splash feedback and customizable size.
-class ProfileAvatar extends StatelessWidget {
+class ProfileAvatar extends ConsumerWidget {
   /// Callback when the avatar is tapped.
   final VoidCallback? onTap;
 
@@ -25,9 +27,10 @@ class ProfileAvatar extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final config = NoisePresets.vibrantEvents(seed);
     final appState = AppState();
+    final avatarUrl = ref.watch(authProvider).avatarUrl;
 
     return ListenableBuilder(
       listenable: appState,
@@ -49,11 +52,19 @@ class ProfileAvatar extends StatelessWidget {
                       height: size,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: config.colors,
-                        ),
+                        gradient: avatarUrl == null
+                            ? LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: config.colors,
+                              )
+                            : null,
+                        image: avatarUrl != null
+                            ? DecorationImage(
+                                image: NetworkImage(avatarUrl),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
                         boxShadow: [
                           BoxShadow(
                             color: config.colors.first.withValues(alpha: 0.3),
@@ -62,13 +73,15 @@ class ProfileAvatar extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: Center(
-                        child: Icon(
-                          Icons.person_outline,
-                          color: const Color(0xE6FFFFFF),
-                          size: size * 0.5,
-                        ),
-                      ),
+                      child: avatarUrl == null
+                          ? Center(
+                              child: Icon(
+                                Icons.person_outline,
+                                color: const Color(0xE6FFFFFF),
+                                size: size * 0.5,
+                              ),
+                            )
+                          : null,
                     ),
                     // Tier badge
                     Positioned(

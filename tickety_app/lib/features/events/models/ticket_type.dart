@@ -52,6 +52,11 @@ class TicketType {
   /// Short description of the redeemable item.
   final String? itemDescription;
 
+  /// Access password for this specific ticket type.
+  /// If set, buyers must enter this password (or the event master password)
+  /// to purchase this ticket type.
+  final String? accessPassword;
+
   /// When this ticket type was created.
   final DateTime createdAt;
 
@@ -71,11 +76,18 @@ class TicketType {
     this.category = 'entry',
     this.itemIcon,
     this.itemDescription,
+    this.accessPassword,
     required this.createdAt,
   });
 
   /// Whether this is a redeemable item (not event entry).
   bool get isRedeemable => category == 'redeemable';
+
+  /// Whether this ticket type requires a password to purchase.
+  bool get isPasswordProtected => accessPassword != null && accessPassword!.isNotEmpty;
+
+  /// Whether this ticket type is hidden (requires a code to discover in the buy sheet).
+  bool get isHidden => accessPassword != null && accessPassword!.isNotEmpty;
 
   /// Whether this ticket type has limited quantity.
   bool get hasLimit => maxQuantity != null;
@@ -136,6 +148,7 @@ class TicketType {
       category: json['category'] as String? ?? 'entry',
       itemIcon: json['item_icon'] as String?,
       itemDescription: json['item_description'] as String?,
+      accessPassword: json['access_password'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -157,6 +170,7 @@ class TicketType {
       'category': category,
       if (itemIcon != null) 'item_icon': itemIcon,
       if (itemDescription != null) 'item_description': itemDescription,
+      if (accessPassword != null) 'access_password': accessPassword,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -179,6 +193,7 @@ class TicketType {
     String? category,
     String? itemIcon,
     String? itemDescription,
+    String? accessPassword,
     DateTime? createdAt,
   }) {
     return TicketType(
@@ -197,6 +212,7 @@ class TicketType {
       category: category ?? this.category,
       itemIcon: itemIcon ?? this.itemIcon,
       itemDescription: itemDescription ?? this.itemDescription,
+      accessPassword: accessPassword ?? this.accessPassword,
       createdAt: createdAt ?? this.createdAt,
     );
   }

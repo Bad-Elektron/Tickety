@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../../core/services/services.dart';
+import '../../../core/utils/auth_gate.dart';
 import '../../../shared/widgets/widgets.dart';
 import '../../merch/models/merch_product.dart';
 import '../../merch/presentation/product_detail_screen.dart';
@@ -209,6 +210,46 @@ class EventDetailsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Cancelled event banner
+                  if (event.isSuspended) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cancel, color: Colors.red, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'EVENT CANCELLED',
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (event.statusReason != null)
+                                  Text(
+                                    event.statusReason!,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   // Private event badge
                   if (event.isPrivate) ...[
                     Container(
@@ -689,6 +730,7 @@ class EventDetailsScreen extends ConsumerWidget {
         eventId: event.id,
         fallbackPriceInCents: event.priceInCents,
         onBuyPressed: () {
+          if (!requireAuth(context)) return;
           _showBuyTicketSheet(context);
         },
       ),
@@ -961,15 +1003,61 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
   bool _loadingVenue = false;
   String? _highlightedSectionId;
 
+  // Password gate state
+  bool _eventPasswordUnlocked = false;
+  final _passwordController = TextEditingController();
+  String? _passwordError;
+
+  // Hidden ticket codes — revealed ticket type IDs
+  final Set<String> _revealedHiddenTickets = {};
+  final _hiddenCodeController = TextEditingController();
+  String? _hiddenCodeError;
+
   bool get _hasVenue => widget.event.venueId != null;
   bool get _hasTicketTypes => _ticketTypes.isNotEmpty;
 
   int get _pricePerTicketCents => widget.event.priceInCents ?? 0;
 
+  /// Whether the event-level password gate is blocking.
+  bool get _needsEventPassword =>
+      widget.event.isPasswordProtected && !_eventPasswordUnlocked;
+
+  /// Whether there are any hidden tickets that haven't been revealed yet.
+  bool get _hasHiddenTickets =>
+      _ticketTypes.any((t) => t.isHidden && !_revealedHiddenTickets.contains(t.id));
+
+  /// Filter: visible tickets = not hidden, OR revealed via code.
+  bool _isTicketVisible(TicketType t) {
+    if (!t.isHidden) return true;
+    return _revealedHiddenTickets.contains(t.id);
+  }
+
   @override
   void initState() {
     super.initState();
     _loadTicketData();
+    _loadCachedPasswords();
+  }
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    _hiddenCodeController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCachedPasswords() async {
+    final cache = PasswordCacheService.instance;
+    if (await cache.hasEventPassword(widget.event.id)) {
+      setState(() => _eventPasswordUnlocked = true);
+    }
+    // Restore revealed hidden tickets from cache
+    for (final t in _ticketTypes) {
+      if (t.isHidden && await cache.hasTicketPassword(widget.event.id, t.id)) {
+        _revealedHiddenTickets.add(t.id);
+      }
+    }
+    if (mounted && _revealedHiddenTickets.isNotEmpty) setState(() {});
   }
 
   Future<void> _loadTicketData() async {
@@ -999,10 +1087,24 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
           }
           _loadingVenue = false;
         });
+        // Re-check cached hidden codes now that tickets are loaded
+        _restoreCachedHiddenCodes();
       }
     } catch (_) {
       if (mounted) setState(() => _loadingVenue = false);
     }
+  }
+
+  Future<void> _restoreCachedHiddenCodes() async {
+    final cache = PasswordCacheService.instance;
+    bool changed = false;
+    for (final t in _ticketTypes) {
+      if (t.isHidden && await cache.hasTicketPassword(widget.event.id, t.id)) {
+        _revealedHiddenTickets.add(t.id);
+        changed = true;
+      }
+    }
+    if (mounted && changed) setState(() {});
   }
 
   int _totalCents() {
@@ -1118,6 +1220,18 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
             ),
             const SizedBox(height: 20),
 
+            // ── Password gate ──
+            if (_needsEventPassword) ...[
+              _PasswordGateWidget(
+                label: 'This event requires a password',
+                controller: _passwordController,
+                error: _passwordError,
+                onSubmit: _tryEventPassword,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (!_needsEventPassword) ...[
             // Venue mini-map (when venue is linked)
             if (_hasVenue) ...[
               if (_loadingVenue)
@@ -1184,8 +1298,8 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
 
             // Ticket types with venue sections (when available)
             if (_hasTicketTypes) ...[
-              // Entry tickets
-              ..._ticketTypes.where((t) => !t.isRedeemable).map((t) {
+              // Entry tickets (only visible ones)
+              ..._ticketTypes.where((t) => !t.isRedeemable && _isTicketVisible(t)).map((t) {
                 final qty = _quantities[t.id] ?? 0;
                 final sectionName = _sectionNameFor(t);
                 final isHighlighted = t.venueSectionId != null &&
@@ -1257,6 +1371,15 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                       textAlign: TextAlign.center,
                     ),
                   ),
+              ],
+              // ── Hidden ticket code entry ──
+              if (_hasHiddenTickets) ...[
+                const SizedBox(height: 8),
+                _HiddenCodeEntryField(
+                  controller: _hiddenCodeController,
+                  error: _hiddenCodeError,
+                  onSubmit: _tryHiddenCode,
+                ),
               ],
               const SizedBox(height: 12),
               // Buy button for multi-type
@@ -1460,11 +1583,77 @@ class _BuyTicketSheetState extends ConsumerState<_BuyTicketSheet> {
                 );
               },
             ),
+            ], // end if (!_needsEventPassword)
           ],
         ),
       ),
       ),
     );
+  }
+
+  void _tryEventPassword() {
+    final entered = _passwordController.text.trim();
+    if (entered.isEmpty) {
+      setState(() => _passwordError = 'Please enter a password');
+      return;
+    }
+
+    // Check against event master password
+    if (entered.toUpperCase() == widget.event.accessPassword?.toUpperCase()) {
+      setState(() {
+        _eventPasswordUnlocked = true;
+        _passwordError = null;
+        _passwordController.clear();
+      });
+      // Cache it locally
+      PasswordCacheService.instance.saveEventPassword(widget.event.id, entered);
+      return;
+    }
+
+    // Check against any hidden ticket code (reveals it)
+    for (final t in _ticketTypes) {
+      if (t.isHidden &&
+          entered.toUpperCase() == t.accessPassword?.toUpperCase()) {
+        setState(() {
+          _revealedHiddenTickets.add(t.id);
+          _passwordError = null;
+          _passwordController.clear();
+        });
+        PasswordCacheService.instance.saveTicketPassword(widget.event.id, t.id, entered);
+        return;
+      }
+    }
+
+    setState(() => _passwordError = 'Incorrect password');
+  }
+
+  void _tryHiddenCode() {
+    final entered = _hiddenCodeController.text.trim();
+    if (entered.isEmpty) {
+      setState(() => _hiddenCodeError = 'Enter a code');
+      return;
+    }
+
+    // Check each hidden ticket's code
+    bool found = false;
+    for (final t in _ticketTypes) {
+      if (t.isHidden &&
+          !_revealedHiddenTickets.contains(t.id) &&
+          entered.toUpperCase() == t.accessPassword?.toUpperCase()) {
+        _revealedHiddenTickets.add(t.id);
+        PasswordCacheService.instance.saveTicketPassword(widget.event.id, t.id, entered);
+        found = true;
+      }
+    }
+
+    if (found) {
+      setState(() {
+        _hiddenCodeError = null;
+        _hiddenCodeController.clear();
+      });
+    } else {
+      setState(() => _hiddenCodeError = 'No ticket found with that code');
+    }
   }
 
   /// Checks if any selected ticket types are for seated sections with generated seats.
@@ -1851,6 +2040,151 @@ class _RedeemableItemCard extends StatelessWidget {
 }
 
 /// Card for a specific ticket type with venue section info.
+/// Password entry widget shown when event requires a password.
+class _PasswordGateWidget extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String? error;
+  final VoidCallback onSubmit;
+
+  const _PasswordGateWidget({
+    required this.label,
+    required this.controller,
+    this.error,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.lock, size: 32, color: Colors.amber.shade700),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            textAlign: TextAlign.center,
+            textCapitalization: TextCapitalization.characters,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontFamily: 'monospace',
+              letterSpacing: 4,
+              fontWeight: FontWeight.bold,
+            ),
+            decoration: InputDecoration(
+              hintText: 'ENTER PASSWORD',
+              hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                fontFamily: 'monospace',
+                letterSpacing: 2,
+              ),
+              border: const OutlineInputBorder(),
+              errorText: error,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            ),
+            onSubmitted: (_) => onSubmit(),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: onSubmit,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Unlock'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline field for entering a hidden ticket code.
+class _HiddenCodeEntryField extends StatelessWidget {
+  final TextEditingController controller;
+  final String? error;
+  final VoidCallback onSubmit;
+
+  const _HiddenCodeEntryField({
+    required this.controller,
+    this.error,
+    required this.onSubmit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.amber.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.vpn_key_outlined, size: 18, color: Colors.amber.shade700),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              textCapitalization: TextCapitalization.characters,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontFamily: 'monospace',
+                letterSpacing: 2,
+              ),
+              decoration: InputDecoration(
+                hintText: 'Enter code for hidden tickets',
+                hintStyle: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
+                errorText: error,
+                errorStyle: const TextStyle(fontSize: 10),
+              ),
+              onSubmitted: (_) => onSubmit(),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: onSubmit,
+            child: Icon(
+              Icons.arrow_forward_rounded,
+              size: 20,
+              color: Colors.amber.shade700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VenueTicketTypeCard extends StatelessWidget {
   final TicketType ticketType;
   final int quantity;

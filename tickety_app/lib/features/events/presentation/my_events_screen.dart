@@ -630,35 +630,197 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
   }
 
   Widget _buildCreatedEventsList(MyEventsState state) {
+    // Group series events: show only nearest occurrence per series_id
+    final displayEvents = <EventModel>[];
+    final seenSeries = <String>{};
+    final seriesCounts = <String, int>{};
+
+    // Count occurrences per series first
+    for (final e in state.events) {
+      if (e.isPartOfSeries) {
+        seriesCounts[e.seriesId!] = (seriesCounts[e.seriesId!] ?? 0) + 1;
+      }
+    }
+
+    // Deduplicate
+    for (final e in state.events) {
+      if (!e.isPartOfSeries) {
+        displayEvents.add(e);
+      } else if (!seenSeries.contains(e.seriesId)) {
+        seenSeries.add(e.seriesId!);
+        displayEvents.add(e);
+      }
+    }
+
     return RefreshIndicator(
       onRefresh: () => ref.read(myEventsProvider.notifier).refresh(),
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 8, bottom: 100),
-        itemCount: state.events.length + (state.hasMore ? 1 : 0),
+        itemCount: displayEvents.length + (state.hasMore ? 1 : 0),
         itemBuilder: (context, index) {
-          // Show "Load more" button at the end
-          if (index == state.events.length) {
+          if (index == displayEvents.length) {
             return _buildLoadMoreButton(
               isLoading: state.isLoadingMore,
               onPressed: () => ref.read(myEventsProvider.notifier).loadMore(),
             );
           }
 
-          final event = state.events[index];
+          final event = displayEvents[index];
+          final occurrenceCount = event.isPartOfSeries
+              ? seriesCounts[event.seriesId!] ?? 1
+              : 0;
+
           return _MyEventCard(
             event: event,
-            badgeLabel: 'Admin',
-            badgeIcon: Icons.admin_panel_settings,
+            badgeLabel: event.isPartOfSeries ? 'Recurring' : 'Admin',
+            badgeIcon: event.isPartOfSeries ? Icons.repeat : Icons.admin_panel_settings,
+            badgeColor: event.isPartOfSeries ? const Color(0xFF8B5CF6) : null,
+            subtitle: event.isPartOfSeries
+                ? '$occurrenceCount dates \u2022 ${event.recurrenceType ?? 'recurring'}'
+                : null,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => AdminEventScreen(event: event),
-                ),
-              );
+              if (event.isPartOfSeries) {
+                _showMySeriesOccurrences(context, event);
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => AdminEventScreen(event: event),
+                  ),
+                );
+              }
             },
           );
         },
       ),
+    );
+  }
+
+  void _showMySeriesOccurrences(BuildContext context, EventModel event) {
+    final repo = SupabaseEventRepository();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final colorScheme = theme.colorScheme;
+
+        return FutureBuilder<List<SeriesOccurrence>>(
+          future: repo.getSeriesOccurrences(event.seriesId!),
+          builder: (ctx, snapshot) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 36, height: 4,
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Icon(Icons.repeat, size: 20, color: Color(0xFF8B5CF6)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          event.title,
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Select a date to manage',
+                      style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (!snapshot.hasData)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.4),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: snapshot.data!.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (ctx, index) {
+                          final occ = snapshot.data![index];
+                          final isPast = occ.date.isBefore(DateTime.now());
+                          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                          const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Container(
+                              width: 44, height: 44,
+                              decoration: BoxDecoration(
+                                color: isPast
+                                    ? colorScheme.surfaceContainerHighest
+                                    : colorScheme.primaryContainer.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(months[occ.date.month - 1],
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: isPast ? colorScheme.onSurfaceVariant : colorScheme.primary,
+                                      fontWeight: FontWeight.w600, fontSize: 10,
+                                    ),
+                                  ),
+                                  Text('${occ.date.day}',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: isPast ? colorScheme.onSurfaceVariant : colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            title: Text(
+                              '${days[occ.date.weekday - 1]}, ${months[occ.date.month - 1]} ${occ.date.day}, ${occ.date.year}',
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: isPast ? colorScheme.onSurfaceVariant : null,
+                              ),
+                            ),
+                            trailing: Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              repo.getEventById(occ.id).then((fullEvent) {
+                                if (fullEvent != null && context.mounted) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => AdminEventScreen(event: fullEvent),
+                                    ),
+                                  );
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -683,31 +845,54 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
     );
   }
 
+  /// Dedup staff event list by series_id, keeping nearest occurrence.
+  List<_StaffEventData> _deduplicateStaffSeries(List<_StaffEventData> events) {
+    final result = <_StaffEventData>[];
+    final seenSeries = <String>{};
+    for (final data in events) {
+      if (!data.event.isPartOfSeries) {
+        result.add(data);
+      } else if (!seenSeries.contains(data.event.seriesId)) {
+        seenSeries.add(data.event.seriesId!);
+        result.add(data);
+      }
+    }
+    return result;
+  }
+
   Widget _buildUsheringEventsList(List<_StaffEventData> events) {
-    // Staff events are typically small datasets, no pagination needed
+    final displayEvents = _deduplicateStaffSeries(events);
+
     return RefreshIndicator(
       onRefresh: _loadStaffEvents,
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 8, bottom: 24),
-        itemCount: events.length,
+        itemCount: displayEvents.length,
         itemBuilder: (context, index) {
-          final data = events[index];
+          final data = displayEvents[index];
+          final isRecurring = data.event.isPartOfSeries;
+
           return _MyEventCard(
             event: data.event,
-            badgeLabel: 'Usher',
-            badgeIcon: Icons.badge_outlined,
-            badgeColor: Theme.of(context).colorScheme.tertiary,
-            showRoleSwitch: data.canSell,
-            showDoorListStatus: true,
+            badgeLabel: isRecurring ? 'Recurring' : 'Usher',
+            badgeIcon: isRecurring ? Icons.repeat : Icons.badge_outlined,
+            badgeColor: isRecurring ? const Color(0xFF8B5CF6) : Theme.of(context).colorScheme.tertiary,
+            showRoleSwitch: !isRecurring && data.canSell,
+            showDoorListStatus: !isRecurring,
+            subtitle: isRecurring ? '${data.event.recurrenceType ?? 'recurring'}' : null,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => UsherEventScreen(
-                    event: data.event,
-                    canSwitchToSelling: data.canSell,
+              if (isRecurring) {
+                _showMySeriesOccurrences(context, data.event);
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => UsherEventScreen(
+                      event: data.event,
+                      canSwitchToSelling: data.canSell,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
           );
         },
@@ -758,29 +943,37 @@ class _MyEventsScreenState extends ConsumerState<MyEventsScreen>
   }
 
   Widget _buildSellingEventsList(List<_StaffEventData> events) {
-    // Staff events are typically small datasets, no pagination needed
+    final displayEvents = _deduplicateStaffSeries(events);
+
     return RefreshIndicator(
       onRefresh: _loadStaffEvents,
       child: ListView.builder(
         padding: const EdgeInsets.only(top: 8, bottom: 24),
-        itemCount: events.length,
+        itemCount: displayEvents.length,
         itemBuilder: (context, index) {
-          final data = events[index];
+          final data = displayEvents[index];
+          final isRecurring = data.event.isPartOfSeries;
+
           return _MyEventCard(
             event: data.event,
-            badgeLabel: 'Vendor',
-            badgeIcon: Icons.point_of_sale,
-            badgeColor: Colors.green,
-            showRoleSwitch: data.canUsher,
+            badgeLabel: isRecurring ? 'Recurring' : 'Vendor',
+            badgeIcon: isRecurring ? Icons.repeat : Icons.point_of_sale,
+            badgeColor: isRecurring ? const Color(0xFF8B5CF6) : Colors.green,
+            showRoleSwitch: !isRecurring && data.canUsher,
+            subtitle: isRecurring ? '${data.event.recurrenceType ?? 'recurring'}' : null,
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => VendorEventScreen(
-                    event: data.event,
-                    canSwitchToUsher: data.canUsher,
+              if (isRecurring) {
+                _showMySeriesOccurrences(context, data.event);
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => VendorEventScreen(
+                      event: data.event,
+                      canSwitchToUsher: data.canUsher,
+                    ),
                   ),
-                ),
-              );
+                );
+              }
             },
           );
         },
@@ -807,6 +1000,7 @@ class _MyEventCard extends ConsumerWidget {
   final String badgeLabel;
   final IconData badgeIcon;
   final Color? badgeColor;
+  final String? subtitle;
   final VoidCallback onTap;
   final bool showRoleSwitch;
   final bool showDoorListStatus;
@@ -817,6 +1011,7 @@ class _MyEventCard extends ConsumerWidget {
     required this.badgeIcon,
     required this.onTap,
     this.badgeColor,
+    this.subtitle,
     this.showRoleSwitch = false,
     this.showDoorListStatus = false,
   });
@@ -943,6 +1138,16 @@ class _MyEventCard extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: const Color(0xFF8B5CF6),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     // Stats row
                     Wrap(

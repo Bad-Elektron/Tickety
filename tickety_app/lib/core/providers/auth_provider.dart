@@ -17,6 +17,7 @@ class AuthState {
   final bool isRateLimited;
   final Duration? lockoutRemaining;
   final String? handle;
+  final String? avatarUrl;
 
   const AuthState({
     this.user,
@@ -25,6 +26,7 @@ class AuthState {
     this.isRateLimited = false,
     this.lockoutRemaining,
     this.handle,
+    this.avatarUrl,
   });
 
   bool get isAuthenticated => user != null;
@@ -39,6 +41,7 @@ class AuthState {
     bool? isRateLimited,
     Duration? lockoutRemaining,
     String? handle,
+    String? avatarUrl,
     bool clearUser = false,
     bool clearError = false,
     bool clearLockout = false,
@@ -50,6 +53,7 @@ class AuthState {
       isRateLimited: clearLockout ? false : (isRateLimited ?? this.isRateLimited),
       lockoutRemaining: clearLockout ? null : (lockoutRemaining ?? this.lockoutRemaining),
       handle: clearUser ? null : (handle ?? this.handle),
+      avatarUrl: clearUser ? null : (avatarUrl ?? this.avatarUrl),
     );
   }
 }
@@ -95,20 +99,28 @@ class AuthNotifier extends StateNotifier<AuthState> {
     });
   }
 
-  /// Fetch the user's handle from the profiles table.
+  /// Fetch the user's handle and avatar from the profiles table.
   Future<void> _fetchHandle(String userId) async {
     try {
       final response = await SupabaseService.instance.client
           .from('profiles')
-          .select('handle')
+          .select('handle, avatar_url')
           .eq('id', userId)
           .maybeSingle();
-      if (response != null && response['handle'] != null) {
-        state = state.copyWith(handle: response['handle'] as String);
+      if (response != null) {
+        state = state.copyWith(
+          handle: response['handle'] as String?,
+          avatarUrl: response['avatar_url'] as String?,
+        );
       }
     } catch (e) {
       AppLogger.warning('Failed to fetch handle for user $userId', tag: _tag);
     }
+  }
+
+  /// Update avatar URL in state (called after upload).
+  void setAvatarUrl(String url) {
+    state = state.copyWith(avatarUrl: url);
   }
 
   @override

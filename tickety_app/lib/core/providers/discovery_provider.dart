@@ -116,7 +116,7 @@ class DiscoveryFeedNotifier extends StateNotifier<DiscoveryFeedState> {
       );
 
       state = state.copyWith(
-        events: events,
+        events: _deduplicateSeries(events),
         scores: scoreMap,
         isLoading: false,
         currentPage: 0,
@@ -161,7 +161,7 @@ class DiscoveryFeedNotifier extends StateNotifier<DiscoveryFeedState> {
       };
 
       state = state.copyWith(
-        events: [...state.events, ...newEvents],
+        events: _deduplicateSeries([...state.events, ...newEvents]),
         scores: newScoreMap,
         isLoadingMore: false,
         currentPage: nextPage,
@@ -180,6 +180,22 @@ class DiscoveryFeedNotifier extends StateNotifier<DiscoveryFeedState> {
         error: appError.userMessage,
       );
     }
+  }
+
+  /// Deduplicate recurring series: keep only the nearest upcoming occurrence per series_id.
+  List<EventModel> _deduplicateSeries(List<EventModel> events) {
+    final result = <EventModel>[];
+    final seenSeries = <String>{};
+
+    for (final event in events) {
+      if (!event.isPartOfSeries) {
+        result.add(event);
+      } else if (!seenSeries.contains(event.seriesId)) {
+        seenSeries.add(event.seriesId!);
+        result.add(event);
+      }
+    }
+    return result;
   }
 
   Future<void> refresh() => loadFeed();

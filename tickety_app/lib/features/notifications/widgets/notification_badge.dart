@@ -15,11 +15,13 @@ class NotificationBadge extends ConsumerWidget {
     this.size = 40,
     this.iconSize = 24,
     this.seed = 555,
+    this.onTap,
   });
 
   final double size;
   final double iconSize;
   final int seed;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,7 +40,7 @@ class NotificationBadge extends ConsumerWidget {
             Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: () {
+                onTap: onTap ?? () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const NotificationsScreen()),
                   );

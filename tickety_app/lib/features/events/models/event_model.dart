@@ -151,6 +151,10 @@ class EventModel {
   /// External website URL for the event (Pro+ feature).
   final String? websiteUrl;
 
+  /// Access password for password-protected events. Acts as master password
+  /// that unlocks all ticket types. Auto-generated or custom.
+  final String? accessPassword;
+
   const EventModel({
     required this.id,
     required this.title,
@@ -196,6 +200,7 @@ class EventModel {
     this.featuredAt,
     this.organizerId,
     this.websiteUrl,
+    this.accessPassword,
   });
 
   /// Whether this event has a real image or should use a noise background.
@@ -268,7 +273,10 @@ class EventModel {
   bool hasTag(String tagId) => tags.contains(tagId);
 
   /// Auto-badges computed from event data (e.g., "New" within 7 days).
-  List<AutoBadge> get autoBadges => AutoBadge.forEvent(createdAt: createdAt);
+  List<AutoBadge> get autoBadges => AutoBadge.forEvent(
+    createdAt: createdAt,
+    isPartOfSeries: isPartOfSeries,
+  );
 
   /// Formatted price string.
   String get formattedPrice {
@@ -294,6 +302,9 @@ class EventModel {
       _ => NoisePresets.darkMood(noiseSeed),
     };
   }
+
+  /// Whether this event requires a password to purchase tickets.
+  bool get isPasswordProtected => accessPassword != null && accessPassword!.isNotEmpty;
 
   /// Whether the event is pending review and not yet visible.
   bool get isPendingReview => status == 'pending_review';
@@ -350,6 +361,7 @@ class EventModel {
     DateTime? featuredAt,
     String? organizerId,
     String? websiteUrl,
+    String? accessPassword,
   }) {
     return EventModel(
       id: id ?? this.id,
@@ -396,6 +408,7 @@ class EventModel {
       featuredAt: featuredAt ?? this.featuredAt,
       organizerId: organizerId ?? this.organizerId,
       websiteUrl: websiteUrl ?? this.websiteUrl,
+      accessPassword: accessPassword ?? this.accessPassword,
     );
   }
 

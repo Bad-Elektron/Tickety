@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
 import '../../../core/graphics/graphics.dart';
@@ -243,7 +246,7 @@ class _TierBadge extends StatelessWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
+class _ProfileHeader extends ConsumerStatefulWidget {
   const _ProfileHeader({
     required this.authState,
     required this.tier,
@@ -253,63 +256,173 @@ class _ProfileHeader extends StatelessWidget {
   final AccountTier tier;
 
   @override
+  ConsumerState<_ProfileHeader> createState() => _ProfileHeaderState();
+}
+
+class _ProfileHeaderState extends ConsumerState<_ProfileHeader> {
+  bool _uploading = false;
+
+  Future<void> _pickAndUploadAvatar() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 85,
+    );
+    if (image == null || !mounted) return;
+
+    setState(() => _uploading = true);
+
+    try {
+      final bytes = await image.readAsBytes();
+      final ext = image.name.split('.').last;
+      final userId = widget.authState.userId!;
+      final path = '$userId/avatar.$ext';
+
+      await Supabase.instance.client.storage
+          .from('avatars')
+          .uploadBinary(path, bytes, fileOptions: const FileOptions(upsert: true));
+
+      final url = Supabase.instance.client.storage
+          .from('avatars')
+          .getPublicUrl(path);
+
+      // Bust cache by appending timestamp
+      final cachedUrl = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+
+      await Supabase.instance.client
+          .from('profiles')
+          .update({'avatar_url': cachedUrl})
+          .eq('id', userId);
+
+      ref.read(authProvider.notifier).setAvatarUrl(cachedUrl);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Avatar updated'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload: $e'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final config = NoisePresets.vibrantEvents(42);
     final theme = Theme.of(context);
-    final isAuthenticated = authState.isAuthenticated;
+    final isAuthenticated = widget.authState.isAuthenticated;
+    final avatarUrl = ref.watch(authProvider).avatarUrl;
 
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: config.colors,
+          GestureDetector(
+            onTap: isAuthenticated && !_uploading ? _pickAndUploadAvatar : null,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: avatarUrl == null
+                        ? LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: config.colors,
+                          )
+                        : null,
+                    image: avatarUrl != null
+                        ? DecorationImage(
+                            image: NetworkImage(avatarUrl),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
+                    boxShadow: [
+                      BoxShadow(
+                        color: config.colors.first.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: config.colors.first.withValues(alpha: 0.3),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+                  child: _uploading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : avatarUrl == null
+                          ? Icon(
+                              Icons.person_outline,
+                              color: Colors.white.withValues(alpha: 0.9),
+                              size: 48,
+                            )
+                          : null,
+                ),
+                // Camera edit badge
+                if (isAuthenticated)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: theme.scaffoldBackgroundColor,
+                          width: 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.camera_alt,
+                        size: 14,
+                        color: Colors.white,
+                      ),
                     ),
-                  ],
+                  ),
+                // Tier badge
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: _TierBadge(tier: widget.tier),
                 ),
-                child: Icon(
-                  Icons.person_outline,
-                  color: Colors.white.withValues(alpha: 0.9),
-                  size: 48,
-                ),
-              ),
-              // Tier badge
-              Positioned(
-                top: -4,
-                right: -4,
-                child: _TierBadge(tier: tier),
-              ),
-            ],
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           Text(
             isAuthenticated
-                ? (authState.displayName ?? 'User')
+                ? (widget.authState.displayName ?? 'User')
                 : L.tr('profile_guest'),
             style: theme.textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
-          if (isAuthenticated && authState.handle != null) ...[
+          if (isAuthenticated && widget.authState.handle != null) ...[
             const SizedBox(height: 2),
             Text(
-              authState.handle!,
+              widget.authState.handle!,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 fontWeight: FontWeight.w500,
@@ -319,7 +432,7 @@ class _ProfileHeader extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             isAuthenticated
-                ? (authState.email ?? '')
+                ? (widget.authState.email ?? '')
                 : L.tr('profile_sign_in_to_access'),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,

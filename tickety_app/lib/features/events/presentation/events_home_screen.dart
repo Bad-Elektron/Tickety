@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
+import '../../../core/utils/auth_gate.dart';
 import '../../external_events/external_events.dart';
 import '../../notifications/notifications.dart';
 import '../../profile/profile.dart';
@@ -14,9 +15,198 @@ import '../../venues/presentation/venues_screen.dart';
 import '../../wallet/wallet.dart';
 import '../data/supabase_event_repository.dart';
 import '../models/event_model.dart';
+import '../models/event_series.dart';
 import '../widgets/widgets.dart';
 import 'event_details_screen.dart';
 import 'my_events_screen.dart';
+
+/// Navigate to an event, showing a date picker for recurring events.
+void _navigateToEvent(BuildContext context, EventModel event) {
+  if (event.isPartOfSeries) {
+    _showSeriesDatePicker(context, event);
+  } else {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => EventDetailsScreen(event: event)),
+    );
+  }
+}
+
+/// Bottom sheet listing all occurrences of a recurring event.
+void _showSeriesDatePicker(BuildContext context, EventModel event) {
+  final repo = SupabaseEventRepository();
+
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) {
+      return FutureBuilder<List<SeriesOccurrence>>(
+        future: repo.getSeriesOccurrences(event.seriesId!),
+        builder: (ctx, snapshot) {
+          final theme = Theme.of(ctx);
+          final colorScheme = theme.colorScheme;
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Handle
+                  Center(
+                    child: Container(
+                      width: 36, height: 4,
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Title
+                  Row(
+                    children: [
+                      Icon(Icons.repeat, size: 20, color: const Color(0xFF8B5CF6)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          event.title,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Select a date',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Loading / dates list
+                  if (!snapshot.hasData)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else ...[
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.4,
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: snapshot.data!.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (ctx, index) {
+                          final occ = snapshot.data![index];
+                          final isPast = occ.date.isBefore(DateTime.now());
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: isPast
+                                    ? colorScheme.surfaceContainerHighest
+                                    : colorScheme.primaryContainer.withValues(alpha: 0.4),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    _monthAbbr(occ.date.month),
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      color: isPast
+                                          ? colorScheme.onSurfaceVariant
+                                          : colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                  Text(
+                                    '${occ.date.day}',
+                                    style: theme.textTheme.titleMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: isPast
+                                          ? colorScheme.onSurfaceVariant
+                                          : colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            title: Text(
+                              _formatFullDate(occ.date),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w500,
+                                color: isPast ? colorScheme.onSurfaceVariant : null,
+                              ),
+                            ),
+                            subtitle: Text(
+                              _formatTime(occ.date),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            trailing: isPast
+                                ? Text('Past', style: theme.textTheme.labelSmall?.copyWith(
+                                    color: colorScheme.onSurfaceVariant,
+                                  ))
+                                : Icon(Icons.chevron_right, color: colorScheme.onSurfaceVariant),
+                            enabled: !isPast,
+                            onTap: isPast ? null : () {
+                              Navigator.pop(ctx);
+                              // Fetch the full event for this occurrence
+                              repo.getEventById(occ.id).then((fullEvent) {
+                                if (fullEvent != null && context.mounted) {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => EventDetailsScreen(event: fullEvent),
+                                    ),
+                                  );
+                                }
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+String _monthAbbr(int month) {
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[month - 1];
+}
+
+String _formatFullDate(DateTime date) {
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  return '${days[date.weekday - 1]}, ${_monthAbbr(date.month)} ${date.day}, ${date.year}';
+}
+
+String _formatTime(DateTime date) {
+  final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+  final amPm = date.hour >= 12 ? 'PM' : 'AM';
+  return '$hour:${date.minute.toString().padLeft(2, '0')} $amPm';
+}
 
 /// Section definition for Netflix-style rows.
 class _FeedSection {
@@ -87,7 +277,7 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
         _eventRepo.searchEvents(trimmed).then((results) {
           if (mounted) {
             setState(() {
-              _serverSearchResults = results;
+              _serverSearchResults = _deduplicateSeries(results);
               _isServerSearching = false;
             });
           }
@@ -98,6 +288,21 @@ class _EventsHomeScreenState extends ConsumerState<EventsHomeScreen> {
         setState(() => _serverSearchResults = []);
       }
     });
+  }
+
+  /// Keep only the nearest occurrence per series_id.
+  List<EventModel> _deduplicateSeries(List<EventModel> events) {
+    final result = <EventModel>[];
+    final seenSeries = <String>{};
+    for (final event in events) {
+      if (!event.isPartOfSeries) {
+        result.add(event);
+      } else if (!seenSeries.contains(event.seriesId)) {
+        seenSeries.add(event.seriesId!);
+        result.add(event);
+      }
+    }
+    return result;
   }
 
   void _toggleSearch() {
@@ -428,6 +633,7 @@ class _Header extends ConsumerWidget {
           children: [
             ProfileAvatar(
               onTap: () {
+                if (!requireAuth(context)) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const ProfileScreen()),
                 );
@@ -436,6 +642,7 @@ class _Header extends ConsumerWidget {
             const Spacer(),
             GradientTicketButton(
               onTap: () {
+                if (!requireAuth(context)) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MyTicketsScreen()),
                 );
@@ -444,6 +651,7 @@ class _Header extends ConsumerWidget {
             const SizedBox(width: 10),
             GradientWalletButton(
               onTap: () {
+                if (!requireAuth(context)) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const WalletScreen()),
                 );
@@ -453,6 +661,7 @@ class _Header extends ConsumerWidget {
               const SizedBox(width: 10),
               GradientVenuesButton(
                 onTap: () {
+                  if (!requireAuth(context)) return;
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const VenuesScreen()),
                   );
@@ -462,13 +671,22 @@ class _Header extends ConsumerWidget {
             const SizedBox(width: 10),
             GradientEventsButton(
               onTap: () {
+                if (!requireAuth(context)) return;
                 Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const MyEventsScreen()),
                 );
               },
             ),
             const SizedBox(width: 10),
-            const NotificationBadge(size: 40),
+            NotificationBadge(
+              size: 40,
+              onTap: () {
+                if (!requireAuth(context)) return;
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -618,13 +836,7 @@ class _EventCard extends StatelessWidget {
     final config = event.getNoiseConfig();
 
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => EventDetailsScreen(event: event),
-          ),
-        );
-      },
+      onTap: () => _navigateToEvent(context, event),
       child: SizedBox(
         width: 150,
         child: Column(
@@ -768,13 +980,7 @@ class _CarouselSection extends StatelessWidget {
             height: 280,
             viewportFraction: 0.88,
           ),
-          onEventTapped: (event) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => EventDetailsScreen(event: event),
-              ),
-            );
-          },
+          onEventTapped: (event) => _navigateToEvent(context, event),
         ),
         const SizedBox(height: 8),
       ],
@@ -976,13 +1182,7 @@ class _EventListTile extends StatelessWidget {
               : Theme.of(context).colorScheme.onSurface,
         ),
       ),
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => EventDetailsScreen(event: event),
-          ),
-        );
-      },
+      onTap: () => _navigateToEvent(context, event),
     );
   }
 

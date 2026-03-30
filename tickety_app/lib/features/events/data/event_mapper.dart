@@ -70,6 +70,7 @@ abstract class EventMapper {
           : null,
       organizerId: json['organizer_id'] as String?,
       websiteUrl: json['website_url'] as String?,
+      accessPassword: json['access_password'] as String?,
     );
   }
 
@@ -107,6 +108,7 @@ abstract class EventMapper {
       if (event.hasVirtualComponent && event.virtualEventUrl != null) 'virtual_event_url': event.virtualEventUrl,
       if (event.hasVirtualComponent && event.virtualEventPassword != null) 'virtual_event_password': event.virtualEventPassword,
       if (event.websiteUrl != null) 'website_url': event.websiteUrl,
+      if (event.accessPassword != null) 'access_password': event.accessPassword,
     };
   }
 

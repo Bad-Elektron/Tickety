@@ -626,8 +626,34 @@ class _EventTicketCardState extends ConsumerState<_EventTicketCard>
                           ),
                         ),
                       ),
-                      // Status indicator (all used)
-                      if (group.allUsed)
+                      // Status indicator
+                      if (group.tickets.every((t) => t.isRefunded || t.isCancelled))
+                        Positioned(
+                          top: 12,
+                          left: 12,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.cancel, size: 12, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  group.tickets.any((t) => t.isRefunded) ? 'REFUNDED' : 'CANCELLED',
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else if (group.allUsed)
                         Positioned(
                           top: 12,
                           left: 12,
@@ -899,6 +925,50 @@ class _TicketListItem extends ConsumerWidget {
                       style: theme.textTheme.labelSmall?.copyWith(
                         color: Colors.green,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (ticket.isRefunded)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cancel, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      'REFUNDED',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (ticket.isCancelled)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.block, size: 14, color: Colors.red),
+                    const SizedBox(width: 4),
+                    Text(
+                      'CANCELLED',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
