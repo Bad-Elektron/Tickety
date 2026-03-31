@@ -448,23 +448,39 @@ final platformTagAffinityProvider =
 
 /// Provider for featured events using discovery scores.
 /// Hand-pinned events appear first, then top-scored events fill remaining slots.
+/// Deduplicate series events: keep only nearest occurrence per series_id.
+List<EventModel> _deduplicateSeriesList(List<EventModel> events) {
+  final result = <EventModel>[];
+  final seenSeries = <String>{};
+  for (final event in events) {
+    if (!event.isPartOfSeries) {
+      result.add(event);
+    } else if (!seenSeries.contains(event.seriesId)) {
+      seenSeries.add(event.seriesId!);
+      result.add(event);
+    }
+  }
+  return result;
+}
+
 final discoveryFeaturedProvider =
     FutureProvider<List<EventModel>>((ref) async {
   final discoveryRepo = ref.watch(discoveryRepositoryProvider);
   final eventRepo = ref.watch(eventRepositoryProvider);
 
   try {
-    final entries = await discoveryRepo.getFeaturedEvents(limit: 5);
+    final entries = await discoveryRepo.getFeaturedEvents(limit: 10);
     final events = <EventModel>[];
     for (final entry in entries) {
       final event = await eventRepo.getEventById(entry.eventId);
       if (event != null) events.add(event);
     }
-    return events;
+    return _deduplicateSeriesList(events).take(5).toList();
   } catch (e) {
     // Fallback to chronological if RPC unavailable
     AppLogger.debug('Featured RPC failed, falling back: $e', tag: _tag);
-    return eventRepo.getFeaturedEvents(limit: 5);
+    final fallback = await eventRepo.getFeaturedEvents(limit: 10);
+    return _deduplicateSeriesList(fallback).take(5).toList();
   }
 });
 
