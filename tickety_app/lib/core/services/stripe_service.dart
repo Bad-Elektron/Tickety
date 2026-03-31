@@ -51,15 +51,28 @@ class StripeService {
       return;
     }
 
+    // Create instance first so it's always available — prevents "not initialized"
+    // errors even if key retrieval or applySettings fails
+    _instance = StripeService._();
+
     AppLogger.debug('Initializing Stripe SDK', tag: 'StripeService');
-    final key = EnvConfig.stripePublishableKey;
+
+    // Get publishable key — if not configured, log and return stub instance
+    final String key;
+    try {
+      key = EnvConfig.stripePublishableKey;
+    } catch (e) {
+      AppLogger.warning(
+        'STRIPE_PUBLISHABLE_KEY not configured — payments will be unavailable: $e',
+        tag: 'StripeService',
+      );
+      return;
+    }
+
     Stripe.publishableKey = key;
 
     // Enable Apple Pay and Google Pay
     Stripe.merchantIdentifier = 'merchant.com.badelektron.tickets';
-
-    // Create instance first so it's available even if applySettings fails
-    _instance = StripeService._();
 
     // Apply settings with timeout to prevent hanging
     try {
