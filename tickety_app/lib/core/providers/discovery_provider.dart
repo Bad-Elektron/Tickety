@@ -469,7 +469,7 @@ final discoveryFeaturedProvider =
   final eventRepo = ref.watch(eventRepositoryProvider);
 
   try {
-    final entries = await discoveryRepo.getFeaturedEvents(limit: 10);
+    final entries = await discoveryRepo.getFeaturedEvents(limit: 20);
     final events = <EventModel>[];
     for (final entry in entries) {
       final event = await eventRepo.getEventById(entry.eventId);
@@ -479,7 +479,7 @@ final discoveryFeaturedProvider =
   } catch (e) {
     // Fallback to chronological if RPC unavailable
     AppLogger.debug('Featured RPC failed, falling back: $e', tag: _tag);
-    final fallback = await eventRepo.getFeaturedEvents(limit: 10);
+    final fallback = await eventRepo.getFeaturedEvents(limit: 20);
     return _deduplicateSeriesList(fallback).take(5).toList();
   }
 });

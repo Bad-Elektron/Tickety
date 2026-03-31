@@ -224,8 +224,8 @@ class SupabaseEventRepository implements EventRepository {
   Future<List<EventModel>> getFeaturedEvents({int limit = 5}) async {
     AppLogger.debug('Fetching featured events (limit: $limit)', tag: _tag);
 
-    // For now, just get the nearest upcoming events as featured
-    // In production, you might have a "featured" flag or algorithm
+    // Fetch more than needed, then deduplicate series client-side
+    final fetchLimit = limit * 4;
     List<dynamic> response;
     try {
       response = await _client
@@ -236,24 +236,36 @@ class SupabaseEventRepository implements EventRepository {
           .eq('status', 'active')
           .gte('date', DateTime.now().toUtc().toIso8601String())
           .order('date', ascending: true)
-          .limit(limit);
+          .limit(fetchLimit);
     } catch (_) {
-      // Fallback: is_private column may not exist yet
       response = await _client
           .from(_tableName)
           .select()
           .isFilter('deleted_at', null)
           .gte('date', DateTime.now().toUtc().toIso8601String())
           .order('date', ascending: true)
-          .limit(limit);
+          .limit(fetchLimit);
     }
 
-    final events = (response as List<dynamic>)
+    final allEvents = (response as List<dynamic>)
         .map((json) => EventMapper.fromJson(json as Map<String, dynamic>))
         .toList();
 
-    AppLogger.debug('Fetched ${events.length} featured events', tag: _tag);
-    return events;
+    // Deduplicate: keep only nearest occurrence per series
+    final deduped = <EventModel>[];
+    final seenSeries = <String>{};
+    for (final event in allEvents) {
+      if (!event.isPartOfSeries) {
+        deduped.add(event);
+      } else if (!seenSeries.contains(event.seriesId)) {
+        seenSeries.add(event.seriesId!);
+        deduped.add(event);
+      }
+      if (deduped.length >= limit) break;
+    }
+
+    AppLogger.debug('Fetched ${deduped.length} featured events (from ${allEvents.length} candidates)', tag: _tag);
+    return deduped;
   }
 
   @override
