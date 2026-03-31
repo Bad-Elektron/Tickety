@@ -42,6 +42,29 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
   String? _linkedVenueId;
   String? get _effectiveVenueId => _linkedVenueId ?? widget.event.venueId;
 
+  void _shareEvent(BuildContext context, EventModel event) {
+    final buffer = StringBuffer();
+    buffer.writeln('Check out "${event.title}" on Elektron Tickets!');
+    if (event.displayLocation != null) buffer.writeln('\u{1F4CD} ${event.displayLocation}');
+
+    final date = event.date;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    final hour = date.hour > 12 ? date.hour - 12 : (date.hour == 0 ? 12 : date.hour);
+    final amPm = date.hour >= 12 ? 'PM' : 'AM';
+    buffer.writeln('\u{1F4C5} ${days[date.weekday - 1]}, ${months[date.month - 1]} ${date.day} at $hour:${date.minute.toString().padLeft(2, '0')} $amPm');
+
+    if (event.isPrivate && event.inviteCode != null) {
+      buffer.writeln('\u{1F512} Invite code: ${event.inviteCode}');
+    }
+
+    // Deep link — opens the app or prompts download
+    buffer.writeln();
+    buffer.writeln('https://tickets.badelektron.com/event/${event.id}');
+
+    Share.share(buffer.toString());
+  }
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +90,12 @@ class _AdminEventScreenState extends ConsumerState<AdminEventScreen> {
           SliverAppBar(
             expandedHeight: 200,
             pinned: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: () => _shareEvent(context, event),
+              ),
+            ],
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,

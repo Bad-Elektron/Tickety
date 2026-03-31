@@ -56,7 +56,10 @@ class StripeService {
     Stripe.publishableKey = key;
 
     // Enable Apple Pay and Google Pay
-    Stripe.merchantIdentifier = 'merchant.com.tickety.app';
+    Stripe.merchantIdentifier = 'merchant.com.badelektron.tickets';
+
+    // Create instance first so it's available even if applySettings fails
+    _instance = StripeService._();
 
     // Apply settings with timeout to prevent hanging
     try {
@@ -71,16 +74,15 @@ class StripeService {
       );
     } catch (e, stack) {
       AppLogger.error(
-        'Failed to apply Stripe settings',
+        'Failed to apply Stripe settings - payments may not work',
         error: e,
         stackTrace: stack,
         tag: 'StripeService',
       );
-      rethrow;
+      // Don't rethrow — instance is set, payments will attempt to work
     }
 
     AppLogger.info('Stripe SDK initialized successfully', tag: 'StripeService');
-    _instance = StripeService._();
   }
 
   /// Initialize the Payment Sheet with customer and payment intent data.
