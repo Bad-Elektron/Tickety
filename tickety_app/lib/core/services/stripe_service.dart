@@ -74,6 +74,9 @@ class StripeService {
     // Enable Apple Pay and Google Pay
     Stripe.merchantIdentifier = 'merchant.com.badelektron.tickets';
 
+    // Set return URL scheme for iOS (required for Payment Sheet redirects)
+    Stripe.urlScheme = 'tickety';
+
     // Apply settings with timeout to prevent hanging
     try {
       await Stripe.instance.applySettings().timeout(
@@ -128,6 +131,7 @@ class StripeService {
         customerEphemeralKeySecret: customerEphemeralKeySecret,
         merchantDisplayName: merchantDisplayName,
         style: ThemeMode.system,
+        returnURL: 'tickety://stripe-redirect',
         applePay: const PaymentSheetApplePay(
           merchantCountryCode: 'US',
         ),
@@ -174,6 +178,7 @@ class StripeService {
         customerEphemeralKeySecret: customerEphemeralKeySecret,
         merchantDisplayName: merchantDisplayName,
         style: ThemeMode.system,
+        returnURL: 'tickety://stripe-redirect',
       ),
     );
 
