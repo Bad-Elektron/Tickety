@@ -81,7 +81,28 @@
       "Bash(grep:*)",
       "Bash(^d \")",
       "Bash(xargs cat:*)",
-      "Bash(Write-Output)"
+      "Bash(Write-Output)",
+      "Bash(mdfind \"kMDItemCFBundleIdentifier == ''com.google.Chrome''\")",
+      "Read(//Applications/**)",
+      "Bash(xcode-select -p)",
+      "Bash(xcodebuild -version)",
+      "Bash(echo \"ANDROID_HOME: $ANDROID_HOME\")",
+      "Bash(echo \"ANDROID_SDK_ROOT: $ANDROID_SDK_ROOT\")",
+      "Read(//Users/bobi/Tickety/**)",
+      "Read(//Users/bobi/Tickety/$ANDROID_HOME/**)",
+      "Bash(gem --version)",
+      "Bash(ruby --version)",
+      "Read(//Users/bobi/Library/Android/sdk/**)",
+      "Read(//usr/local/share/**)",
+      "Read(//opt/homebrew/share/**)",
+      "Bash(brew install:*)",
+      "Bash(security find-identity:*)",
+      "Bash(open:*)",
+      "Bash(xcrun xctrace:*)",
+      "Bash(export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home)",
+      "Bash(export ANDROID_HOME=~/Library/Android/sdk)",
+      "Bash(git config:*)",
+      "Bash(ssh -T git@github.com)"
     ]
   }
 }
