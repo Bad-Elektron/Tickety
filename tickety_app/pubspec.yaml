@@ -62,7 +62,7 @@ dependencies:
   flutter_nfc_hce: ^0.1.8
 
   # Stripe payments
-  flutter_stripe: ^12.3.0
+  flutter_stripe: ^12.4.0
 
   # URL launcher for Stripe Connect onboarding
   url_launcher: ^6.2.5
