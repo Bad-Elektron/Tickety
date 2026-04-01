@@ -1,9 +1,14 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
 
 import '../../../core/localization/localization.dart';
 import '../../../core/providers/providers.dart';
 import '../../events/models/event_model.dart';
+import '../models/payment_method.dart';
 import '../../wallet/data/wallet_repository.dart';
 import '../../wallet/models/linked_bank_account.dart';
 import '../models/payment.dart';
@@ -230,11 +235,61 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     }
   }
 
+  /// Whether to use the inline payment flow instead of native PaymentSheet.
+  /// Stripe SDK 25.6.x crashes on iOS 26+ when presenting PaymentSheet.
+  bool get _useInlinePayment {
+    if (kIsWeb) return false;
+    if (!Platform.isIOS) return false;
+    // iOS 26.0 = Darwin version string starts with "26"
+    final osVersion = Platform.operatingSystemVersion;
+    final majorMatch = RegExp(r'(\d+)\.').firstMatch(osVersion);
+    final major = int.tryParse(majorMatch?.group(1) ?? '') ?? 0;
+    return major >= 26;
+  }
+
   Future<void> _handleCardPay() async {
+    if (_useInlinePayment) {
+      await _showInlinePaymentSheet();
+      return;
+    }
+
     final notifier = ref.read(paymentProcessProvider.notifier);
     final success = await notifier.presentPaymentSheet();
 
     if (success && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => PaymentSuccessScreen(
+            event: widget.event,
+            amountCents: widget.amountCents,
+            quantity: widget.quantity,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showInlinePaymentSheet() async {
+    // Load saved cards
+    await ref.read(paymentMethodsProvider.notifier).load();
+
+    if (!mounted) return;
+
+    final paymentState = ref.read(paymentProcessProvider);
+    final clientSecret = paymentState.paymentIntent?.clientSecret;
+    if (clientSecret == null) return;
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _InlinePaymentSheet(
+        clientSecret: clientSecret,
+        methods: ref.read(paymentMethodsProvider).methods,
+      ),
+    );
+
+    if (result == true && mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => PaymentSuccessScreen(
@@ -1369,5 +1424,280 @@ class _OrderSummaryCard extends StatelessWidget {
   String _formatAmount(int cents) {
     final dollars = cents / 100;
     return '\$${dollars.toStringAsFixed(2)}';
+  }
+}
+
+// ============================================================
+// INLINE PAYMENT SHEET (iOS 26+ fallback)
+// Stripe SDK 25.6.x crashes when presenting native PaymentSheet on iOS 26.
+// This bottom sheet mimics the PaymentSheet UX using Flutter widgets.
+// ============================================================
+
+class _InlinePaymentSheet extends StatefulWidget {
+  const _InlinePaymentSheet({
+    required this.clientSecret,
+    required this.methods,
+  });
+
+  final String clientSecret;
+  final List<PaymentMethodCard> methods;
+
+  @override
+  State<_InlinePaymentSheet> createState() => _InlinePaymentSheetState();
+}
+
+class _InlinePaymentSheetState extends State<_InlinePaymentSheet> {
+  String? _selectedMethodId;
+  bool _useNewCard = false;
+  bool _cardComplete = false;
+  bool _isProcessing = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.methods.isNotEmpty) {
+      final defaultCard = widget.methods.where((m) => m.isDefault).firstOrNull;
+      _selectedMethodId = defaultCard?.id ?? widget.methods.first.id;
+    } else {
+      _useNewCard = true;
+    }
+  }
+
+  Future<void> _pay() async {
+    setState(() {
+      _isProcessing = true;
+      _error = null;
+    });
+
+    try {
+      if (_useNewCard) {
+        await Stripe.instance.confirmPayment(
+          paymentIntentClientSecret: widget.clientSecret,
+          data: const PaymentMethodParams.card(
+            paymentMethodData: PaymentMethodData(),
+          ),
+        );
+      } else {
+        await Stripe.instance.confirmPayment(
+          paymentIntentClientSecret: widget.clientSecret,
+          data: PaymentMethodParams.cardFromMethodId(
+            paymentMethodData: PaymentMethodDataCardFromMethod(
+              paymentMethodId: _selectedMethodId!,
+            ),
+          ),
+        );
+      }
+
+      if (mounted) Navigator.of(context).pop(true);
+    } on StripeException catch (e) {
+      if (e.error.code == FailureCode.Canceled) {
+        if (mounted) setState(() => _isProcessing = false);
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _error = e.error.localizedMessage ?? 'Payment failed';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _error = e.toString();
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      margin: EdgeInsets.only(bottom: bottomInset),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Title
+              Text(
+                'Select payment method',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Saved cards
+              if (widget.methods.isNotEmpty) ...[
+                ...widget.methods.map((card) {
+                  final isSelected = !_useNewCard && _selectedMethodId == card.id;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () => setState(() {
+                        _selectedMethodId = card.id;
+                        _useNewCard = false;
+                      }),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.3),
+                            width: isSelected ? 2 : 1,
+                          ),
+                          color: isSelected ? colorScheme.primaryContainer.withValues(alpha: 0.15) : null,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.credit_card, size: 28, color: colorScheme.onSurface),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${card.displayBrand} ····${card.last4}',
+                                    style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
+                                  ),
+                                  Text(
+                                    'Expires ${card.formattedExpiry}',
+                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSelected)
+                              Icon(Icons.check_circle, color: colorScheme.primary, size: 22),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 4),
+
+                // Add new card option
+                InkWell(
+                  onTap: () => setState(() => _useNewCard = true),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: _useNewCard ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.3),
+                        width: _useNewCard ? 2 : 1,
+                      ),
+                      color: _useNewCard ? colorScheme.primaryContainer.withValues(alpha: 0.15) : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.add_circle_outline, size: 28, color: colorScheme.primary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'New card',
+                            style: TextStyle(fontWeight: FontWeight.w600, color: colorScheme.onSurface),
+                          ),
+                        ),
+                        if (_useNewCard)
+                          Icon(Icons.check_circle, color: colorScheme.primary, size: 22),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+
+              // Card field for new card entry
+              if (_useNewCard) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 50,
+                  child: CardField(
+                    enablePostalCode: true,
+                    autofocus: widget.methods.isEmpty,
+                    style: TextStyle(color: colorScheme.onSurface, fontSize: 16),
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: colorScheme.outline),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: colorScheme.outline),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: colorScheme.primary, width: 2),
+                      ),
+                    ),
+                    onCardChanged: (details) {
+                      setState(() => _cardComplete = details?.complete ?? false);
+                    },
+                  ),
+                ),
+              ],
+
+              // Error message
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: TextStyle(color: colorScheme.error, fontSize: 13)),
+              ],
+
+              const SizedBox(height: 20),
+
+              // Pay button
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _isProcessing ||
+                          (_useNewCard && !_cardComplete) ||
+                          (!_useNewCard && _selectedMethodId == null)
+                      ? null
+                      : _pay,
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isProcessing
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text('Pay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

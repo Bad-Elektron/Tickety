@@ -22,20 +22,31 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tickety</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-	<key>NSCameraUsageDescription</key>
-	<string>Tickety uses the camera to scan QR codes and NFC tags for ticket check-in.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Tickety needs access to your photo library to upload event images and profile photos.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Tickety uses your location to show nearby events and provide directions to venues.</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
 	<key>NFCReaderUsageDescription</key>
 	<string>Tickety uses NFC to scan tickets for check-in.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Tickety uses the camera to scan QR codes and NFC tags for ticket check-in.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Tickety uses your location to show nearby events and provide directions to venues.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tickety needs access to your photo library to upload event images and profile photos.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -75,17 +86,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>tickety</string>
-			</array>
-		</dict>
 	</array>
 	<key>com.apple.developer.nfc.readersession.iso7816.select-identifiers</key>
 	<array>

@@ -132,9 +132,8 @@ class StripeService {
         merchantDisplayName: merchantDisplayName,
         style: ThemeMode.system,
         returnURL: 'tickety://stripe-redirect',
-        applePay: const PaymentSheetApplePay(
-          merchantCountryCode: 'US',
-        ),
+        // Only show card payment — Link crashes on iOS 26 with Stripe SDK 25.6.x
+        paymentMethodOrder: const ['card'],
         googlePay: const PaymentSheetGooglePay(
           merchantCountryCode: 'US',
           testEnv: true, // Set to false for production
@@ -203,6 +202,10 @@ class StripeService {
     );
 
     try {
+      // Small delay to ensure the Flutter UI is fully settled before
+      // the native Stripe SDK tries to find the root view controller.
+      // Without this, iOS 26 + UIScene lifecycle can cause SIGABRT.
+      await Future.delayed(const Duration(milliseconds: 100));
       await Stripe.instance.presentPaymentSheet();
       AppLogger.info(
         'Payment sheet completed successfully',
